@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import DBCLogo from '../../components/DBCLogo';
+import { supabase, Product } from '../../lib/supabase';
 import { 
   User, 
   LogOut, 
@@ -24,36 +25,49 @@ const mockOrders: any[] = [];
 export default function OrdersPage() {
   const [selectedStatus, setSelectedStatus] = useState('all');
   const [orders, setOrders] = useState(mockOrders);
+  const [products, setProducts] = useState<Product[]>([]);
   const router = useRouter();
+
+  // Charger les produits depuis Supabase
+  useEffect(() => {
+    async function loadProducts() {
+      try {
+        const { data, error } = await supabase
+          .from('products')
+          .select('*')
+          .eq('is_active', true);
+        
+        if (error) throw error;
+        setProducts(data || []);
+      } catch (err) {
+        console.error('Erreur chargement produits:', err);
+        // Utiliser les données de démo en cas d'erreur
+        setProducts([]);
+      }
+    }
+    
+    loadProducts();
+  }, []);
 
   // Charger les commandes brouillon depuis localStorage
   useEffect(() => {
     const loadDraftOrders = () => {
       try {
         const savedOrders = localStorage.getItem('draftOrders');
-        if (savedOrders) {
+        
+        if (savedOrders && products.length > 0) {
           const draftOrders = JSON.parse(savedOrders);
+          
           const ordersArray = Object.values(draftOrders).map((order: any) => {
             // Calculer le nombre d'articles et le montant total
             const items = order.items || {};
-            const itemCount = Object.values(items).reduce((sum: number, qty: any) => sum + qty, 0);
+            const itemCount = Object.values(items).reduce((sum: number, qty: any) => sum + (typeof qty === 'number' ? qty : 0), 0);
             
-            // Pour calculer le montant, on a besoin des prix des produits
-            // On va utiliser les prix du catalogue mock
-            const mockProducts = [
-              { sku: 'IPH15-128-BLK', price: 849.99 },
-              { sku: 'IPH15P-256-BLU', price: 1299.99 },
-              { sku: 'SAM-S24-128-GRY', price: 699.99 },
-              { sku: 'IPD-AIR-256-SLV', price: 749.99 },
-              { sku: 'APW-S9-45-BLK', price: 449.99 },
-              { sku: 'MBP-M3-512-SLV', price: 2199.99 },
-              { sku: 'IPH14-256-RED', price: 699.99 },
-              { sku: 'SAM-S23-512-WHT', price: 899.99 }
-            ];
-            
+            // Utiliser les données réelles du catalogue
             const totalAmount = Object.entries(items).reduce((sum: number, [sku, qty]: [string, any]) => {
-              const product = mockProducts.find(p => p.sku === sku);
-              return sum + (product ? product.price * qty : 0);
+              const product = products.find(p => p.sku === sku);
+              const quantity = typeof qty === 'number' ? qty : 0;
+              return sum + (product ? product.price_dbc * quantity : 0);
             }, 0);
 
             return {
@@ -63,6 +77,7 @@ export default function OrdersPage() {
               canDelete: true
             };
           });
+          
           setOrders(ordersArray);
         }
       } catch (error) {
@@ -86,7 +101,7 @@ export default function OrdersPage() {
       window.removeEventListener('storage', handleStorageChange);
       clearInterval(interval);
     };
-  }, []);
+  }, [products]);
 
   const deleteOrder = (orderId: string) => {
     if (window.confirm('Êtes-vous sûr de vouloir supprimer cette commande brouillon ?')) {

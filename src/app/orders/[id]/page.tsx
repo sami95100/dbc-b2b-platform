@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import DBCLogo from '../../../components/DBCLogo';
+import { supabase, Product, orderService } from '../../../lib/supabase';
 import { 
   User, 
   LogOut, 
@@ -21,128 +22,63 @@ import {
   Plus,
   Minus,
   Trash2,
-  Check
+  Check,
+  FileSpreadsheet
 } from 'lucide-react';
-
-// Données des produits pour récupérer les détails
-const mockProducts = [
-  {
-    sku: 'IPH15-128-BLK',
-    name: 'iPhone 15 128GB',
-    manufacturer: 'Apple',
-    appearance: 'Grade A',
-    functionality: 'Working',
-    color: 'Black',
-    boxed: 'Unboxed',
-    additional_info: '-',
-    price_dbc: 849.99
-  },
-  {
-    sku: 'IPH15P-256-BLU',
-    name: 'iPhone 15 Pro 256GB',
-    manufacturer: 'Apple',
-    appearance: 'Grade A+',
-    functionality: 'Working',
-    color: 'Blue Titanium',
-    boxed: 'Boxed',
-    additional_info: 'Original accessories',
-    price_dbc: 1299.99
-  },
-  {
-    sku: 'SAM-S24-128-GRY',
-    name: 'Samsung Galaxy S24 128GB',
-    manufacturer: 'Samsung',
-    appearance: 'Grade A',
-    functionality: 'Working',
-    color: 'Gray',
-    boxed: 'Unboxed',
-    additional_info: '-',
-    price_dbc: 699.99
-  },
-  {
-    sku: 'IPD-AIR-256-SLV',
-    name: 'iPad Air 256GB',
-    manufacturer: 'Apple',
-    appearance: 'Grade A',
-    functionality: 'Working',
-    color: 'Silver',
-    boxed: 'Boxed',
-    additional_info: 'WiFi + Cellular',
-    price_dbc: 749.99
-  },
-  {
-    sku: 'APW-S9-45-BLK',
-    name: 'Apple Watch Series 9 45mm',
-    manufacturer: 'Apple',
-    appearance: 'Grade A+',
-    functionality: 'Working',
-    color: 'Black',
-    boxed: 'Boxed',
-    additional_info: 'Sport Band',
-    price_dbc: 449.99
-  },
-  {
-    sku: 'MBP-M3-512-SLV',
-    name: 'MacBook Pro M3 512GB',
-    manufacturer: 'Apple',
-    appearance: 'Grade A',
-    functionality: 'Working',
-    color: 'Silver',
-    boxed: 'Boxed',
-    additional_info: '14-inch',
-    price_dbc: 2199.99
-  },
-  {
-    sku: 'IPH14-256-RED',
-    name: 'iPhone 14 256GB',
-    manufacturer: 'Apple',
-    appearance: 'Grade B',
-    functionality: 'Working',
-    color: 'Red',
-    boxed: 'Unboxed',
-    additional_info: 'Minor scratches',
-    price_dbc: 699.99
-  },
-  {
-    sku: 'SAM-S23-512-WHT',
-    name: 'Samsung Galaxy S23 512GB',
-    manufacturer: 'Samsung',
-    appearance: 'Grade A',
-    functionality: 'Working',
-    color: 'White',
-    boxed: 'Boxed',
-    additional_info: 'Dual SIM',
-    price_dbc: 899.99
-  }
-];
 
 export default function OrderDetailPage({ params }: { params: { id: string } }) {
   const [orderDetail, setOrderDetail] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [editableQuantities, setEditableQuantities] = useState<{[key: string]: number}>({});
+  const [products, setProducts] = useState<Product[]>([]);
+  const [validating, setValidating] = useState(false);
   const router = useRouter();
+
+  // Charger les produits depuis Supabase
+  useEffect(() => {
+    async function loadProducts() {
+      try {
+        const { data, error } = await supabase
+          .from('products')
+          .select('*')
+          .eq('is_active', true);
+        
+        if (error) throw error;
+        setProducts(data || []);
+      } catch (err) {
+        console.error('Erreur chargement produits:', err);
+        setProducts([]);
+      }
+    }
+    
+    loadProducts();
+  }, []);
 
   const loadOrderDetail = () => {
     try {
       const savedOrders = localStorage.getItem('draftOrders');
-      if (savedOrders) {
+      if (savedOrders && products.length > 0) {
         const draftOrders = JSON.parse(savedOrders);
         const order = draftOrders[params.id];
         
         if (order) {
           // Construire les détails des articles avec les informations complètes
           const items = Object.entries(order.items || {}).map(([sku, quantity]: [string, any]) => {
-            const product = mockProducts.find(p => p.sku === sku);
+            const product = products.find(p => p.sku === sku);
             if (product) {
+              // Extraire le manufacturer depuis le nom du produit
+              const manufacturer = ['Apple', 'Samsung', 'Xiaomi', 'Google', 'Huawei', 'OnePlus', 'Motorola', 'Honor', 'Oppo', 'Realme', 'Sony', 'LG', 'TCL', 'Nokia', 'Vivo', 'Asus', 'ZTE', 'Nothing', 'Gigaset', 'HTC']
+                .find(m => product.product_name.toLowerCase().includes(m.toLowerCase())) || 'Unknown';
+              
               return {
                 sku: product.sku,
-                name: product.name,
-                manufacturer: product.manufacturer,
+                name: product.product_name,
+                manufacturer: manufacturer,
                 appearance: product.appearance,
                 functionality: product.functionality,
                 color: product.color,
                 boxed: product.boxed,
-                additional_info: product.additional_info,
+                additional_info: product.additional_info || '-',
                 quantity: quantity,
                 unitPrice: product.price_dbc,
                 totalPrice: product.price_dbc * quantity
@@ -180,7 +116,7 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
 
   useEffect(() => {
     loadOrderDetail();
-  }, [params.id]);
+  }, [params.id, products]);
 
   const updateQuantity = (sku: string, newQuantity: number) => {
     if (newQuantity < 1) return;
@@ -209,54 +145,87 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
   };
 
   const removeItem = (sku: string) => {
-    if (window.confirm('Êtes-vous sûr de vouloir supprimer ce produit de la commande ?')) {
-      try {
-        const savedOrders = localStorage.getItem('draftOrders');
-        if (savedOrders) {
-          const draftOrders = JSON.parse(savedOrders);
-          if (draftOrders[params.id]) {
-            delete draftOrders[params.id].items[sku];
-            localStorage.setItem('draftOrders', JSON.stringify(draftOrders));
-            
-            // Recharger les détails
-            loadOrderDetail();
-          }
-        }
-      } catch (error) {
-        console.error('Erreur lors de la suppression:', error);
-      }
+    if (!orderDetail) return;
+
+    const newItems = orderDetail.items.filter((item: any) => item.sku !== sku);
+    const newEditableQuantities = { ...editableQuantities };
+    delete newEditableQuantities[sku];
+
+    const updatedOrder = {
+      ...orderDetail,
+      items: newItems,
+      totalItems: newItems.reduce((sum: number, item: any) => sum + editableQuantities[item.sku], 0),
+      totalAmount: newItems.reduce((sum: number, item: any) => sum + (item.unitPrice * editableQuantities[item.sku]), 0)
+    };
+
+    setOrderDetail(updatedOrder);
+    setEditableQuantities(newEditableQuantities);
+
+    // Mettre à jour localStorage
+    const savedOrders = localStorage.getItem('draftOrders');
+    if (savedOrders) {
+      const draftOrders = JSON.parse(savedOrders);
+      const updatedItems = { ...draftOrders[params.id].items };
+      delete updatedItems[sku];
+      
+      draftOrders[params.id] = {
+        ...draftOrders[params.id],
+        items: updatedItems
+      };
+      
+      localStorage.setItem('draftOrders', JSON.stringify(draftOrders));
     }
   };
 
-  const validateOrder = () => {
-    if (window.confirm('Êtes-vous sûr de vouloir valider cette commande ? Elle passera en statut "En attente de paiement".')) {
-      try {
-        const savedOrders = localStorage.getItem('draftOrders');
-        if (savedOrders) {
-          const draftOrders = JSON.parse(savedOrders);
-          if (draftOrders[params.id]) {
-            // Changer le statut
-            draftOrders[params.id].status = 'pending';
-            draftOrders[params.id].statusLabel = 'En attente de paiement';
-            draftOrders[params.id].canDelete = false;
-            
-            localStorage.setItem('draftOrders', JSON.stringify(draftOrders));
-            
-            // Supprimer la commande active si c'est celle-ci
-            const currentOrder = localStorage.getItem('currentDraftOrder');
-            if (currentOrder === params.id) {
-              localStorage.removeItem('currentDraftOrder');
-            }
-            
-            // Recharger les détails
-            loadOrderDetail();
-            
-            alert('Commande validée avec succès !');
-          }
-        }
-      } catch (error) {
-        console.error('Erreur lors de la validation:', error);
+  const validateOrder = async () => {
+    if (!orderDetail || orderDetail.items.length === 0) {
+      alert('Aucun produit dans la commande à valider');
+      return;
+    }
+
+    setValidating(true);
+    
+    try {
+      console.log('🔄 Validation de la commande:', params.id);
+      
+      // Préparer les données pour Supabase
+      const orderItems = orderDetail.items.map((item: any) => ({
+        sku: item.sku,
+        quantity: editableQuantities[item.sku] || item.quantity,
+        product_name: item.name,
+        unit_price: item.unitPrice
+      }));
+
+      // Valider via le service
+      await orderService.validateOrder(params.id, orderItems);
+
+      // Mettre à jour le statut local
+      const updatedOrder = {
+        ...orderDetail,
+        status: 'pending',
+        statusLabel: 'En attente'
+      };
+      setOrderDetail(updatedOrder);
+
+      // Mettre à jour localStorage
+      const savedOrders = localStorage.getItem('draftOrders');
+      if (savedOrders) {
+        const draftOrders = JSON.parse(savedOrders);
+        draftOrders[params.id] = {
+          ...draftOrders[params.id],
+          status: 'pending',
+          statusLabel: 'En attente'
+        };
+        localStorage.setItem('draftOrders', JSON.stringify(draftOrders));
       }
+
+      alert('✅ Commande validée avec succès ! Le stock a été mis à jour.');
+
+    } catch (error) {
+      console.error('❌ Erreur validation:', error);
+      alert('❌ Erreur lors de la validation de la commande');
+    } finally {
+      setValidating(false);
     }
   };
 
@@ -302,6 +271,85 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
       case 'pending': return 'bg-gray-100 text-gray-800';
       case 'draft': return 'bg-orange-100 text-orange-800';
       default: return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+  const exportToExcel = () => {
+    if (!orderDetail) return;
+
+    try {
+      // Import dynamique de xlsx
+      import('xlsx').then((XLSX) => {
+        // Créer les données pour Excel
+        const worksheetData = [
+          // Headers
+          ['SKU', 'Nom du produit', 'Marque', 'Grade', 'État', 'Couleur', 'Emballage', 'Info', 'Quantité', 'Prix unitaire', 'Total'],
+          // Données
+          ...orderDetail.items.map((item: any) => [
+            item.sku,
+            item.name,
+            item.manufacturer,
+            item.appearance,
+            item.functionality,
+            item.color,
+            item.boxed,
+            item.additional_info,
+            editableQuantities[item.sku] || item.quantity,
+            item.unitPrice,
+            (item.unitPrice * (editableQuantities[item.sku] || item.quantity))
+          ])
+        ];
+
+        // Ajouter une ligne de total
+        const totalQty = orderDetail.items.reduce((sum: number, item: any) => sum + (editableQuantities[item.sku] || item.quantity), 0);
+        const totalAmount = orderDetail.items.reduce((sum: number, item: any) => sum + (item.unitPrice * (editableQuantities[item.sku] || item.quantity)), 0);
+        
+        worksheetData.push(['', '', '', '', '', '', '', 'TOTAL:', totalQty, '', totalAmount.toFixed(2)]);
+
+        // Créer le workbook et worksheet
+        const workbook = XLSX.utils.book_new();
+        const worksheet = XLSX.utils.aoa_to_sheet(worksheetData);
+
+        // Styling des headers (optionnel - certaines versions le supportent)
+        const range = XLSX.utils.decode_range(worksheet['!ref'] || 'A1:K1');
+        for (let col = range.s.c; col <= range.e.c; col++) {
+          const cellAddress = XLSX.utils.encode_cell({ r: 0, c: col });
+          if (!worksheet[cellAddress]) continue;
+          worksheet[cellAddress].s = {
+            font: { bold: true },
+            fill: { fgColor: { rgb: 'CCCCCC' } }
+          };
+        }
+
+        // Ajuster la largeur des colonnes
+        worksheet['!cols'] = [
+          { width: 15 }, // SKU
+          { width: 30 }, // Nom du produit
+          { width: 15 }, // Marque
+          { width: 10 }, // Grade
+          { width: 10 }, // État
+          { width: 10 }, // Couleur
+          { width: 15 }, // Emballage
+          { width: 20 }, // Info
+          { width: 8 },  // Quantité
+          { width: 12 }, // Prix unitaire
+          { width: 12 }  // Total
+        ];
+
+        // Ajouter le worksheet au workbook
+        XLSX.utils.book_append_sheet(workbook, worksheet, 'Commande');
+
+        // Créer le nom de fichier
+        const fileName = `commande_${params.id}_${new Date().toISOString().split('T')[0]}.xlsx`;
+
+        // Télécharger le fichier
+        XLSX.writeFile(workbook, fileName);
+
+        console.log('📊 Export Excel XLSX terminé');
+      });
+    } catch (error) {
+      console.error('❌ Erreur export Excel:', error);
+      alert('❌ Erreur lors de l\'export Excel');
     }
   };
 
@@ -426,13 +474,33 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
                     <Trash2 className="h-4 w-4" />
                     <span>Supprimer</span>
                   </button>
-                  <button
-                    onClick={validateOrder}
-                    className="flex items-center space-x-2 px-4 py-2 bg-dbc-light-green text-white rounded-lg hover:bg-green-600 text-sm"
-                  >
-                    <Check className="h-4 w-4" />
-                    <span>Valider commande</span>
-                  </button>
+                  <div className="flex space-x-3">
+                    <button
+                      onClick={validateOrder}
+                      disabled={validating}
+                      className="flex items-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {validating ? (
+                        <>
+                          <Clock className="h-4 w-4 animate-spin" />
+                          <span>Validation...</span>
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle className="h-4 w-4" />
+                          <span>Valider la commande</span>
+                        </>
+                      )}
+                    </button>
+
+                    <button
+                      onClick={exportToExcel}
+                      className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                    >
+                      <FileSpreadsheet className="h-4 w-4" />
+                      <span>Export Excel</span>
+                    </button>
+                  </div>
                 </>
               )}
               
@@ -442,10 +510,15 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
                     <FileText className="h-4 w-4" />
                     <span>Facture</span>
                   </button>
-                  <button className="flex items-center space-x-2 px-4 py-2 bg-dbc-light-green text-white rounded-lg hover:bg-green-600 text-sm">
-                    <Download className="h-4 w-4" />
-                    <span>Export Excel</span>
-                  </button>
+                  <div className="flex space-x-3">
+                    <button
+                      onClick={exportToExcel}
+                      className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                    >
+                      <FileSpreadsheet className="h-4 w-4" />
+                      <span>Export Excel</span>
+                    </button>
+                  </div>
                 </>
               )}
             </div>
@@ -453,12 +526,12 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
-              <p className="text-sm text-gray-600 mb-1">Référence client</p>
-              <p className="font-medium">{orderDetail.customerRef}</p>
+              <p className="text-sm text-gray-800 mb-1 font-medium">Référence client</p>
+              <p className="font-medium text-gray-900">{orderDetail.customerRef}</p>
             </div>
             <div>
-              <p className="text-sm text-gray-600 mb-1">Régime TVA</p>
-              <p className="text-sm text-gray-500 italic">{orderDetail.vatType}</p>
+              <p className="text-sm text-gray-800 mb-1 font-medium">Régime TVA</p>
+              <p className="text-sm text-gray-700">{orderDetail.vatType}</p>
             </div>
           </div>
         </div>
@@ -524,33 +597,33 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
                       </div>
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-900">{item.boxed}</td>
-                    <td className="px-4 py-3 text-sm text-gray-600">{item.additional_info}</td>
+                    <td className="px-4 py-3 text-sm text-gray-800">{item.additional_info}</td>
                     <td className="px-4 py-3 text-center">
                       {orderDetail.status === 'draft' ? (
                         <div className="flex items-center justify-center space-x-1">
                           <button
                             onClick={() => updateQuantity(item.sku, editableQuantities[item.sku] - 1)}
-                            className="p-1 text-gray-400 hover:text-gray-600"
+                            className="p-1 text-gray-600 hover:text-gray-800"
                             disabled={editableQuantities[item.sku] <= 1}
                           >
                             <Minus className="h-3 w-3" />
                           </button>
-                          <span className="text-sm font-medium w-8 text-center">
+                          <span className="text-sm font-medium w-8 text-center text-gray-900">
                             {editableQuantities[item.sku]}
                           </span>
                           <button
                             onClick={() => updateQuantity(item.sku, editableQuantities[item.sku] + 1)}
-                            className="p-1 text-gray-400 hover:text-gray-600"
+                            className="p-1 text-gray-600 hover:text-gray-800"
                           >
                             <Plus className="h-3 w-3" />
                           </button>
                         </div>
                       ) : (
-                        <span className="text-sm font-medium">{item.quantity}</span>
+                        <span className="text-sm font-medium text-gray-900">{item.quantity}</span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-sm text-right font-medium">{item.unitPrice.toFixed(2)}€</td>
-                    <td className="px-4 py-3 text-sm text-right font-semibold">
+                    <td className="px-4 py-3 text-sm text-right font-medium text-gray-900">{item.unitPrice.toFixed(2)}€</td>
+                    <td className="px-4 py-3 text-sm text-right font-semibold text-gray-900">
                       {(item.unitPrice * editableQuantities[item.sku]).toFixed(2)}€
                     </td>
                     {orderDetail.status === 'draft' && (
@@ -576,15 +649,15 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
           <div className="max-w-xs ml-auto">
             <div className="space-y-2">
               <div className="flex justify-between text-sm">
-                <span className="text-gray-600">Total ({orderDetail.totalItems} articles)</span>
-                <span className="font-medium">{orderDetail.totalAmount.toFixed(2)}€</span>
+                <span className="text-gray-800">Total ({orderDetail.totalItems} articles)</span>
+                <span className="font-medium text-gray-900">{orderDetail.totalAmount.toFixed(2)}€</span>
               </div>
-              <div className="text-xs text-gray-500 italic">
+              <div className="text-xs text-gray-700">
                 Bien d'occasion - TVA calculée sur la marge, non récupérable
               </div>
               <div className="border-t pt-2 flex justify-between">
-                <span className="font-semibold">Total HT</span>
-                <span className="font-bold text-lg">{orderDetail.totalAmount.toFixed(2)}€</span>
+                <span className="font-semibold text-gray-900">Total HT</span>
+                <span className="font-bold text-lg text-gray-900">{orderDetail.totalAmount.toFixed(2)}€</span>
               </div>
             </div>
           </div>

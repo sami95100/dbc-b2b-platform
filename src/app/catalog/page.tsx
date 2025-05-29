@@ -3,6 +3,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import DBCLogo from '../../components/DBCLogo';
+import { supabase, Product } from '../../lib/supabase';
 import { 
   Search, 
   Filter, 
@@ -19,219 +20,373 @@ import {
   Package
 } from 'lucide-react';
 
-// Données de démonstration étendues pour le tableau
-const mockProducts = [
+// Données de démonstration basées sur le vrai catalogue
+const mockProducts: Product[] = [
+  // Apple Products
   {
-    sku: 'IPH15-128-BLK',
-    name: 'iPhone 15 128GB',
-    manufacturer: 'Apple',
+    sku: '102600600148',
+    item_group: 'Mobiles',
+    product_name: 'Apple iPhone 11 128GB',
     appearance: 'Grade A',
     functionality: 'Working',
-    color: 'Black',
     boxed: 'Unboxed',
-    additional_info: '-',
-    stock: 15,
-    price_dbc: 849.99,
-    price_foxway: 765.75,
-    condition: 'Neuf',
-    category: 'iPhone'
+    color: 'Purple',
+    cloud_lock: null,
+    additional_info: null,
+    quantity: 1,
+    price: 284,
+    campaign_price: 263,
+    vat_type: 'Marginal',
+    price_dbc: 286.84,
+    is_active: true
   },
   {
-    sku: 'IPH15P-256-BLU',
-    name: 'iPhone 15 Pro 256GB',
-    manufacturer: 'Apple',
-    appearance: 'Grade A+',
-    functionality: 'Working',
-    color: 'Blue Titanium',
-    boxed: 'Boxed',
-    additional_info: 'Original accessories',
-    stock: 8,
-    price_dbc: 1299.99,
-    price_foxway: 1171.17,
-    condition: 'Neuf',
-    category: 'iPhone'
-  },
-  {
-    sku: 'SAM-S24-128-GRY',
-    name: 'Samsung Galaxy S24 128GB',
-    manufacturer: 'Samsung',
+    sku: '102600600117',
+    item_group: 'Mobiles',
+    product_name: 'Apple iPhone 11 128GB',
     appearance: 'Grade A',
     functionality: 'Working',
-    color: 'Gray',
     boxed: 'Unboxed',
-    additional_info: '-',
-    stock: 22,
-    price_dbc: 699.99,
-    price_foxway: 630.63,
-    condition: 'Neuf',
-    category: 'Samsung'
+    color: 'Purple',
+    cloud_lock: null,
+    additional_info: null,
+    quantity: 1,
+    price: 260,
+    campaign_price: 245,
+    vat_type: null,
+    price_dbc: 288.60,
+    is_active: true
   },
   {
-    sku: 'IPD-AIR-256-SLV',
-    name: 'iPad Air 256GB',
-    manufacturer: 'Apple',
-    appearance: 'Grade A',
+    sku: '102600600028',
+    item_group: 'Mobiles',
+    product_name: 'Apple iPhone 11 128GB',
+    appearance: 'Grade C',
     functionality: 'Working',
-    color: 'Silver',
-    boxed: 'Boxed',
-    additional_info: 'WiFi + Cellular',
-    stock: 12,
-    price_dbc: 749.99,
-    price_foxway: 675.67,
-    condition: 'Neuf',
-    category: 'iPad'
-  },
-  {
-    sku: 'APW-S9-45-BLK',
-    name: 'Apple Watch Series 9 45mm',
-    manufacturer: 'Apple',
-    appearance: 'Grade A+',
-    functionality: 'Working',
+    boxed: 'Unboxed',
     color: 'Black',
-    boxed: 'Boxed',
-    additional_info: 'Sport Band',
-    stock: 18,
-    price_dbc: 449.99,
-    price_foxway: 405.40,
-    condition: 'Neuf',
-    category: 'Apple Watch'
+    cloud_lock: null,
+    additional_info: 'Chip/Crack',
+    quantity: 5,
+    price: 220,
+    campaign_price: null,
+    vat_type: 'Marginal',
+    price_dbc: 222.20,
+    is_active: true
   },
   {
-    sku: 'MBP-M3-512-SLV',
-    name: 'MacBook Pro M3 512GB',
-    manufacturer: 'Apple',
+    sku: '102600600298',
+    item_group: 'Mobiles',
+    product_name: 'Apple iPhone 11 128GB',
+    appearance: 'Grade BC',
+    functionality: 'Working',
+    boxed: 'Unboxed',
+    color: 'Yellow',
+    cloud_lock: null,
+    additional_info: 'Discoloration',
+    quantity: 2,
+    price: 240,
+    campaign_price: null,
+    vat_type: 'Marginal',
+    price_dbc: 242.40,
+    is_active: true
+  },
+  // Samsung Products
+  {
+    sku: '103500200123',
+    item_group: 'Mobiles',
+    product_name: 'Samsung Galaxy S21 128GB',
     appearance: 'Grade A',
     functionality: 'Working',
-    color: 'Silver',
-    boxed: 'Boxed',
-    additional_info: '14-inch',
-    stock: 5,
-    price_dbc: 2199.99,
-    price_foxway: 1981.98,
-    condition: 'Neuf',
-    category: 'MacBook'
+    boxed: 'Unboxed',
+    color: 'Grey',
+    cloud_lock: null,
+    additional_info: null,
+    quantity: 8,
+    price: 320,
+    campaign_price: null,
+    vat_type: null,
+    price_dbc: 355.20,
+    is_active: true
   },
   {
-    sku: 'IPH14-256-RED',
-    name: 'iPhone 14 256GB',
-    manufacturer: 'Apple',
+    sku: '103500200456',
+    item_group: 'Mobiles',
+    product_name: 'Samsung Galaxy S21 256GB',
     appearance: 'Grade B',
     functionality: 'Working',
-    color: 'Red',
-    boxed: 'Unboxed',
-    additional_info: 'Minor scratches',
-    stock: 25,
-    price_dbc: 699.99,
-    price_foxway: 630.63,
-    condition: 'Reconditionné',
-    category: 'iPhone'
+    boxed: 'Original Box',
+    color: 'Pink',
+    cloud_lock: null,
+    additional_info: 'Brand New Battery',
+    quantity: 3,
+    price: 380,
+    campaign_price: 350,
+    vat_type: null,
+    price_dbc: 421.80,
+    is_active: true
   },
-  {
-    sku: 'SAM-S23-512-WHT',
-    name: 'Samsung Galaxy S23 512GB',
-    manufacturer: 'Samsung',
-    appearance: 'Grade A',
-    functionality: 'Working',
-    color: 'White',
-    boxed: 'Boxed',
-    additional_info: 'Dual SIM',
-    stock: 14,
-    price_dbc: 899.99,
-    price_foxway: 810.81,
-    condition: 'Neuf',
-    category: 'Samsung'
-  }
+  // Plus de produits pour la démo...
 ];
 
-type SortField = 'sku' | 'name' | 'manufacturer' | 'price_dbc' | 'stock';
+// Valeurs de filtres basées sur l'analyse du vrai catalogue
+const MANUFACTURERS = ['Apple', 'Samsung', 'Xiaomi', 'Google', 'Huawei', 'OnePlus', 'Motorola', 'Honor', 'Oppo', 'Realme', 'Sony', 'LG', 'TCL', 'Nokia', 'Vivo', 'Asus', 'ZTE', 'Nothing', 'Gigaset', 'HTC'];
+const APPEARANCES = ['Brand New', 'Grade A+', 'Grade A', 'Grade AB', 'Grade B', 'Grade BC', 'Grade C', 'Grade C+'];
+const FUNCTIONALITIES = ['Working', 'Minor Fault'];
+const BOXED_OPTIONS = ['Original Box', 'Premium Unboxed', 'Unboxed'];
+const ADDITIONAL_INFO_OPTIONS = ['AS-IS', 'Brand New Battery', 'Chip/Crack', 'Discoloration', 'Engraving', 'Engraving Removed', 'Heavy cosmetic wear', 'Other', 'Premium Refurbished', 'Reduced Battery Performance'];
+
+// Type pour les options de tri
+type SortField = 'sku' | 'product_name' | 'price_dbc' | 'quantity';
 type SortDirection = 'asc' | 'desc';
 
 export default function CatalogPage() {
+  // États des filtres avec valeurs par défaut
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedManufacturer, setSelectedManufacturer] = useState('');
-  const [selectedAppearance, setSelectedAppearance] = useState('');
-  const [selectedFunctionality, setSelectedFunctionality] = useState('');
-  const [selectedColor, setSelectedColor] = useState('');
-  const [selectedBoxed, setSelectedBoxed] = useState('');
+  const [selectedManufacturers, setSelectedManufacturers] = useState<string[]>(['Apple']); // Apple par défaut
+  const [selectedAppearances, setSelectedAppearances] = useState<string[]>(['Grade C', 'Grade BC']); // Grade C et BC par défaut
+  const [selectedFunctionalities, setSelectedFunctionalities] = useState<string[]>([]);
+  const [selectedColors, setSelectedColors] = useState<string[]>([]);
+  const [selectedBoxedOptions, setSelectedBoxedOptions] = useState<string[]>([]);
+  const [selectedAdditionalInfo, setSelectedAdditionalInfo] = useState<string[]>([]);
   const [priceMin, setPriceMin] = useState('');
   const [priceMax, setPriceMax] = useState('');
-  const [stockMin, setStockMin] = useState('');
-  const [stockMax, setStockMax] = useState('');
-  const [sortField, setSortField] = useState<SortField>('name');
+  const [quantityMin, setQuantityMin] = useState('');
+  const [quantityMax, setQuantityMax] = useState('');
+  
+  // États de tri et pagination
+  const [sortField, setSortField] = useState<SortField>('product_name');
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
-  const [itemsPerPage, setItemsPerPage] = useState(20);
+  const [itemsPerPage, setItemsPerPage] = useState(500); // 500 par défaut
   const [currentPage, setCurrentPage] = useState(1);
-  const [cart, setCart] = useState<{[key: string]: number}>({});
+  
+  // États des commandes - Initialisés depuis localStorage
   const [quantities, setQuantities] = useState<{[key: string]: string | number}>({});
-  const [currentDraftOrder, setCurrentDraftOrder] = useState<string | null>(null);
+  const [currentDraftOrder, setCurrentDraftOrder] = useState<string | null>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('currentDraftOrder');
+    }
+    return null;
+  });
   const [showOrderNamePopup, setShowOrderNamePopup] = useState(false);
   const [orderName, setOrderName] = useState('');
-  const [draftOrders, setDraftOrders] = useState<{[key: string]: any}>({});
-  const [selectedProducts, setSelectedProducts] = useState<{[key: string]: boolean}>({});
-  const router = useRouter();
-
-  // Charger les commandes brouillon depuis localStorage au démarrage
-  useEffect(() => {
-    try {
-      const savedOrders = localStorage.getItem('draftOrders');
-      const savedCurrentOrder = localStorage.getItem('currentDraftOrder');
-      
-      if (savedOrders) {
-        const orders = JSON.parse(savedOrders);
-        setDraftOrders(orders);
-        
-        // Charger les quantités depuis la commande active
-        if (savedCurrentOrder && orders[savedCurrentOrder]) {
-          setCurrentDraftOrder(savedCurrentOrder);
-          const currentOrderItems = orders[savedCurrentOrder].items || {};
-          setQuantities(currentOrderItems);
+  const [draftOrders, setDraftOrders] = useState<{[key: string]: any}>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('draftOrders');
+      if (saved) {
+        try {
+          return JSON.parse(saved);
+        } catch (e) {
+          console.error('Erreur parsing draftOrders:', e);
         }
       }
-    } catch (error) {
-      console.error('Erreur lors du chargement:', error);
     }
+    return {};
+  });
+  const [selectedProducts, setSelectedProducts] = useState<{[key: string]: boolean}>({});
+  
+  // État pour éviter les erreurs d'hydratation
+  const [isClient, setIsClient] = useState(false);
+  
+  // État pour les vrais produits depuis Supabase
+  const [products, setProducts] = useState<Product[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [totalProductsCount, setTotalProductsCount] = useState<number | null>(null);
+  
+  const router = useRouter();
+
+  // États de dropdowns avec timer pour fermeture
+  const [dropdownOpen, setDropdownOpen] = useState<{[key: string]: boolean}>({
+    manufacturer: false,
+    appearance: false,
+    functionality: false,
+    boxed: false,
+    additionalInfo: false,
+    color: false
+  });
+  const [closeTimeout, setCloseTimeout] = useState<NodeJS.Timeout | null>(null);
+
+  // Charger les quantités de la commande active
+  useEffect(() => {
+    // Marquer qu'on est côté client
+    setIsClient(true);
+    
+    console.log('🔄 INITIALISATION');
+    console.log('Current draft order:', currentDraftOrder);
+    console.log('Draft orders:', Object.keys(draftOrders));
+    
+    if (currentDraftOrder && draftOrders[currentDraftOrder]) {
+      const currentOrderItems = draftOrders[currentDraftOrder].items || {};
+      setQuantities(currentOrderItems);
+      console.log('✅ Quantités chargées:', Object.keys(currentOrderItems).length, 'produits');
+    } else if (currentDraftOrder) {
+      // La commande active n'existe plus
+      console.log('⚠️ Commande active introuvable, reset');
+      setCurrentDraftOrder(null);
+      localStorage.removeItem('currentDraftOrder');
+      
+      // Chercher une autre commande brouillon
+      const drafts = Object.values(draftOrders).filter((order: any) => order.status === 'draft');
+      if (drafts.length > 0) {
+        const lastDraft = drafts.sort((a: any, b: any) => 
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        )[0] as any;
+        
+        console.log('🔄 Nouvelle commande active:', lastDraft.id);
+        setCurrentDraftOrder(lastDraft.id);
+        setQuantities(lastDraft.items || {});
+        saveCurrentOrderToLocalStorage(lastDraft.id);
+      }
+    }
+  }, []); // Exécuter seulement au montage
+
+  // Fonction pour sauvegarder immédiatement dans localStorage
+  const saveDraftOrdersToLocalStorage = (orders: any) => {
+    console.log('💾 Sauvegarde immédiate dans localStorage:', Object.keys(orders));
+    localStorage.setItem('draftOrders', JSON.stringify(orders));
+  };
+
+  // Fonction pour sauvegarder la commande active
+  const saveCurrentOrderToLocalStorage = (orderId: string | null) => {
+    console.log('💾 Sauvegarde commande active:', orderId);
+    if (orderId) {
+      localStorage.setItem('currentDraftOrder', orderId);
+    } else {
+      localStorage.removeItem('currentDraftOrder');
+    }
+  };
+
+  // Charger les produits depuis Supabase
+  useEffect(() => {
+    async function loadProducts() {
+      try {
+        setLoading(true);
+        setError(null);
+        
+        // D'abord, obtenir le nombre total de produits
+        const { count: totalCount, error: countError } = await supabase
+          .from('products')
+          .select('*', { count: 'exact', head: true })
+          .eq('is_active', true);
+          
+        if (countError) throw countError;
+        
+        console.log('📊 Nombre total de produits actifs dans Supabase:', totalCount);
+        setTotalProductsCount(totalCount);
+        
+        // Charger TOUS les produits par batch
+        let allProducts: Product[] = [];
+        const batchSize = 1000;
+        let currentBatch = 0;
+        
+        while (allProducts.length < (totalCount || 0)) {
+          const from = currentBatch * batchSize;
+          const to = from + batchSize - 1;
+          
+          console.log(`📦 Chargement batch ${currentBatch + 1}: produits ${from} à ${to}`);
+          
+          const { data, error } = await supabase
+            .from('products')
+            .select('*')
+            .eq('is_active', true)
+            .order('product_name')
+            .range(from, to);
+          
+          if (error) throw error;
+          
+          if (data && data.length > 0) {
+            allProducts = [...allProducts, ...data];
+            console.log(`✅ Batch chargé: ${data.length} produits (total chargé: ${allProducts.length}/${totalCount})`);
+          } else {
+            break; // Plus de données
+          }
+          
+          currentBatch++;
+          
+          // Sécurité
+          if (currentBatch > 50) {
+            console.warn('⚠️ Arrêt sécurité après 50 batchs');
+            break;
+          }
+        }
+        
+        console.log('🔍 TOUS les produits chargés:', allProducts.length, 'sur', totalCount, 'total');
+        console.log('📊 DEBUG: Taille du tableau reçu:', allProducts.length);
+        console.log('📊 DEBUG: Count exact Supabase:', totalCount);
+        setProducts(allProducts);
+      } catch (err) {
+        console.error('Erreur chargement produits:', err);
+        setError('Erreur lors du chargement des produits');
+        // Utiliser les données de démo en cas d'erreur
+        console.log('🔄 Utilisation des données de démo:', mockProducts.length, 'produits');
+        setProducts(mockProducts);
+        setTotalProductsCount(mockProducts.length);
+      } finally {
+        setLoading(false);
+      }
+    }
+    
+    loadProducts();
   }, []);
 
-  // Sauvegarder dans localStorage à chaque modification
-  useEffect(() => {
-    try {
-      localStorage.setItem('draftOrders', JSON.stringify(draftOrders));
-      if (currentDraftOrder) {
-        localStorage.setItem('currentDraftOrder', currentDraftOrder);
-      } else {
-        localStorage.removeItem('currentDraftOrder');
-      }
-    } catch (error) {
-      console.error('Erreur lors de la sauvegarde:', error);
-    }
-  }, [draftOrders, currentDraftOrder]);
+  // Extraire les valeurs uniques depuis les produits
+  const uniqueColors = useMemo(() => {
+    const colors = new Set(products.map(p => p.color).filter(Boolean));
+    return Array.from(colors).sort();
+  }, [products]);
 
-  // Filtres uniques
-  const manufacturers = Array.from(new Set(mockProducts.map(p => p.manufacturer)));
-  const appearances = Array.from(new Set(mockProducts.map(p => p.appearance)));
-  const functionalities = Array.from(new Set(mockProducts.map(p => p.functionality)));
-  const colors = Array.from(new Set(mockProducts.map(p => p.color)));
-  const boxedOptions = Array.from(new Set(mockProducts.map(p => p.boxed)));
+  // Fonction pour vérifier si un produit contient un manufacturer
+  const productContainsManufacturer = (productName: string, manufacturers: string[]) => {
+    return manufacturers.some(manufacturer => 
+      productName.toLowerCase().includes(manufacturer.toLowerCase())
+    );
+  };
 
-  // Filtrage et tri
+  // Filtrage et tri des produits
   const filteredAndSortedProducts = useMemo(() => {
-    let filtered = mockProducts.filter(product => {
-      const matchesSearch = product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                           product.sku.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                           product.manufacturer.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchesManufacturer = !selectedManufacturer || product.manufacturer === selectedManufacturer;
-      const matchesAppearance = !selectedAppearance || product.appearance === selectedAppearance;
-      const matchesFunctionality = !selectedFunctionality || product.functionality === selectedFunctionality;
-      const matchesColor = !selectedColor || product.color === selectedColor;
-      const matchesBoxed = !selectedBoxed || product.boxed === selectedBoxed;
+    let filtered = products.filter(product => {
+      // Recherche globale
+      const matchesSearch = !searchTerm || 
+        product.product_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        product.sku.toLowerCase().includes(searchTerm.toLowerCase());
+      
+      // Manufacturer (dans le nom du produit)
+      const matchesManufacturer = selectedManufacturers.length === 0 || 
+        productContainsManufacturer(product.product_name, selectedManufacturers);
+      
+      // Appearance
+      const matchesAppearance = selectedAppearances.length === 0 || 
+        selectedAppearances.includes(product.appearance);
+      
+      // Functionality
+      const matchesFunctionality = selectedFunctionalities.length === 0 || 
+        selectedFunctionalities.includes(product.functionality);
+      
+      // Color
+      const matchesColor = selectedColors.length === 0 || 
+        selectedColors.includes(product.color);
+      
+      // Boxed
+      const matchesBoxed = selectedBoxedOptions.length === 0 || 
+        selectedBoxedOptions.includes(product.boxed);
+      
+      // Additional Info
+      const matchesAdditionalInfo = selectedAdditionalInfo.length === 0 || 
+        (product.additional_info && selectedAdditionalInfo.includes(product.additional_info));
+      
+      // Prix
       const matchesPriceMin = !priceMin || product.price_dbc >= parseFloat(priceMin);
       const matchesPriceMax = !priceMax || product.price_dbc <= parseFloat(priceMax);
-      const matchesStockMin = !stockMin || product.stock >= parseInt(stockMin);
-      const matchesStockMax = !stockMax || product.stock <= parseInt(stockMax);
+      
+      // Quantité
+      const matchesQuantityMin = !quantityMin || product.quantity >= parseInt(quantityMin);
+      const matchesQuantityMax = !quantityMax || product.quantity <= parseInt(quantityMax);
       
       return matchesSearch && matchesManufacturer && matchesAppearance && 
              matchesFunctionality && matchesColor && matchesBoxed &&
-             matchesPriceMin && matchesPriceMax && matchesStockMin && matchesStockMax;
+             matchesAdditionalInfo && matchesPriceMin && matchesPriceMax && 
+             matchesQuantityMin && matchesQuantityMax;
     });
 
     // Tri
@@ -252,8 +407,9 @@ export default function CatalogPage() {
     });
 
     return filtered;
-  }, [searchTerm, selectedManufacturer, selectedAppearance, selectedFunctionality, 
-      selectedColor, selectedBoxed, priceMin, priceMax, stockMin, stockMax, sortField, sortDirection]);
+  }, [searchTerm, selectedManufacturers, selectedAppearances, selectedFunctionalities, 
+      selectedColors, selectedBoxedOptions, selectedAdditionalInfo, priceMin, priceMax, 
+      quantityMin, quantityMax, sortField, sortDirection, products]);
 
   // Pagination
   const totalPages = Math.ceil(filteredAndSortedProducts.length / itemsPerPage);
@@ -262,6 +418,16 @@ export default function CatalogPage() {
     currentPage * itemsPerPage
   );
 
+  // Gestion des filtres multi-sélection
+  const toggleFilter = (value: string, currentValues: string[], setter: (values: string[]) => void) => {
+    if (currentValues.includes(value)) {
+      setter(currentValues.filter(v => v !== value));
+    } else {
+      setter([...currentValues, value]);
+    }
+  };
+
+  // Gestion du tri
   const handleSort = (field: SortField) => {
     if (sortField === field) {
       setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
@@ -271,48 +437,149 @@ export default function CatalogPage() {
     }
   };
 
-  // Checkbox = ajouter tout le stock disponible
-  const toggleProductSelection = (sku: string) => {
-    const product = mockProducts.find(p => p.sku === sku);
-    if (product) {
-      setSelectedProducts(prev => ({ ...prev, [sku]: true }));
-      addToCartWithQuantity(sku, product.stock, true); // true = remplacer par tout le stock
+  // Fonction pour gérer l'ouverture/fermeture des dropdowns
+  const toggleDropdown = (key: string) => {
+    setDropdownOpen(prev => ({
+      ...prev,
+      [key]: !prev[key]
+    }));
+  };
+
+  const handleMouseEnterDropdown = (key: string) => {
+    if (closeTimeout) {
+      clearTimeout(closeTimeout);
+      setCloseTimeout(null);
     }
   };
 
-  const selectAllProducts = () => {
-    const newSelected: {[key: string]: boolean} = {};
-    paginatedProducts.forEach(product => {
-      newSelected[product.sku] = true;
-      addToCartWithQuantity(product.sku, product.stock, true); // true = remplacer par tout le stock
-    });
-    setSelectedProducts(prev => ({ ...prev, ...newSelected }));
+  const handleMouseLeaveDropdown = (key: string) => {
+    const timeout = setTimeout(() => {
+      setDropdownOpen(prev => ({
+        ...prev,
+        [key]: false
+      }));
+    }, 200); // 200ms de délai
+    setCloseTimeout(timeout);
   };
 
+  // Fermer tous les dropdowns quand on clique ailleurs
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Element;
+      // Ne fermer que si on clique en dehors des dropdowns
+      if (!target.closest('.dropdown-container')) {
+        setDropdownOpen({
+          manufacturer: false,
+          appearance: false,
+          functionality: false,
+          boxed: false,
+          additionalInfo: false,
+          color: false
+        });
+      }
+    };
+    
+    document.addEventListener('click', handleClickOutside);
+    return () => document.removeEventListener('click', handleClickOutside);
+  }, []);
+
+  // Gestion du panier - CORRIGÉ selon feedback
   const updateQuantity = (sku: string, value: string) => {
     if (value === '' || (parseInt(value) >= 1)) {
-      setQuantities(prev => ({ ...prev, [sku]: value === '' ? '' : parseInt(value) }));
+      const newQuantity = value === '' ? '' : parseInt(value);
+      setQuantities(prev => ({ ...prev, [sku]: newQuantity }));
+      
+      // Mettre à jour aussi dans la commande actuelle si elle existe
+      if (currentDraftOrder && newQuantity !== '') {
+        const newDraftOrders = {
+          ...draftOrders,
+          [currentDraftOrder]: {
+            ...draftOrders[currentDraftOrder],
+            items: {
+              ...draftOrders[currentDraftOrder]?.items,
+              [sku]: newQuantity
+            }
+          }
+        };
+        setDraftOrders(newDraftOrders);
+        
+        // Sauvegarder immédiatement
+        saveDraftOrdersToLocalStorage(newDraftOrders);
+      }
     }
   };
 
   const addToCart = (sku: string) => {
-    const quantity = quantities[sku];
-    const finalQuantity = (quantity === '' || quantity === undefined) ? 1 : (typeof quantity === 'string' ? parseInt(quantity) || 1 : quantity);
-    addToCartWithQuantity(sku, finalQuantity, false);
+    // Le bouton ajouter incrémente de 1
+    const currentQuantity = quantities[sku] || 0;
+    const newQuantity = typeof currentQuantity === 'string' ? parseInt(currentQuantity) + 1 : currentQuantity + 1;
+    addToCartWithQuantity(sku, newQuantity, true); // Replace avec la nouvelle quantité
   };
 
   const addToCartWithQuantity = (sku: string, quantity: number, replace: boolean = false) => {
-    // Si pas de commande brouillon active, ouvrir la popup
+    console.log('🛒 ADD TO CART WITH QUANTITY');
+    console.log('SKU:', sku, 'Quantity:', quantity, 'Replace:', replace);
+    console.log('Current draft order AVANT:', currentDraftOrder);
+    console.log('Draft orders AVANT:', Object.keys(draftOrders));
+    
+    // Si pas de commande active, chercher d'abord s'il y a une commande brouillon existante
     if (!currentDraftOrder) {
+      console.log('🔍 Pas de commande active, recherche...');
+      
+      // Chercher une commande brouillon existante
+      const existingDrafts = Object.values(draftOrders).filter((order: any) => order.status === 'draft');
+      console.log('Commandes brouillon trouvées:', existingDrafts.length);
+      
+      if (existingDrafts.length > 0) {
+        // Utiliser la dernière commande brouillon
+        const lastDraft = existingDrafts.sort((a: any, b: any) => 
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        )[0] as any;
+        
+        console.log('✅ Commande brouillon réactivée:', lastDraft.id);
+        setCurrentDraftOrder(lastDraft.id);
+        saveCurrentOrderToLocalStorage(lastDraft.id);
+        
+        // Continuer avec cette commande
+        const currentQuantity = lastDraft.items?.[sku] || 0;
+        const newQuantity = replace ? quantity : currentQuantity + quantity;
+        
+        console.log('Quantité actuelle:', currentQuantity, '→ Nouvelle quantité:', newQuantity);
+        
+        const newDraftOrders = {
+          ...draftOrders,
+          [lastDraft.id]: {
+            ...lastDraft,
+            items: {
+              ...lastDraft.items,
+              [sku]: newQuantity
+            }
+          }
+        };
+        
+        setDraftOrders(newDraftOrders);
+        setQuantities(prev => ({ ...prev, [sku]: newQuantity }));
+        setSelectedProducts(prev => ({ ...prev, [sku]: true }));
+        
+        // Sauvegarder immédiatement
+        saveDraftOrdersToLocalStorage(newDraftOrders);
+        
+        console.log('✅ Produit ajouté à la commande existante');
+        return;
+      }
+      
+      console.log('🆕 Aucune commande brouillon, demande de nom');
+      // Si vraiment aucune commande brouillon, alors demander un nom
       setShowOrderNamePopup(true);
-      // Stocker temporairement le produit à ajouter
       sessionStorage.setItem('pendingProduct', JSON.stringify({ sku, quantity, replace }));
       return;
     }
 
-    // Ajouter à la commande brouillon existante
+    console.log('🎯 Commande active trouvée:', currentDraftOrder);
     const currentQuantity = draftOrders[currentDraftOrder]?.items?.[sku] || 0;
     const newQuantity = replace ? quantity : currentQuantity + quantity;
+    
+    console.log('Quantité actuelle:', currentQuantity, '→ Nouvelle quantité:', newQuantity);
     
     const newDraftOrders = {
       ...draftOrders,
@@ -325,16 +592,23 @@ export default function CatalogPage() {
       }
     };
     
+    console.log('Draft orders APRÈS:', Object.keys(newDraftOrders));
+    
     setDraftOrders(newDraftOrders);
+    setQuantities(prev => ({ ...prev, [sku]: newQuantity }));
+    
+    // Mettre à jour visuellement la case cochée
+    setSelectedProducts(prev => ({ ...prev, [sku]: true }));
+    
+    // Sauvegarder immédiatement
+    saveDraftOrdersToLocalStorage(newDraftOrders);
+    
+    console.log('✅ Produit ajouté à la commande active');
+  };
 
-    // Mettre à jour les quantités affichées pour refléter ce qui est dans la commande
-    setQuantities(prev => ({
-      ...prev,
-      [sku]: newQuantity
-    }));
-
-    // Décocher la case si elle était cochée
-    setSelectedProducts(prev => ({ ...prev, [sku]: false }));
+  // Fonction pour sélectionner toute la quantité disponible (case à cocher)
+  const selectFullQuantity = (sku: string, productQuantity: number) => {
+    addToCartWithQuantity(sku, productQuantity, true); // Replace avec toute la quantité
   };
 
   const createNewOrder = () => {
@@ -351,63 +625,97 @@ export default function CatalogPage() {
     };
 
     const newDraftOrders = { ...draftOrders, [orderId]: newOrder };
+    
     setDraftOrders(newDraftOrders);
     setCurrentDraftOrder(orderId);
     setShowOrderNamePopup(false);
     setOrderName('');
+    
+    // Sauvegarder immédiatement
+    saveDraftOrdersToLocalStorage(newDraftOrders);
+    saveCurrentOrderToLocalStorage(orderId);
 
-    // Ajouter le produit en attente s'il y en a un
+    // Traiter le produit en attente
     const pendingProduct = sessionStorage.getItem('pendingProduct');
+    
     if (pendingProduct) {
       const { sku, quantity, replace } = JSON.parse(pendingProduct);
+      
       newDraftOrders[orderId].items = { [sku]: quantity };
       setDraftOrders(newDraftOrders);
       setQuantities(prev => ({ ...prev, [sku]: quantity }));
+      setSelectedProducts(prev => ({ ...prev, [sku]: true }));
       sessionStorage.removeItem('pendingProduct');
-      // Décocher la case
-      setSelectedProducts(prev => ({ ...prev, [sku]: false }));
+      
+      // Sauvegarder encore avec le produit ajouté
+      saveDraftOrdersToLocalStorage(newDraftOrders);
     }
-  };
-
-  const exportToExcel = () => {
-    const dataToExport = filteredAndSortedProducts;
-    
-    // Simulation d'export Excel
-    console.log('Export Excel:', dataToExport);
-    alert(`Export de ${dataToExport.length} produits en cours...`);
   };
 
   const getTotalCartItems = () => {
     if (!currentDraftOrder || !draftOrders[currentDraftOrder]) return 0;
-    return Object.values(draftOrders[currentDraftOrder].items || {}).reduce((sum: number, qty: any) => sum + qty, 0);
+    const items = draftOrders[currentDraftOrder].items || {};
+    return Object.values(items).reduce((sum: number, qty: any) => sum + (typeof qty === 'number' ? qty : 0), 0);
+  };
+
+  const getTotalCartAmount = () => {
+    if (!currentDraftOrder || !draftOrders[currentDraftOrder]) return 0;
+    const items = draftOrders[currentDraftOrder].items || {};
+    return Object.entries(items).reduce((sum: number, [sku, qty]: [string, any]) => {
+      const product = products.find(p => p.sku === sku);
+      const quantity = typeof qty === 'number' ? qty : 0;
+      return sum + (product ? product.price_dbc * quantity : 0);
+    }, 0);
   };
 
   const resetFilters = () => {
     setSearchTerm('');
-    setSelectedManufacturer('');
-    setSelectedAppearance('');
-    setSelectedFunctionality('');
-    setSelectedColor('');
-    setSelectedBoxed('');
+    setSelectedManufacturers([]);
+    setSelectedAppearances([]);
+    setSelectedFunctionalities([]);
+    setSelectedColors([]);
+    setSelectedBoxedOptions([]);
+    setSelectedAdditionalInfo([]);
     setPriceMin('');
     setPriceMax('');
-    setStockMin('');
-    setStockMax('');
+    setQuantityMin('');
+    setQuantityMax('');
     setCurrentPage(1);
+    
+    console.log('Filtres réinitialisés');
   };
+
+  // Synchroniser les cases à cocher avec la commande active
+  useEffect(() => {
+    if (currentDraftOrder && draftOrders[currentDraftOrder]) {
+      const items = draftOrders[currentDraftOrder].items || {};
+      console.log('🔄 Synchronisation - Items:', Object.keys(items).length, 'produits');
+      
+      const newSelectedProducts: {[key: string]: boolean} = {};
+      
+      // Pour chaque produit du catalogue, vérifier s'il est sélectionné
+      products.forEach(product => {
+        const quantityInCart = items[product.sku] || 0;
+        // Case cochée SEULEMENT si on a TOUTE la quantité disponible
+        newSelectedProducts[product.sku] = quantityInCart === product.quantity && quantityInCart > 0;
+      });
+      
+      setSelectedProducts(newSelectedProducts);
+    } else {
+      console.log('🔄 Synchronisation - Pas de commande active');
+      setSelectedProducts({});
+    }
+  }, [currentDraftOrder, draftOrders, products]);
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header avec branding DBC */}
-      <header className="bg-dbc-dark-green shadow-sm border-b">
+      {/* Header */}
+      <header className="bg-dbc-dark-green shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center space-x-4">
-              {/* Logo DBC stylisé */}
-              <div className="flex items-center space-x-2">
-                <DBCLogo />
-                <h1 className="text-xl font-bold text-white">DBC Electronics</h1>
-              </div>
+              <DBCLogo className="h-8 w-8" />
+              <h1 className="text-xl font-semibold text-white">DBC B2B Platform</h1>
             </div>
             
             <div className="flex items-center space-x-4">
@@ -416,17 +724,19 @@ export default function CatalogPage() {
                 className="relative hover:text-dbc-bright-green transition-colors"
               >
                 <ShoppingCart className="h-6 w-6 text-white" />
-                {getTotalCartItems() > 0 && (
+                {isClient && getTotalCartItems() > 0 && (
                   <span className="absolute -top-2 -right-2 bg-dbc-light-green text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">
                     {getTotalCartItems()}
                   </span>
                 )}
               </button>
 
-              {/* Affichage commande active */}
               {currentDraftOrder && draftOrders[currentDraftOrder] && (
                 <div className="text-white text-sm">
                   <span className="text-dbc-bright-green">Commande:</span> {draftOrders[currentDraftOrder].name}
+                  <div className="text-xs text-dbc-bright-green">
+                    {getTotalCartItems()} article{getTotalCartItems() > 1 ? 's' : ''} • {getTotalCartAmount().toFixed(2)}€
+                  </div>
                 </div>
               )}
               
@@ -446,32 +756,30 @@ export default function CatalogPage() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         {/* Barre d'outils principale */}
         <div className="bg-white rounded-lg shadow-sm border p-6 mb-6">
+          {/* Recherche et actions */}
           <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-6">
-            {/* Recherche globale */}
             <div className="flex-1 max-w-md">
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
                 <input
                   type="text"
-                  placeholder="Rechercher par nom, SKU, marque..."
+                  placeholder="Rechercher par nom, SKU..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-dbc-light-green focus:border-transparent"
+                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-dbc-light-green focus:border-transparent text-gray-900"
                 />
               </div>
             </div>
             
-            {/* Actions */}
             <div className="flex items-center space-x-3">
               <button
                 onClick={resetFilters}
-                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 text-sm"
+                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 text-sm text-gray-700"
               >
-                Réinitialiser
+                Réinitialiser filtres
               </button>
               
               <button
-                onClick={exportToExcel}
                 className="flex items-center space-x-2 px-4 py-2 bg-dbc-light-green text-white rounded-lg hover:bg-green-600 text-sm"
               >
                 <FileSpreadsheet className="h-4 w-4" />
@@ -480,366 +788,533 @@ export default function CatalogPage() {
             </div>
           </div>
 
-          {/* Filtres avancés */}
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Marque</label>
+          {/* Pagination en haut */}
+          <div className="flex items-center justify-between mb-6 pb-4 border-b border-gray-200">
+            <div className="flex items-center space-x-4">
+              <div className="text-sm text-gray-700">
+                <span className="font-semibold text-lg">{filteredAndSortedProducts.length.toLocaleString('fr-FR')}</span> produits affichés
+                {totalProductsCount && filteredAndSortedProducts.length !== totalProductsCount && (
+                  <span className="text-gray-500">
+                    {' '}(filtrés sur <span className="font-medium">{totalProductsCount.toLocaleString('fr-FR')}</span> total)
+                  </span>
+                )}
+                {(selectedManufacturers.length > 0 || selectedAppearances.length > 0 || searchTerm) && (
+                  <div className="text-xs text-amber-600 mt-1">
+                    ⚠️ Filtres actifs - {products.length - filteredAndSortedProducts.length} produits masqués
+                  </div>
+                )}
+              </div>
               <select
-                value={selectedManufacturer}
-                onChange={(e) => setSelectedManufacturer(e.target.value)}
-                className="w-full text-sm border border-gray-300 rounded px-2 py-1 focus:ring-1 focus:ring-dbc-light-green focus:border-transparent"
+                value={itemsPerPage}
+                onChange={(e) => {
+                  setItemsPerPage(Number(e.target.value));
+                  setCurrentPage(1);
+                }}
+                className="text-sm border border-gray-300 rounded px-2 py-1 text-gray-900"
               >
-                <option value="">Toutes</option>
-                {manufacturers.map(manufacturer => (
-                  <option key={manufacturer} value={manufacturer}>{manufacturer}</option>
-                ))}
+                <option value={100}>100 par page</option>
+                <option value={250}>250 par page</option>
+                <option value={500}>500 par page</option>
+                <option value={1000}>1000 par page</option>
               </select>
             </div>
             
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Apparence</label>
-              <select
-                value={selectedAppearance}
-                onChange={(e) => setSelectedAppearance(e.target.value)}
-                className="w-full text-sm border border-gray-300 rounded px-2 py-1 focus:ring-1 focus:ring-dbc-light-green focus:border-transparent"
-              >
-                <option value="">Toutes</option>
-                {appearances.map(appearance => (
-                  <option key={appearance} value={appearance}>{appearance}</option>
-                ))}
-              </select>
-            </div>
-            
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Fonctionnalité</label>
-              <select
-                value={selectedFunctionality}
-                onChange={(e) => setSelectedFunctionality(e.target.value)}
-                className="w-full text-sm border border-gray-300 rounded px-2 py-1 focus:ring-1 focus:ring-dbc-light-green focus:border-transparent"
-              >
-                <option value="">Toutes</option>
-                {functionalities.map(functionality => (
-                  <option key={functionality} value={functionality}>{functionality}</option>
-                ))}
-              </select>
-            </div>
-            
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Couleur</label>
-              <select
-                value={selectedColor}
-                onChange={(e) => setSelectedColor(e.target.value)}
-                className="w-full text-sm border border-gray-300 rounded px-2 py-1 focus:ring-1 focus:ring-dbc-light-green focus:border-transparent"
-              >
-                <option value="">Toutes</option>
-                {colors.map(color => (
-                  <option key={color} value={color}>{color}</option>
-                ))}
-              </select>
-            </div>
-            
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Prix min</label>
-              <input
-                type="number"
-                placeholder="0"
-                value={priceMin}
-                onChange={(e) => setPriceMin(e.target.value)}
-                className="w-full text-sm border border-gray-300 rounded px-2 py-1 focus:ring-1 focus:ring-dbc-light-green focus:border-transparent"
-              />
-            </div>
-            
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Prix max</label>
-              <input
-                type="number"
-                placeholder="9999"
-                value={priceMax}
-                onChange={(e) => setPriceMax(e.target.value)}
-                className="w-full text-sm border border-gray-300 rounded px-2 py-1 focus:ring-1 focus:ring-dbc-light-green focus:border-transparent"
-              />
-            </div>
+            {/* Navigation des pages */}
+            {totalPages > 1 && (
+              <div className="flex items-center space-x-2">
+                <button
+                  onClick={() => setCurrentPage(1)}
+                  disabled={currentPage === 1}
+                  className="px-3 py-1 text-sm border border-gray-300 rounded disabled:bg-gray-100 disabled:text-gray-400 text-gray-700 hover:bg-gray-50"
+                >
+                  Premier
+                </button>
+                <button
+                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                  disabled={currentPage === 1}
+                  className="px-3 py-1 text-sm border border-gray-300 rounded disabled:bg-gray-100 disabled:text-gray-400 text-gray-700 hover:bg-gray-50"
+                >
+                  ←
+                </button>
+                <span className="px-3 py-1 text-sm text-gray-700">
+                  Page {currentPage} sur {totalPages}
+                </span>
+                <button
+                  onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                  disabled={currentPage === totalPages}
+                  className="px-3 py-1 text-sm border border-gray-300 rounded disabled:bg-gray-100 disabled:text-gray-400 text-gray-700 hover:bg-gray-50"
+                >
+                  →
+                </button>
+                <button
+                  onClick={() => setCurrentPage(totalPages)}
+                  disabled={currentPage === totalPages}
+                  className="px-3 py-1 text-sm border border-gray-300 rounded disabled:bg-gray-100 disabled:text-gray-400 text-gray-700 hover:bg-gray-50"
+                >
+                  Dernier
+                </button>
+              </div>
+            )}
           </div>
-        </div>
 
-        {/* Résultats et pagination */}
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center space-x-4">
-            <p className="text-sm text-gray-600">
-              {filteredAndSortedProducts.length} produit{filteredAndSortedProducts.length > 1 ? 's' : ''} trouvé{filteredAndSortedProducts.length > 1 ? 's' : ''}
-            </p>
-          </div>
-          
-          <div className="flex items-center space-x-2">
-            <span className="text-sm text-gray-600">Afficher:</span>
-            <select
-              value={itemsPerPage}
-              onChange={(e) => setItemsPerPage(parseInt(e.target.value))}
-              className="text-sm border border-gray-300 rounded px-2 py-1"
+          {/* Filtres avancés avec dropdowns cliquables */}
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
+            {/* Manufacturer - Fixé */}
+            <div 
+              className="relative dropdown-container"
+              onMouseEnter={() => handleMouseEnterDropdown('manufacturer')}
+              onMouseLeave={() => handleMouseLeaveDropdown('manufacturer')}
             >
-              <option value={10}>10</option>
-              <option value={20}>20</option>
-              <option value={50}>50</option>
-              <option value={100}>100</option>
-            </select>
-            <span className="text-sm text-gray-600">par page</span>
+              <label className="block text-sm font-medium text-gray-900 mb-2">Manufacturer</label>
+              <div className="relative">
+                <div 
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    toggleDropdown('manufacturer');
+                  }}
+                  className="text-sm border border-gray-300 rounded-lg px-3 py-2 cursor-pointer hover:border-gray-400 bg-white text-gray-900 flex items-center justify-between"
+                >
+                  <span>
+                    {selectedManufacturers.length === 0 ? 'Tous' : `${selectedManufacturers.length} sélectionné(s)`}
+                  </span>
+                  <ChevronDown className="h-4 w-4 text-gray-500" />
+                </div>
+                {dropdownOpen.manufacturer && (
+                  <div className="absolute z-20 mt-1 w-full bg-white border border-gray-300 rounded-lg shadow-lg">
+                    <div className="max-h-60 overflow-y-auto">
+                      {MANUFACTURERS.map(manufacturer => (
+                        <label key={manufacturer} className="flex items-center px-3 py-2 hover:bg-gray-50 cursor-pointer text-gray-900">
+                          <input
+                            type="checkbox"
+                            checked={selectedManufacturers.includes(manufacturer)}
+                            onChange={(e) => {
+                              e.stopPropagation();
+                              toggleFilter(manufacturer, selectedManufacturers, setSelectedManufacturers);
+                            }}
+                            className="mr-2 text-dbc-light-green focus:ring-dbc-light-green"
+                          />
+                          <span className="text-sm">{manufacturer}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Appearance */}
+            <div 
+              className="relative dropdown-container"
+              onMouseEnter={() => handleMouseEnterDropdown('appearance')}
+              onMouseLeave={() => handleMouseLeaveDropdown('appearance')}
+            >
+              <label className="block text-sm font-medium text-gray-900 mb-2">Appearance</label>
+              <div className="relative">
+                <div 
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    toggleDropdown('appearance');
+                  }}
+                  className="text-sm border border-gray-300 rounded-lg px-3 py-2 cursor-pointer hover:border-gray-400 bg-white text-gray-900 flex items-center justify-between"
+                >
+                  <span>
+                    {selectedAppearances.length === 0 ? 'Tous' : `${selectedAppearances.length} sélectionné(s)`}
+                  </span>
+                  <ChevronDown className="h-4 w-4 text-gray-500" />
+                </div>
+                {dropdownOpen.appearance && (
+                  <div className="absolute z-20 mt-1 w-full bg-white border border-gray-300 rounded-lg shadow-lg">
+                    <div className="max-h-60 overflow-y-auto">
+                      {APPEARANCES.map(appearance => (
+                        <label key={appearance} className="flex items-center px-3 py-2 hover:bg-gray-50 cursor-pointer text-gray-900">
+                          <input
+                            type="checkbox"
+                            checked={selectedAppearances.includes(appearance)}
+                            onChange={(e) => {
+                              e.stopPropagation();
+                              toggleFilter(appearance, selectedAppearances, setSelectedAppearances);
+                            }}
+                            className="mr-2 text-dbc-light-green focus:ring-dbc-light-green"
+                          />
+                          <span className="text-sm">{appearance}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Functionality */}
+            <div 
+              className="relative dropdown-container"
+              onMouseEnter={() => handleMouseEnterDropdown('functionality')}
+              onMouseLeave={() => handleMouseLeaveDropdown('functionality')}
+            >
+              <label className="block text-sm font-medium text-gray-900 mb-2">Functionality</label>
+              <div className="relative">
+                <div 
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    toggleDropdown('functionality');
+                  }}
+                  className="text-sm border border-gray-300 rounded-lg px-3 py-2 cursor-pointer hover:border-gray-400 bg-white text-gray-900 flex items-center justify-between"
+                >
+                  <span>
+                    {selectedFunctionalities.length === 0 ? 'Tous' : `${selectedFunctionalities.length} sélectionné(s)`}
+                  </span>
+                  <ChevronDown className="h-4 w-4 text-gray-500" />
+                </div>
+                {dropdownOpen.functionality && (
+                  <div className="absolute z-20 mt-1 w-full bg-white border border-gray-300 rounded-lg shadow-lg">
+                    {FUNCTIONALITIES.map(functionality => (
+                      <label key={functionality} className="flex items-center px-3 py-2 hover:bg-gray-50 cursor-pointer text-gray-900">
+                        <input
+                          type="checkbox"
+                          checked={selectedFunctionalities.includes(functionality)}
+                          onChange={(e) => {
+                            e.stopPropagation();
+                            toggleFilter(functionality, selectedFunctionalities, setSelectedFunctionalities);
+                          }}
+                          className="mr-2 text-dbc-light-green focus:ring-dbc-light-green"
+                        />
+                        <span className="text-sm">{functionality}</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Boxed */}
+            <div 
+              className="relative dropdown-container"
+              onMouseEnter={() => handleMouseEnterDropdown('boxed')}
+              onMouseLeave={() => handleMouseLeaveDropdown('boxed')}
+            >
+              <label className="block text-sm font-medium text-gray-900 mb-2">Boxed</label>
+              <div className="relative">
+                <div 
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    toggleDropdown('boxed');
+                  }}
+                  className="text-sm border border-gray-300 rounded-lg px-3 py-2 cursor-pointer hover:border-gray-400 bg-white text-gray-900 flex items-center justify-between"
+                >
+                  <span>
+                    {selectedBoxedOptions.length === 0 ? 'Tous' : `${selectedBoxedOptions.length} sélectionné(s)`}
+                  </span>
+                  <ChevronDown className="h-4 w-4 text-gray-500" />
+                </div>
+                {dropdownOpen.boxed && (
+                  <div className="absolute z-20 mt-1 w-full bg-white border border-gray-300 rounded-lg shadow-lg">
+                    {BOXED_OPTIONS.map(boxed => (
+                      <label key={boxed} className="flex items-center px-3 py-2 hover:bg-gray-50 cursor-pointer text-gray-900">
+                        <input
+                          type="checkbox"
+                          checked={selectedBoxedOptions.includes(boxed)}
+                          onChange={(e) => {
+                            e.stopPropagation();
+                            toggleFilter(boxed, selectedBoxedOptions, setSelectedBoxedOptions);
+                          }}
+                          className="mr-2 text-dbc-light-green focus:ring-dbc-light-green"
+                        />
+                        <span className="text-sm">{boxed}</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Filtres de prix et quantité avec de meilleures couleurs */}
+            <div className="col-span-2 md:col-span-1">
+              <label className="block text-sm font-medium text-gray-900 mb-2">Price</label>
+              <div className="flex space-x-2">
+                <input
+                  type="number"
+                  placeholder="From"
+                  value={priceMin}
+                  onChange={(e) => setPriceMin(e.target.value)}
+                  className="w-full text-sm border border-gray-300 rounded px-2 py-1 text-gray-900 focus:ring-2 focus:ring-dbc-light-green focus:border-transparent"
+                />
+                <input
+                  type="number"
+                  placeholder="To"
+                  value={priceMax}
+                  onChange={(e) => setPriceMax(e.target.value)}
+                  className="w-full text-sm border border-gray-300 rounded px-2 py-1 text-gray-900 focus:ring-2 focus:ring-dbc-light-green focus:border-transparent"
+                />
+              </div>
+            </div>
+
+            <div className="col-span-2 md:col-span-1">
+              <label className="block text-sm font-medium text-gray-900 mb-2">Quantity</label>
+              <div className="flex space-x-2">
+                <input
+                  type="number"
+                  placeholder="From"
+                  value={quantityMin}
+                  onChange={(e) => setQuantityMin(e.target.value)}
+                  className="w-full text-sm border border-gray-300 rounded px-2 py-1 text-gray-900 focus:ring-2 focus:ring-dbc-light-green focus:border-transparent"
+                />
+                <input
+                  type="number"
+                  placeholder="To"
+                  value={quantityMax}
+                  onChange={(e) => setQuantityMax(e.target.value)}
+                  className="w-full text-sm border border-gray-300 rounded px-2 py-1 text-gray-900 focus:ring-2 focus:ring-dbc-light-green focus:border-transparent"
+                />
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* Tableau des produits */}
-        <div className="bg-white rounded-lg shadow-sm border overflow-hidden">
-          <div className="w-full">
-            <table className="w-full table-fixed">
-              <thead className="bg-gray-50 border-b">
+        {/* Tableau des produits avec pagination en bas aussi */}
+        <div className="bg-white rounded-lg shadow-sm border">
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
                 <tr>
-                  <th className="w-10 px-2 py-3 text-left">
-                    <input
-                      type="checkbox"
-                      onChange={selectAllProducts}
-                      className="rounded border-gray-300 text-dbc-light-green focus:ring-dbc-light-green"
-                      title="Ajouter tout le stock de tous les produits de cette page"
-                    />
+                  <th className="w-10 px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <input type="checkbox" className="rounded border-gray-300" />
                   </th>
-                  <th 
-                    className="w-24 px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                    onClick={() => handleSort('sku')}
-                  >
-                    <div className="flex items-center space-x-1">
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <button onClick={() => handleSort('sku')} className="flex items-center space-x-1">
                       <span>SKU</span>
                       <ArrowUpDown className="h-3 w-3" />
-                    </div>
+                    </button>
                   </th>
-                  <th 
-                    className="w-40 px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                    onClick={() => handleSort('name')}
-                  >
-                    <div className="flex items-center space-x-1">
-                      <span>Produit</span>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <button onClick={() => handleSort('product_name')} className="flex items-center space-x-1">
+                      <span>Nom</span>
                       <ArrowUpDown className="h-3 w-3" />
-                    </div>
+                    </button>
                   </th>
-                  <th 
-                    className="w-20 px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                    onClick={() => handleSort('manufacturer')}
-                  >
-                    <div className="flex items-center space-x-1">
-                      <span>Marque</span>
-                      <ArrowUpDown className="h-3 w-3" />
-                    </div>
-                  </th>
-                  <th className="w-20 px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Grade</th>
-                  <th className="w-24 px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">État</th>
-                  <th className="w-20 px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Couleur</th>
-                  <th className="w-20 px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Emb.</th>
-                  <th className="w-32 px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Info</th>
-                  <th 
-                    className="w-16 px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                    onClick={() => handleSort('stock')}
-                  >
-                    <div className="flex items-center space-x-1">
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Marque</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Apparence</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fonction.</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Couleur</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Emballage</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Info</th>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <button onClick={() => handleSort('quantity')} className="flex items-center space-x-1 ml-auto">
                       <span>Stock</span>
                       <ArrowUpDown className="h-3 w-3" />
-                    </div>
+                    </button>
                   </th>
-                  <th 
-                    className="w-20 px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                    onClick={() => handleSort('price_dbc')}
-                  >
-                    <div className="flex items-center space-x-1">
-                      <span>Prix</span>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <button onClick={() => handleSort('price_dbc')} className="flex items-center space-x-1 ml-auto">
+                      <span>Prix DBC</span>
                       <ArrowUpDown className="h-3 w-3" />
-                    </div>
+                    </button>
                   </th>
-                  <th className="w-16 px-2 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Qté</th>
-                  <th className="w-24 px-2 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Quantité</th>
+                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Action</th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {paginatedProducts.map((product) => (
-                  <tr key={product.sku} className="hover:bg-gray-50">
-                    <td className="px-2 py-2">
-                      <input
-                        type="checkbox"
-                        checked={selectedProducts[product.sku] || false}
-                        onChange={() => toggleProductSelection(product.sku)}
-                        className="rounded border-gray-300 text-dbc-light-green focus:ring-dbc-light-green"
-                        title={`Ajouter tout le stock (${product.stock}) de ce produit à la commande`}
-                      />
-                    </td>
-                    <td className="px-2 py-2 text-xs font-mono text-gray-900 truncate" title={product.sku}>
-                      {product.sku}
-                    </td>
-                    <td className="px-2 py-2 text-xs text-gray-900 font-medium truncate" title={product.name}>
-                      {product.name}
-                    </td>
-                    <td className="px-2 py-2 text-xs text-gray-900">{product.manufacturer}</td>
-                    <td className="px-2 py-2">
-                      <span className={`inline-flex px-1 py-0.5 text-xs font-medium rounded ${
-                        product.appearance === 'Grade A+' ? 'bg-green-100 text-green-800' :
-                        product.appearance === 'Grade A' ? 'bg-blue-100 text-blue-800' :
-                        'bg-yellow-100 text-yellow-800'
-                      }`}>
-                        {product.appearance.replace('Grade ', '')}
-                      </span>
-                    </td>
-                    <td className="px-2 py-2">
-                      <span className="inline-flex px-1 py-0.5 text-xs font-medium rounded bg-green-100 text-green-800">
-                        {product.functionality}
-                      </span>
-                    </td>
-                    <td className="px-2 py-2 text-xs text-gray-900">
-                      <div className="flex items-center space-x-1">
-                        <div className={`w-2 h-2 rounded-full border ${
-                          product.color.toLowerCase().includes('black') ? 'bg-black' :
-                          product.color.toLowerCase().includes('white') ? 'bg-white border-gray-300' :
-                          product.color.toLowerCase().includes('blue') ? 'bg-blue-500' :
-                          product.color.toLowerCase().includes('red') ? 'bg-red-500' :
-                          product.color.toLowerCase().includes('gray') ? 'bg-gray-500' :
-                          product.color.toLowerCase().includes('silver') ? 'bg-gray-300' :
-                          'bg-gray-400'
-                        }`}></div>
-                        <span className="truncate">{product.color}</span>
-                      </div>
-                    </td>
-                    <td className="px-2 py-2 text-xs text-gray-900">{product.boxed}</td>
-                    <td className="px-2 py-2 text-xs text-gray-600 truncate" title={product.additional_info}>
-                      {product.additional_info}
-                    </td>
-                    <td className="px-2 py-2 text-xs text-gray-900">
-                      <span className={`font-medium ${product.stock < 10 ? 'text-red-600' : 'text-gray-900'}`}>
-                        {product.stock}
-                      </span>
-                    </td>
-                    <td className="px-2 py-2 text-xs font-semibold text-gray-900 whitespace-nowrap">
-                      {product.price_dbc.toFixed(2)}€
-                    </td>
-                    <td className="px-2 py-2">
-                      <input
-                        type="number"
-                        min="1"
-                        max={product.stock}
-                        value={quantities[product.sku] || ''}
-                        placeholder="1"
-                        onChange={(e) => updateQuantity(product.sku, e.target.value)}
-                        className="w-12 text-xs text-center text-gray-900 border-2 border-gray-400 rounded px-1 py-1 bg-white focus:ring-2 focus:ring-dbc-light-green focus:border-dbc-light-green placeholder-gray-400"
-                      />
-                    </td>
-                    <td className="px-2 py-2 text-center">
-                      <button
-                        onClick={() => addToCart(product.sku)}
-                        className="inline-flex items-center px-2 py-1 border border-transparent text-xs font-medium rounded text-white bg-dbc-light-green hover:bg-green-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-dbc-light-green"
-                      >
-                        <Plus className="h-3 w-3 mr-1" />
-                        Ajouter
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                {paginatedProducts.map((product) => {
+                  const manufacturer = MANUFACTURERS.find(m => 
+                    product.product_name.toLowerCase().includes(m.toLowerCase())
+                  ) || '-';
+                  
+                  const quantityInCart = currentDraftOrder && draftOrders[currentDraftOrder]?.items?.[product.sku] || 0;
+                  // La case est cochée SEULEMENT si on a pris TOUTE la quantité disponible
+                  const isChecked = quantityInCart === product.quantity && quantityInCart > 0;
+                  // La ligne est en surbrillance dès qu'il y a une quantité dans le panier
+                  const isHighlighted = quantityInCart > 0;
+                  
+                  return (
+                    <tr 
+                      key={product.sku} 
+                      className={`hover:bg-gray-50 ${isHighlighted ? 'bg-green-50 border-l-4 border-dbc-light-green' : ''}`}
+                    >
+                      <td className="px-4 py-3">
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={(e) => {
+                            e.stopPropagation();
+                            const isChecked = e.target.checked;
+                            
+                            if (isChecked) {
+                              // Si coché, sélectionner TOUTE la quantité disponible
+                              selectFullQuantity(product.sku, product.quantity);
+                              setSelectedProducts(prev => ({ ...prev, [product.sku]: true }));
+                            } else {
+                              // Si décoché, retirer du panier
+                              if (currentDraftOrder && draftOrders[currentDraftOrder]) {
+                                const newItems = { ...draftOrders[currentDraftOrder].items };
+                                delete newItems[product.sku];
+                                
+                                const newDraftOrders = {
+                                  ...draftOrders,
+                                  [currentDraftOrder]: {
+                                    ...draftOrders[currentDraftOrder],
+                                    items: newItems
+                                  }
+                                };
+                                
+                                setDraftOrders(newDraftOrders);
+                                
+                                setQuantities(prev => {
+                                  const newQuantities = { ...prev };
+                                  delete newQuantities[product.sku];
+                                  return newQuantities;
+                                });
+                                
+                                // Sauvegarder immédiatement
+                                saveDraftOrdersToLocalStorage(newDraftOrders);
+                              }
+                              setSelectedProducts(prev => ({ ...prev, [product.sku]: false }));
+                            }
+                          }}
+                          className="rounded border-gray-300"
+                        />
+                      </td>
+                      <td className="px-4 py-3 text-sm font-medium text-gray-900">{product.sku}</td>
+                      <td className="px-4 py-3 text-sm text-gray-900">{product.product_name}</td>
+                      <td className="px-4 py-3 text-sm text-gray-900">{manufacturer}</td>
+                      <td className="px-4 py-3">
+                        <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                          product.appearance.includes('A+') ? 'bg-green-100 text-green-800' :
+                          product.appearance.includes('A') && !product.appearance.includes('AB') ? 'bg-blue-100 text-blue-800' :
+                          product.appearance.includes('B') ? 'bg-yellow-100 text-yellow-800' :
+                          'bg-orange-100 text-orange-800'
+                        }`}>
+                          {product.appearance}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-900">{product.functionality}</td>
+                      <td className="px-4 py-3 text-sm text-gray-900">{product.color}</td>
+                      <td className="px-4 py-3 text-sm text-gray-900">{product.boxed}</td>
+                      <td className="px-4 py-3 text-sm text-gray-900">{product.additional_info || '-'}</td>
+                      <td className="px-4 py-3 text-sm text-right font-medium text-gray-900">{product.quantity}</td>
+                      <td className="px-4 py-3 text-sm text-right font-medium text-gray-900">{product.price_dbc.toFixed(2)} €</td>
+                      <td className="px-4 py-3">
+                        <input
+                          type="number"
+                          min="1"
+                          max={product.quantity}
+                          placeholder="1"
+                          value={quantityInCart || (quantities[product.sku] || '')}
+                          onChange={(e) => {
+                            const newValue = e.target.value;
+                            const numValue = parseInt(newValue);
+                            
+                            // Empêcher de dépasser la quantité disponible
+                            if (newValue === '' || (numValue >= 1 && numValue <= product.quantity)) {
+                              updateQuantity(product.sku, newValue);
+                            }
+                          }}
+                          className={`w-16 px-2 py-1 text-sm border-2 rounded focus:border-dbc-light-green focus:outline-none text-center bg-white font-semibold text-gray-900 ${
+                            isHighlighted ? 'border-dbc-light-green bg-green-50' : 'border-gray-300'
+                          }`}
+                        />
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <button
+                          onClick={() => addToCart(product.sku)}
+                          disabled={quantityInCart >= product.quantity}
+                          className={`inline-flex items-center px-3 py-1 border border-transparent text-xs font-medium rounded-md text-white focus:outline-none ${
+                            quantityInCart >= product.quantity 
+                              ? 'bg-gray-400 cursor-not-allowed' 
+                              : 'bg-dbc-light-green hover:bg-green-600'
+                          }`}
+                        >
+                          +1
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         </div>
 
-        {/* Pagination */}
+        {/* Pagination en bas */}
         {totalPages > 1 && (
-          <div className="flex items-center justify-between mt-6">
-            <div className="text-sm text-gray-600">
-              Affichage de {(currentPage - 1) * itemsPerPage + 1} à {Math.min(currentPage * itemsPerPage, filteredAndSortedProducts.length)} sur {filteredAndSortedProducts.length} résultats
-            </div>
-            
-            <div className="flex items-center space-x-2">
-              <button
-                onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
-                disabled={currentPage === 1}
-                className="px-3 py-1 border border-gray-300 rounded text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
-              >
-                Précédent
-              </button>
-              
-              {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                const page = i + 1;
-                return (
-                  <button
-                    key={page}
-                    onClick={() => setCurrentPage(page)}
-                    className={`px-3 py-1 border rounded text-sm ${
-                      currentPage === page 
-                        ? 'bg-dbc-light-green text-white border-dbc-light-green' 
-                        : 'border-gray-300 hover:bg-gray-50'
-                    }`}
-                  >
-                    {page}
-                  </button>
-                );
-              })}
-              
-              <button
-                onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
-                disabled={currentPage === totalPages}
-                className="px-3 py-1 border border-gray-300 rounded text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
-              >
-                Suivant
-              </button>
-            </div>
-          </div>
-        )}
-
-        {filteredAndSortedProducts.length === 0 && (
-          <div className="text-center py-12">
-            <Package className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">Aucun produit trouvé</h3>
-            <p className="text-gray-600">Essayez de modifier vos critères de recherche</p>
-          </div>
-        )}
-
-        {/* Popup création de commande */}
-        {showOrderNamePopup && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Nouvelle commande</h3>
-              <p className="text-sm text-gray-600 mb-4">
-                Donnez un nom à votre commande pour commencer à ajouter des produits.
-              </p>
-              
-              <div className="mb-6">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Nom de la commande
-                </label>
-                <input
-                  type="text"
-                  value={orderName}
-                  onChange={(e) => setOrderName(e.target.value)}
-                  placeholder="Ex: Commande iPhone janvier 2025"
-                  className="w-full px-3 py-2 text-gray-900 border border-gray-300 rounded-lg focus:ring-2 focus:ring-dbc-light-green focus:border-transparent placeholder-gray-400"
-                  onKeyPress={(e) => e.key === 'Enter' && createNewOrder()}
-                  autoFocus
-                />
-              </div>
-              
-              <div className="flex space-x-3">
-                <button
-                  onClick={() => {
-                    setShowOrderNamePopup(false);
-                    setOrderName('');
-                    sessionStorage.removeItem('pendingProduct');
-                    // Décocher toutes les cases sélectionnées
-                    setSelectedProducts({});
-                  }}
-                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
-                >
-                  Annuler
-                </button>
-                <button
-                  onClick={createNewOrder}
-                  className="flex-1 px-4 py-2 bg-dbc-light-green text-white rounded-lg hover:bg-green-600"
-                >
-                  Créer
-                </button>
-              </div>
-            </div>
+          <div className="flex justify-center items-center space-x-2 mt-6">
+            <button
+              onClick={() => setCurrentPage(1)}
+              disabled={currentPage === 1}
+              className="px-4 py-2 text-sm border border-gray-300 rounded-lg disabled:bg-gray-100 disabled:text-gray-400 text-gray-700 hover:bg-gray-50"
+            >
+              Premier
+            </button>
+            <button
+              onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+              disabled={currentPage === 1}
+              className="px-4 py-2 text-sm border border-gray-300 rounded-lg disabled:bg-gray-100 disabled:text-gray-400 text-gray-700 hover:bg-gray-50"
+            >
+              ← Précédent
+            </button>
+            <span className="px-4 py-2 text-sm text-gray-700 bg-gray-50 rounded-lg">
+              Page {currentPage} sur {totalPages}
+            </span>
+            <button
+              onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+              disabled={currentPage === totalPages}
+              className="px-4 py-2 text-sm border border-gray-300 rounded-lg disabled:bg-gray-100 disabled:text-gray-400 text-gray-700 hover:bg-gray-50"
+            >
+              Suivant →
+            </button>
+            <button
+              onClick={() => setCurrentPage(totalPages)}
+              disabled={currentPage === totalPages}
+              className="px-4 py-2 text-sm border border-gray-300 rounded-lg disabled:bg-gray-100 disabled:text-gray-400 text-gray-700 hover:bg-gray-50"
+            >
+              Dernier
+            </button>
           </div>
         )}
       </div>
+
+      {/* Popup création commande */}
+      {showOrderNamePopup && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+            <h3 className="text-lg font-bold text-dbc-dark-green mb-4">Créer une nouvelle commande</h3>
+            <p className="text-sm text-gray-600 mb-4">
+              Donnez un nom à votre commande pour la retrouver facilement.
+            </p>
+            <input
+              type="text"
+              placeholder="Ex: Commande iPhone Mars 2024"
+              value={orderName}
+              onChange={(e) => setOrderName(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-dbc-light-green focus:border-transparent mb-4 text-black"
+              autoFocus
+            />
+            <div className="flex justify-end space-x-3">
+              <button
+                onClick={() => {
+                  setShowOrderNamePopup(false);
+                  setOrderName('');
+                  sessionStorage.removeItem('pendingProduct');
+                  // Décocher toutes les cases
+                  setSelectedProducts({});
+                }}
+                className="px-4 py-2 text-gray-700 hover:text-gray-900"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={createNewOrder}
+                className="px-4 py-2 bg-dbc-light-green text-white rounded-lg hover:bg-green-600"
+              >
+                Créer la commande
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 } 
