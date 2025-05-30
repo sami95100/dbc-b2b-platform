@@ -151,27 +151,28 @@ export const orderService = {
     try {
       console.log('🔄 Validation de la commande:', orderId);
       
-      // 1. Créer la commande dans Supabase
+      // 1. Créer la commande dans Supabase avec un nouvel UUID
       const orderData = {
-        id: orderId,
         name: `Commande ${new Date().toLocaleDateString('fr-FR')}`,
         status: 'pending' as const,
         status_label: 'En attente',
         total_amount: orderItems.reduce((sum, item) => sum + (item.unit_price * item.quantity), 0),
         total_items: orderItems.reduce((sum, item) => sum + item.quantity, 0),
+        customer_ref: 'DBC-CLIENT-001',
+        vat_type: 'Bien d\'occasion - TVA calculée sur la marge, non récupérable'
       };
 
       const { data: order, error: orderError } = await supabase
         .from('orders')
-        .upsert([orderData])
+        .insert([orderData])
         .select()
         .single();
 
       if (orderError) throw orderError;
 
-      // 2. Ajouter les items de commande
+      // 2. Ajouter les items de commande avec l'UUID généré
       const itemsData = orderItems.map(item => ({
-        order_id: orderId,
+        order_id: order.id, // Utiliser l'UUID généré
         sku: item.sku,
         product_name: item.product_name,
         quantity: item.quantity,
@@ -181,7 +182,7 @@ export const orderService = {
 
       const { error: itemsError } = await supabase
         .from('order_items')
-        .upsert(itemsData);
+        .insert(itemsData);
 
       if (itemsError) throw itemsError;
 

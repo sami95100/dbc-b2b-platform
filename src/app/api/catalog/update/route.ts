@@ -1,0 +1,141 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { writeFile } from 'fs/promises';
+import { join } from 'path';
+import { spawn } from 'child_process';
+import { supabase } from '../../../../lib/supabase';
+
+export async function POST(request: NextRequest) {
+  try {
+    const formData = await request.formData();
+    const file = formData.get('catalog') as File;
+    
+    if (!file) {
+      return NextResponse.json({ error: 'Aucun fichier fourni' }, { status: 400 });
+    }
+
+    // Vérifier que c'est un fichier Excel
+    if (!file.name.endsWith('.xlsx') && !file.name.endsWith('.xls')) {
+      return NextResponse.json({ error: 'Le fichier doit être un fichier Excel (.xlsx ou .xls)' }, { status: 400 });
+    }
+
+    // Obtenir les statistiques AVANT import pour comparaison
+    const { count: oldCount } = await supabase
+      .from('products')
+      .select('*', { count: 'exact', head: true })
+      .eq('is_active', true);
+
+    // Sauvegarder le fichier temporairement
+    const bytes = await file.arrayBuffer();
+    const buffer = Buffer.from(bytes);
+    
+    const timestamp = Date.now();
+    const tempPath = join(process.cwd(), 'temp', `catalog_${timestamp}.xlsx`);
+    
+    // Créer le dossier temp s'il n'existe pas
+    await writeFile(tempPath, buffer);
+
+    // Exécuter le script Python
+    const pythonProcess = spawn('python3', [
+      join(process.cwd(), 'backend/scripts/catalog_processor.py'),
+      tempPath
+    ]);
+
+    let output = '';
+    let errorOutput = '';
+
+    // Collecter la sortie
+    pythonProcess.stdout.on('data', (data) => {
+      output += data.toString();
+    });
+
+    pythonProcess.stderr.on('data', (data) => {
+      errorOutput += data.toString();
+    });
+
+    // Attendre la fin du processus
+    const exitCode = await new Promise((resolve) => {
+      pythonProcess.on('close', resolve);
+    });
+
+    // Nettoyer le fichier temporaire
+    try {
+      await require('fs/promises').unlink(tempPath);
+    } catch (err) {
+      console.warn('Impossible de supprimer le fichier temporaire:', err);
+    }
+
+    if (exitCode !== 0) {
+      console.error('Erreur Python:', errorOutput);
+      return NextResponse.json({ 
+        error: 'Erreur lors du traitement du catalogue',
+        details: errorOutput
+      }, { status: 500 });
+    }
+
+    // Parser le résultat JSON de la sortie Python
+    const lines = output.trim().split('\n');
+    let resultData = null;
+    
+    for (const line of lines.reverse()) {
+      if (line.startsWith('{')) {
+        try {
+          resultData = JSON.parse(line);
+          break;
+        } catch (e) {
+          continue;
+        }
+      }
+    }
+
+    if (!resultData || !resultData.success) {
+      return NextResponse.json({ 
+        error: 'Impossible de parser le résultat du traitement',
+        details: output
+      }, { status: 500 });
+    }
+
+    // Obtenir les nouvelles statistiques APRÈS import
+    const { count: newCount } = await supabase
+      .from('products')
+      .select('*', { count: 'exact', head: true })
+      .eq('is_active', true);
+
+    // Récupérer les nouveaux produits ajoutés (basé sur les SKU du résultat)
+    let newProducts: Array<{sku: string, product_name: string, price_dbc: number, quantity: number}> = [];
+    if (resultData.new_skus && resultData.new_skus.length > 0) {
+      const { data: newProductsData } = await supabase
+        .from('products')
+        .select('sku, product_name, price_dbc, quantity')
+        .in('sku', resultData.new_skus)
+        .limit(50); // Limiter à 50 pour l'aperçu
+      
+      newProducts = newProductsData || [];
+    }
+
+    // Créer un résumé détaillé
+    const summary = {
+      oldProductCount: oldCount || 0,
+      newProductCount: newCount || 0,
+      importedProducts: resultData.imported_count || 0,
+      newSkus: resultData.new_skus?.length || 0,
+      stats: resultData.stats,
+      processedAt: new Date().toISOString(),
+      newProducts: newProducts
+    };
+
+    return NextResponse.json({ 
+      success: true, 
+      message: `Catalogue mis à jour avec succès: ${resultData.imported_count} produits traités`,
+      summary,
+      filename: file.name,
+      size: file.size
+    });
+    
+  } catch (error) {
+    console.error('Erreur lors de la mise à jour du catalogue:', error);
+    return NextResponse.json({ 
+      error: 'Erreur lors du traitement du fichier',
+      details: error instanceof Error ? error.message : String(error)
+    }, { status: 500 });
+  }
+} 

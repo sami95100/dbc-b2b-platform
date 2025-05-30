@@ -3,6 +3,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import DBCLogo from '../../components/DBCLogo';
+import CatalogUpdateButton from '../../components/CatalogUpdateButton';
 import { supabase, Product } from '../../lib/supabase';
 import { 
   Search, 
@@ -15,6 +16,7 @@ import {
   ChevronUp,
   Check,
   Plus,
+  Minus,
   ArrowUpDown,
   FileSpreadsheet,
   Package
@@ -203,7 +205,8 @@ export default function CatalogPage() {
     functionality: false,
     boxed: false,
     additionalInfo: false,
-    color: false
+    color: false,
+    export: false
   });
   const [closeTimeout, setCloseTimeout] = useState<NodeJS.Timeout | null>(null);
 
@@ -329,6 +332,73 @@ export default function CatalogPage() {
     
     loadProducts();
   }, []);
+
+  // Fonction pour rafraîchir les données après mise à jour du catalogue
+  const refreshProducts = async () => {
+    console.log('🔄 Rafraîchissement des produits...');
+    
+    try {
+      setLoading(true);
+      setError(null);
+      
+      // Recharger les produits depuis Supabase
+      const { count: totalCount, error: countError } = await supabase
+        .from('products')
+        .select('*', { count: 'exact', head: true })
+        .eq('is_active', true);
+        
+      if (countError) throw countError;
+      
+      console.log('📊 Nombre total de produits après mise à jour:', totalCount);
+      setTotalProductsCount(totalCount);
+      
+      // Charger TOUS les produits par batch
+      let allProducts: Product[] = [];
+      const batchSize = 1000;
+      let currentBatch = 0;
+      
+      while (allProducts.length < (totalCount || 0)) {
+        const from = currentBatch * batchSize;
+        const to = from + batchSize - 1;
+        
+        const { data, error } = await supabase
+          .from('products')
+          .select('*')
+          .eq('is_active', true)
+          .order('product_name')
+          .range(from, to);
+        
+        if (error) throw error;
+        
+        if (data && data.length > 0) {
+          allProducts = [...allProducts, ...data];
+        } else {
+          break;
+        }
+        
+        currentBatch++;
+        
+        if (currentBatch > 50) {
+          console.warn('⚠️ Arrêt sécurité après 50 batchs');
+          break;
+        }
+      }
+      
+      console.log('✅ Produits rafraîchis:', allProducts.length, 'produits');
+      setProducts(allProducts);
+      
+      // Réinitialiser la page courante si nécessaire
+      if (currentPage > 1) {
+        setCurrentPage(1);
+      }
+      
+    } catch (err) {
+      console.error('Erreur rafraîchissement produits:', err);
+      setError('Erreur lors du rafraîchissement des produits');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // Extraire les valeurs uniques depuis les produits
   const uniqueColors = useMemo(() => {
@@ -474,7 +544,8 @@ export default function CatalogPage() {
           functionality: false,
           boxed: false,
           additionalInfo: false,
-          color: false
+          color: false,
+          export: false
         });
       }
     };
@@ -485,22 +556,42 @@ export default function CatalogPage() {
 
   // Gestion du panier - CORRIGÉ selon feedback
   const updateQuantity = (sku: string, value: string) => {
-    if (value === '' || (parseInt(value) >= 1)) {
-      const newQuantity = value === '' ? '' : parseInt(value);
-      setQuantities(prev => ({ ...prev, [sku]: newQuantity }));
+    const newQuantity = value === '' ? 0 : parseInt(value);
+    
+    // Valider que la quantité est >= 0
+    if (value === '' || newQuantity >= 0) {
+      setQuantities(prev => ({ ...prev, [sku]: value === '' ? '' : newQuantity }));
       
-      // Mettre à jour aussi dans la commande actuelle si elle existe
-      if (currentDraftOrder && newQuantity !== '') {
-        const newDraftOrders = {
-          ...draftOrders,
-          [currentDraftOrder]: {
-            ...draftOrders[currentDraftOrder],
-            items: {
-              ...draftOrders[currentDraftOrder]?.items,
-              [sku]: newQuantity
+      // Mettre à jour dans la commande actuelle si elle existe
+      if (currentDraftOrder) {
+        let newDraftOrders;
+        
+        if (newQuantity === 0 || value === '') {
+          // Si quantité 0 ou vide, retirer le produit
+          const newItems = { ...draftOrders[currentDraftOrder]?.items };
+          delete newItems[sku];
+          
+          newDraftOrders = {
+            ...draftOrders,
+            [currentDraftOrder]: {
+              ...draftOrders[currentDraftOrder],
+              items: newItems
             }
-          }
-        };
+          };
+        } else {
+          // Sinon, mettre à jour la quantité
+          newDraftOrders = {
+            ...draftOrders,
+            [currentDraftOrder]: {
+              ...draftOrders[currentDraftOrder],
+              items: {
+                ...draftOrders[currentDraftOrder]?.items,
+                [sku]: newQuantity
+              }
+            }
+          };
+        }
+        
         setDraftOrders(newDraftOrders);
         
         // Sauvegarder immédiatement
@@ -685,6 +776,157 @@ export default function CatalogPage() {
     console.log('Filtres réinitialisés');
   };
 
+  // Fonction pour obtenir la couleur de la pastille
+  const getColorDot = (colorName: string) => {
+    if (!colorName) return null;
+    
+    const colorMap: {[key: string]: string} = {
+      'Black': '#000000',
+      'White': '#FFFFFF',
+      'Red': '#DC2626',
+      'Blue': '#2563EB',
+      'Green': '#16A34A',
+      'Yellow': '#EAB308',
+      'Purple': '#9333EA',
+      'Pink': '#EC4899',
+      'Orange': '#EA580C',
+      'Gray': '#6B7280',
+      'Grey': '#6B7280',
+      'Silver': '#9CA3AF',
+      'Gold': '#F59E0B',
+      'Rose': '#F43F5E',
+      'Coral': '#FF7F7F',
+      'Midnight': '#1E293B',
+      'Graphite': '#374151'
+    };
+    
+    const color = colorMap[colorName] || '#6B7280';
+    const borderColor = colorName === 'White' ? '#D1D5DB' : color;
+    
+    return (
+      <div className="flex items-center gap-2">
+        <div 
+          className="w-3 h-3 rounded-full border"
+          style={{ 
+            backgroundColor: color,
+            borderColor: borderColor
+          }}
+        />
+        <span className="text-sm text-gray-900">{colorName}</span>
+      </div>
+    );
+  };
+
+  // Fonction d'export
+  const exportCatalog = (format: 'xlsx' | 'csv') => {
+    console.log(`📊 Export catalogue au format ${format}...`);
+    
+    // Préparer les données pour l'export
+    const exportData = filteredAndSortedProducts.map(product => {
+      const manufacturer = MANUFACTURERS.find(m => 
+        product.product_name.toLowerCase().includes(m.toLowerCase())
+      ) || '-';
+      
+      return {
+        'SKU': product.sku,
+        'Nom du produit': product.product_name,
+        'Marque': manufacturer,
+        'Apparence': product.appearance,
+        'Fonction.': product.functionality,
+        'Couleur': product.color || '-',
+        'Emballage': product.boxed,
+        'Informations': product.additional_info || '-',
+        'Stock': product.quantity,
+        'Prix DBC': product.price_dbc,
+        'TVA Marginale': product.vat_type === 'Marginal' ? 'Oui' : 'Non'
+      };
+    });
+
+    if (format === 'xlsx') {
+      // Import dynamique de xlsx
+      import('xlsx').then((XLSX) => {
+        const worksheet = XLSX.utils.json_to_sheet(exportData);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, 'Catalogue DBC');
+        
+        // Télécharger
+        const fileName = `catalogue_dbc_${new Date().toISOString().split('T')[0]}.xlsx`;
+        XLSX.writeFile(workbook, fileName);
+        
+        console.log('✅ Export Excel terminé');
+      }).catch(err => {
+        console.error('Erreur export Excel:', err);
+        alert('Erreur lors de l\'export Excel');
+      });
+    } else if (format === 'csv') {
+      // Export CSV manuel
+      const headers = Object.keys(exportData[0] || {});
+      const csvContent = [
+        headers.join(';'),
+        ...exportData.map(row => 
+          headers.map(header => {
+            const value = (row as any)[header];
+            // Échapper les valeurs contenant des points-virgules ou des guillemets
+            if (typeof value === 'string' && (value.includes(';') || value.includes('"'))) {
+              return `"${value.replace(/"/g, '""')}"`;
+            }
+            return value;
+          }).join(';')
+        )
+      ].join('\n');
+      
+      // Créer un blob avec BOM UTF-8
+      const BOM = '\uFEFF';
+      const blob = new Blob([BOM + csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      
+      // Télécharger
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `catalogue_dbc_${new Date().toISOString().split('T')[0]}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      
+      console.log('✅ Export CSV terminé');
+    }
+  };
+
+  // Fonction pour décrémenter la quantité
+  const decrementQuantity = (sku: string) => {
+    const currentQuantity = quantities[sku] || 0;
+    const numQuantity = typeof currentQuantity === 'string' ? parseInt(currentQuantity) : currentQuantity;
+    
+    if (numQuantity > 1) {
+      addToCartWithQuantity(sku, numQuantity - 1, true);
+    } else if (numQuantity === 1) {
+      // Retirer complètement du panier
+      if (currentDraftOrder && draftOrders[currentDraftOrder]) {
+        const newItems = { ...draftOrders[currentDraftOrder].items };
+        delete newItems[sku];
+        
+        const newDraftOrders = {
+          ...draftOrders,
+          [currentDraftOrder]: {
+            ...draftOrders[currentDraftOrder],
+            items: newItems
+          }
+        };
+        
+        setDraftOrders(newDraftOrders);
+        setQuantities(prev => {
+          const newQuantities = { ...prev };
+          delete newQuantities[sku];
+          return newQuantities;
+        });
+        
+        saveDraftOrdersToLocalStorage(newDraftOrders);
+      }
+      setSelectedProducts(prev => ({ ...prev, [sku]: false }));
+    }
+  };
+
   // Synchroniser les cases à cocher avec la commande active
   useEffect(() => {
     if (currentDraftOrder && draftOrders[currentDraftOrder]) {
@@ -714,8 +956,13 @@ export default function CatalogPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center space-x-4">
-              <DBCLogo className="h-8 w-8" />
-              <h1 className="text-xl font-semibold text-white">DBC B2B Platform</h1>
+              <button
+                onClick={() => router.push('/catalog')}
+                className="flex items-center space-x-2 hover:opacity-80 transition-opacity"
+              >
+                <DBCLogo className="h-8 w-8" />
+                <h1 className="text-xl font-semibold text-white">DBC B2B Platform</h1>
+              </button>
             </div>
             
             <div className="flex items-center space-x-4">
@@ -779,12 +1026,48 @@ export default function CatalogPage() {
                 Réinitialiser filtres
               </button>
               
-              <button
-                className="flex items-center space-x-2 px-4 py-2 bg-dbc-light-green text-white rounded-lg hover:bg-green-600 text-sm"
-              >
-                <FileSpreadsheet className="h-4 w-4" />
-                <span>Export Excel</span>
-              </button>
+              <CatalogUpdateButton onUpdateComplete={refreshProducts} />
+              
+              {/* Dropdown Export Catalogue */}
+              <div className="relative dropdown-container">
+                <button
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    toggleDropdown('export');
+                  }}
+                  className="flex items-center space-x-2 px-4 py-2 bg-dbc-light-green text-white rounded-lg hover:bg-green-600 text-sm"
+                >
+                  <FileSpreadsheet className="h-4 w-4" />
+                  <span>Export Catalogue</span>
+                  <ChevronDown className="h-4 w-4" />
+                </button>
+                
+                {dropdownOpen.export && (
+                  <div className="absolute right-0 mt-1 w-48 bg-white border border-gray-300 rounded-lg shadow-lg z-50">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        exportCatalog('xlsx');
+                        setDropdownOpen(prev => ({ ...prev, export: false }));
+                      }}
+                      className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-t-lg"
+                    >
+                      📊 Format Excel (.xlsx)
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        exportCatalog('csv');
+                        setDropdownOpen(prev => ({ ...prev, export: false }));
+                      }}
+                      className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-b-lg"
+                    >
+                      📄 Format CSV UTF-8
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
@@ -1075,46 +1358,46 @@ export default function CatalogPage() {
         </div>
 
         {/* Tableau des produits avec pagination en bas aussi */}
-        <div className="bg-white rounded-lg shadow-sm border">
+        <div className="bg-white rounded-lg shadow-sm border overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
+            <table className="w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="w-10 px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     <input type="checkbox" className="rounded border-gray-300" />
                   </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     <button onClick={() => handleSort('sku')} className="flex items-center space-x-1">
                       <span>SKU</span>
                       <ArrowUpDown className="h-3 w-3" />
                     </button>
                   </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     <button onClick={() => handleSort('product_name')} className="flex items-center space-x-1">
-                      <span>Nom</span>
+                      <span>Nom du produit</span>
                       <ArrowUpDown className="h-3 w-3" />
                     </button>
                   </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Marque</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Apparence</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fonction.</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Couleur</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Emballage</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Info</th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Marque</th>
+                  <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Apparence</th>
+                  <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fonction.</th>
+                  <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Couleur</th>
+                  <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Emballage</th>
+                  <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Informations</th>
+                  <th className="px-2 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                     <button onClick={() => handleSort('quantity')} className="flex items-center space-x-1 ml-auto">
                       <span>Stock</span>
                       <ArrowUpDown className="h-3 w-3" />
                     </button>
                   </th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-2 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                     <button onClick={() => handleSort('price_dbc')} className="flex items-center space-x-1 ml-auto">
-                      <span>Prix DBC</span>
+                      <span>Prix</span>
                       <ArrowUpDown className="h-3 w-3" />
                     </button>
                   </th>
-                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Quantité</th>
-                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Action</th>
+                  <th className="px-2 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Qté</th>
+                  <th className="px-2 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
@@ -1134,7 +1417,7 @@ export default function CatalogPage() {
                       key={product.sku} 
                       className={`hover:bg-gray-50 ${isHighlighted ? 'bg-green-50 border-l-4 border-dbc-light-green' : ''}`}
                     >
-                      <td className="px-4 py-3">
+                      <td className="px-2 py-2">
                         <input
                           type="checkbox"
                           checked={isChecked}
@@ -1177,58 +1460,97 @@ export default function CatalogPage() {
                           className="rounded border-gray-300"
                         />
                       </td>
-                      <td className="px-4 py-3 text-sm font-medium text-gray-900">{product.sku}</td>
-                      <td className="px-4 py-3 text-sm text-gray-900">{product.product_name}</td>
-                      <td className="px-4 py-3 text-sm text-gray-900">{manufacturer}</td>
-                      <td className="px-4 py-3">
-                        <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                      <td className="px-2 py-2 text-xs font-mono text-gray-900 truncate max-w-[80px]" title={product.sku}>{product.sku}</td>
+                      <td className="px-2 py-2 text-xs text-gray-900">
+                        <div className="truncate max-w-[180px]" title={product.product_name}>
+                          {product.product_name}
+                        </div>
+                      </td>
+                      <td className="px-2 py-2 text-xs text-gray-900 truncate max-w-[60px]">{manufacturer}</td>
+                      <td className="px-2 py-2">
+                        <span className={`inline-flex px-1 py-0.5 text-xs font-medium rounded-full ${
                           product.appearance.includes('A+') ? 'bg-green-100 text-green-800' :
                           product.appearance.includes('A') && !product.appearance.includes('AB') ? 'bg-blue-100 text-blue-800' :
                           product.appearance.includes('B') ? 'bg-yellow-100 text-yellow-800' :
                           'bg-orange-100 text-orange-800'
                         }`}>
-                          {product.appearance}
+                          {product.appearance.replace('Grade ', '')}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-sm text-gray-900">{product.functionality}</td>
-                      <td className="px-4 py-3 text-sm text-gray-900">{product.color}</td>
-                      <td className="px-4 py-3 text-sm text-gray-900">{product.boxed}</td>
-                      <td className="px-4 py-3 text-sm text-gray-900">{product.additional_info || '-'}</td>
-                      <td className="px-4 py-3 text-sm text-right font-medium text-gray-900">{product.quantity}</td>
-                      <td className="px-4 py-3 text-sm text-right font-medium text-gray-900">{product.price_dbc.toFixed(2)} €</td>
-                      <td className="px-4 py-3">
+                      <td className="px-2 py-2 text-xs text-gray-900 truncate max-w-[60px]">{product.functionality}</td>
+                      <td className="px-2 py-2">
+                        {product.color ? (
+                          <div className="flex items-center gap-1">
+                            <div 
+                              className="w-2 h-2 rounded-full border flex-shrink-0"
+                              style={{ 
+                                backgroundColor: getColorDot(product.color)?.props?.children?.[0]?.props?.style?.backgroundColor || '#6B7280',
+                                borderColor: product.color === 'White' ? '#D1D5DB' : (getColorDot(product.color)?.props?.children?.[0]?.props?.style?.backgroundColor || '#6B7280')
+                              }}
+                            />
+                            <span className="text-xs text-gray-900 truncate max-w-[50px]">{product.color}</span>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-gray-400">-</span>
+                        )}
+                      </td>
+                      <td className="px-2 py-2 text-xs text-gray-900 truncate max-w-[70px]">{product.boxed}</td>
+                      <td className="px-2 py-2 text-xs text-gray-900">
+                        <div className="truncate max-w-[80px]" title={product.additional_info || ''}>
+                          {product.additional_info || '-'}
+                        </div>
+                      </td>
+                      <td className="px-2 py-2 text-xs text-right font-medium text-gray-900">{product.quantity}</td>
+                      <td className="px-2 py-2 text-xs text-right font-medium text-gray-900 whitespace-nowrap">{product.price_dbc.toFixed(2)}€</td>
+                      <td className="px-2 py-2">
                         <input
                           type="number"
-                          min="1"
+                          min="0"
                           max={product.quantity}
-                          placeholder="1"
+                          placeholder="0"
                           value={quantityInCart || (quantities[product.sku] || '')}
                           onChange={(e) => {
                             const newValue = e.target.value;
                             const numValue = parseInt(newValue);
                             
-                            // Empêcher de dépasser la quantité disponible
-                            if (newValue === '' || (numValue >= 1 && numValue <= product.quantity)) {
+                            // Permettre 0 ou vide, et empêcher de dépasser la quantité disponible
+                            if (newValue === '' || (numValue >= 0 && numValue <= product.quantity)) {
                               updateQuantity(product.sku, newValue);
                             }
                           }}
-                          className={`w-16 px-2 py-1 text-sm border-2 rounded focus:border-dbc-light-green focus:outline-none text-center bg-white font-semibold text-gray-900 ${
+                          className={`w-10 px-1 py-0.5 text-xs border rounded focus:border-dbc-light-green focus:outline-none text-center bg-white font-medium text-gray-900 ${
                             isHighlighted ? 'border-dbc-light-green bg-green-50' : 'border-gray-300'
                           }`}
                         />
                       </td>
-                      <td className="px-4 py-3 text-center">
-                        <button
-                          onClick={() => addToCart(product.sku)}
-                          disabled={quantityInCart >= product.quantity}
-                          className={`inline-flex items-center px-3 py-1 border border-transparent text-xs font-medium rounded-md text-white focus:outline-none ${
-                            quantityInCart >= product.quantity 
-                              ? 'bg-gray-400 cursor-not-allowed' 
-                              : 'bg-dbc-light-green hover:bg-green-600'
-                          }`}
-                        >
-                          +1
-                        </button>
+                      <td className="px-2 py-2">
+                        <div className="flex items-center justify-center gap-0.5">
+                          {/* Bouton décrémenter */}
+                          <button
+                            onClick={() => decrementQuantity(product.sku)}
+                            disabled={!quantityInCart || quantityInCart === 0}
+                            className={`inline-flex items-center p-1 border border-transparent text-xs rounded focus:outline-none ${
+                              !quantityInCart || quantityInCart === 0
+                                ? 'bg-gray-200 text-gray-400 cursor-not-allowed' 
+                                : 'bg-red-500 text-white hover:bg-red-600'
+                            }`}
+                          >
+                            <Minus className="h-2.5 w-2.5" />
+                          </button>
+                          
+                          {/* Bouton incrémenter */}
+                          <button
+                            onClick={() => addToCart(product.sku)}
+                            disabled={quantityInCart >= product.quantity}
+                            className={`inline-flex items-center p-1 border border-transparent text-xs rounded focus:outline-none ${
+                              quantityInCart >= product.quantity 
+                                ? 'bg-gray-400 cursor-not-allowed text-white' 
+                                : 'bg-dbc-light-green hover:bg-green-600 text-white'
+                            }`}
+                          >
+                            <Plus className="h-2.5 w-2.5" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );

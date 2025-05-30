@@ -31,6 +31,7 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
   const [loading, setLoading] = useState(true);
   const [editableQuantities, setEditableQuantities] = useState<{[key: string]: number}>({});
   const [products, setProducts] = useState<Product[]>([]);
+  const [productsLoaded, setProductsLoaded] = useState(false);
   const [validating, setValidating] = useState(false);
   const router = useRouter();
 
@@ -38,16 +39,53 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
   useEffect(() => {
     async function loadProducts() {
       try {
-        const { data, error } = await supabase
-          .from('products')
-          .select('*')
-          .eq('is_active', true);
+        console.log('📦 Chargement des produits pour la commande...');
         
-        if (error) throw error;
-        setProducts(data || []);
+        // Charger TOUS les produits par batch
+        let allProducts: Product[] = [];
+        const batchSize = 1000;
+        let hasMore = true;
+        let currentBatch = 0;
+        
+        while (hasMore) {
+          const from = currentBatch * batchSize;
+          const to = from + batchSize - 1;
+          
+          const { data, error } = await supabase
+            .from('products')
+            .select('*')
+            .eq('is_active', true)
+            .range(from, to);
+          
+          if (error) throw error;
+          
+          if (data && data.length > 0) {
+            allProducts = [...allProducts, ...data];
+            console.log(`✅ Batch ${currentBatch + 1}: ${data.length} produits (total: ${allProducts.length})`);
+            
+            if (data.length < batchSize) {
+              hasMore = false;
+            }
+          } else {
+            hasMore = false;
+          }
+          
+          currentBatch++;
+          
+          // Sécurité
+          if (currentBatch > 50) {
+            console.warn('⚠️ Arrêt sécurité après 50 batchs');
+            break;
+          }
+        }
+        
+        console.log('✅ Total produits chargés:', allProducts.length);
+        setProducts(allProducts);
+        setProductsLoaded(true);
       } catch (err) {
         console.error('Erreur chargement produits:', err);
         setProducts([]);
+        setProductsLoaded(true);
       }
     }
     
@@ -57,11 +95,19 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
   const loadOrderDetail = () => {
     try {
       const savedOrders = localStorage.getItem('draftOrders');
-      if (savedOrders && products.length > 0) {
+      if (savedOrders) {
         const draftOrders = JSON.parse(savedOrders);
         const order = draftOrders[params.id];
         
         if (order) {
+          console.log('📋 Commande trouvée:', order);
+          
+          // Si les produits ne sont pas encore chargés, on attend
+          if (!productsLoaded || products.length === 0) {
+            console.log('⏳ En attente du chargement des produits...');
+            return;
+          }
+          
           // Construire les détails des articles avec les informations complètes
           const items = Object.entries(order.items || {}).map(([sku, quantity]: [string, any]) => {
             const product = products.find(p => p.sku === sku);
@@ -84,8 +130,11 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
                 totalPrice: product.price_dbc * quantity
               };
             }
+            console.warn('⚠️ Produit non trouvé:', sku);
             return null;
           }).filter(Boolean);
+
+          console.log('📦 Items trouvés:', items.length);
 
           const totalItems = items.reduce((sum, item: any) => sum + item.quantity, 0);
           const totalAmount = items.reduce((sum, item: any) => sum + item.totalPrice, 0);
@@ -105,6 +154,8 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
             return acc;
           }, {});
           setEditableQuantities(quantities);
+        } else {
+          console.log('❌ Commande non trouvée dans localStorage');
         }
       }
       setLoading(false);
@@ -115,8 +166,10 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
   };
 
   useEffect(() => {
-    loadOrderDetail();
-  }, [params.id, products]);
+    if (productsLoaded) {
+      loadOrderDetail();
+    }
+  }, [params.id, productsLoaded, products]);
 
   const updateQuantity = (sku: string, newQuantity: number) => {
     if (newQuantity < 1) return;
@@ -187,9 +240,66 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
     
     try {
       console.log('🔄 Validation de la commande:', params.id);
+      console.log('📦 Items à valider:', orderDetail.items.length);
+      
+      // Vérifier la connexion Supabase
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+      if (!supabaseUrl || supabaseUrl.includes('fake-project')) {
+        console.warn('⚠️ Supabase non configuré - Mode démonstration');
+        
+        // Simuler une validation réussie en mode démo
+        setTimeout(() => {
+          const updatedOrder = {
+            ...orderDetail,
+            status: 'pending',
+            statusLabel: 'En attente'
+          };
+          setOrderDetail(updatedOrder);
+
+          // Mettre à jour localStorage
+          const savedOrders = localStorage.getItem('draftOrders');
+          if (savedOrders) {
+            const draftOrders = JSON.parse(savedOrders);
+            draftOrders[params.id] = {
+              ...draftOrders[params.id],
+              status: 'pending',
+              statusLabel: 'En attente'
+            };
+            localStorage.setItem('draftOrders', JSON.stringify(draftOrders));
+            
+            // Supprimer de la commande active
+            const currentOrder = localStorage.getItem('currentDraftOrder');
+            if (currentOrder === params.id) {
+              localStorage.removeItem('currentDraftOrder');
+            }
+          }
+          
+          alert('✅ Commande validée avec succès ! (Mode démonstration - les données ne sont pas envoyées à une vraie base de données)');
+          setValidating(false);
+        }, 1500);
+        
+        return;
+      }
+      
+      // Vérifier que tous les produits sont encore disponibles
+      for (const item of orderDetail.items) {
+        const { data: product, error } = await supabase
+          .from('products')
+          .select('quantity')
+          .eq('sku', item.sku)
+          .single();
+
+        if (error) {
+          throw new Error(`Erreur lors de la vérification du stock pour ${item.sku}: ${error.message}`);
+        }
+
+        if (!product || product.quantity < (editableQuantities[item.sku] || item.quantity)) {
+          throw new Error(`Stock insuffisant pour ${item.sku} (demandé: ${editableQuantities[item.sku] || item.quantity}, disponible: ${product ? product.quantity : 0})`);
+        }
+      }
       
       // Préparer les données pour Supabase
-      const orderItems = orderDetail.items.map((item: any) => ({
+      const orderItems = orderDetail.items.map((item: { sku: string; name: string; quantity: number; unitPrice: number }) => ({
         sku: item.sku,
         quantity: editableQuantities[item.sku] || item.quantity,
         product_name: item.name,
@@ -217,13 +327,35 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
           statusLabel: 'En attente'
         };
         localStorage.setItem('draftOrders', JSON.stringify(draftOrders));
+        
+        // Supprimer de la commande active
+        const currentOrder = localStorage.getItem('currentDraftOrder');
+        if (currentOrder === params.id) {
+          localStorage.removeItem('currentDraftOrder');
+        }
       }
 
       alert('✅ Commande validée avec succès ! Le stock a été mis à jour.');
+      router.push('/orders'); // Rediriger vers la liste des commandes
 
     } catch (error) {
       console.error('❌ Erreur validation:', error);
-      alert('❌ Erreur lors de la validation de la commande');
+      
+      // Message d'erreur plus détaillé
+      let errorMessage = '❌ Erreur lors de la validation de la commande';
+      if (error instanceof Error) {
+        if (error.message.includes('not authenticated')) {
+          errorMessage += '\n\nProblème d\'authentification avec Supabase. Veuillez vous reconnecter.';
+        } else if (error.message.includes('network')) {
+          errorMessage += '\n\nProblème de connexion réseau. Vérifiez votre connexion internet.';
+        } else if (error.message.includes('Stock insuffisant')) {
+          errorMessage += '\n\n' + error.message + '\nLe stock a peut-être été mis à jour par un autre utilisateur.';
+        } else {
+          errorMessage += '\n\n' + error.message;
+        }
+      }
+      
+      alert(errorMessage);
     } finally {
       setValidating(false);
     }
