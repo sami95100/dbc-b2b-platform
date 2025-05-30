@@ -21,8 +21,7 @@ export async function POST(request: NextRequest) {
     // Obtenir les statistiques AVANT import pour comparaison
     const { count: oldCount } = await supabase
       .from('products')
-      .select('*', { count: 'exact', head: true })
-      .eq('is_active', true);
+      .select('*', { count: 'exact', head: true });
 
     // Sauvegarder le fichier temporairement
     const bytes = await file.arrayBuffer();
@@ -97,8 +96,7 @@ export async function POST(request: NextRequest) {
     // Obtenir les nouvelles statistiques APRÈS import
     const { count: newCount } = await supabase
       .from('products')
-      .select('*', { count: 'exact', head: true })
-      .eq('is_active', true);
+      .select('*', { count: 'exact', head: true });
 
     // Récupérer les nouveaux produits ajoutés (basé sur les SKU du résultat)
     let newProducts: Array<{sku: string, product_name: string, price_dbc: number, quantity: number}> = [];

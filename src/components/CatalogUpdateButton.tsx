@@ -180,6 +180,7 @@ export default function CatalogUpdateButton({ onUpdateComplete }: { onUpdateComp
                           {updateStatus.summary.importedProducts}
                         </div>
                         <div className="text-xs text-gray-600">Produits traités</div>
+                        <div className="text-xs text-gray-400 mt-1">Lignes du fichier Excel</div>
                       </div>
                       
                       <div className="text-center">
@@ -187,6 +188,7 @@ export default function CatalogUpdateButton({ onUpdateComplete }: { onUpdateComp
                           {updateStatus.summary.newSkus}
                         </div>
                         <div className="text-xs text-gray-600">Nouveaux SKU</div>
+                        <div className="text-xs text-gray-400 mt-1">SKU qui n'existaient pas</div>
                       </div>
                       
                       <div className="text-center">
@@ -194,6 +196,7 @@ export default function CatalogUpdateButton({ onUpdateComplete }: { onUpdateComp
                           {updateStatus.summary.stats?.marginal || 0}
                         </div>
                         <div className="text-xs text-gray-600">Marginaux (1%)</div>
+                        <div className="text-xs text-gray-400 mt-1">VAT Type = Marginal</div>
                       </div>
                       
                       <div className="text-center">
@@ -201,6 +204,7 @@ export default function CatalogUpdateButton({ onUpdateComplete }: { onUpdateComp
                           {updateStatus.summary.stats?.non_marginal || 0}
                         </div>
                         <div className="text-xs text-gray-600">Non marginaux (11%)</div>
+                        <div className="text-xs text-gray-400 mt-1">Autres produits</div>
                       </div>
                     </div>
 
@@ -208,18 +212,22 @@ export default function CatalogUpdateButton({ onUpdateComplete }: { onUpdateComp
                       <div className="flex justify-between text-sm">
                         <span className="text-gray-600">Produits avant:</span>
                         <span className="font-medium">{updateStatus.summary.oldProductCount}</span>
+                        <span className="text-xs text-gray-400 ml-2">SKU avant import</span>
                       </div>
                       <div className="flex justify-between text-sm">
                         <span className="text-gray-600">Produits après:</span>
                         <span className="font-medium">{updateStatus.summary.newProductCount}</span>
+                        <span className="text-xs text-gray-400 ml-2">SKU après import</span>
                       </div>
                       <div className="flex justify-between text-sm">
                         <span className="text-gray-600">Produits actifs:</span>
                         <span className="font-medium text-green-600">{updateStatus.summary.stats?.active_products || 0}</span>
+                        <span className="text-xs text-gray-400 ml-2">Quantité ≠ 0</span>
                       </div>
                       <div className="flex justify-between text-sm">
                         <span className="text-gray-600">En rupture:</span>
                         <span className="font-medium text-red-600">{updateStatus.summary.stats?.out_of_stock || 0}</span>
+                        <span className="text-xs text-gray-400 ml-2">Passés à quantité 0</span>
                       </div>
                     </div>
 
@@ -234,6 +242,9 @@ export default function CatalogUpdateButton({ onUpdateComplete }: { onUpdateComp
                           <Package className="h-4 w-4" />
                           Aperçu des nouveaux produits ({updateStatus.summary.newProducts.length})
                         </h5>
+                        <div className="text-xs text-gray-500 mb-2">
+                          SKU qui n'existaient pas ou qui étaient à quantité 0
+                        </div>
                         <div className="max-h-40 overflow-y-auto space-y-1 text-xs">
                           {updateStatus.summary.newProducts.slice(0, 10).map((product: any, index: number) => (
                             <div key={index} className="flex justify-between items-center p-2 bg-gray-50 rounded">

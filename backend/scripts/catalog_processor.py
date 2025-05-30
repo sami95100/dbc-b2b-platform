@@ -11,8 +11,8 @@ from datetime import datetime
 from dotenv import load_dotenv
 from supabase import create_client, Client
 
-# Charger les variables d'environnement
-load_dotenv()
+# Charger les variables d'environnement depuis .env.local
+load_dotenv('.env.local')
 
 def init_supabase() -> Client:
     """Initialise le client Supabase"""
@@ -111,9 +111,9 @@ def process_catalog_file(file_path):
             processed_products.append(product)
             
             # Mise à jour des statistiques
-            if 'marginal' in margin_info:
+            if '1% (marginal)' in margin_info:
                 stats['marginal'] += 1
-            elif 'non marginal' in margin_info:
+            elif '11% (non marginal)' in margin_info:
                 stats['non_marginal'] += 1
             else:
                 stats['invalid_price'] += 1
@@ -129,30 +129,116 @@ def process_catalog_file(file_path):
         raise Exception(f"Erreur traitement catalogue: {str(e)}")
 
 def import_to_supabase(products):
-    """Importe les produits dans Supabase"""
+    """Importe les produits dans Supabase selon les règles métier DBC"""
     try:
         supabase = init_supabase()
         
-        # D'abord, récupérer les SKU existants
-        existing_skus = set()
+        # Récupérer les produits existants avec leurs stocks actuels
+        existing_products = {}
         try:
-            result = supabase.table('products').select('sku').execute()
-            existing_skus = {item['sku'] for item in result.data}
-        except:
-            pass  # Si erreur, on considère qu'il n'y a pas de produits existants
+            # Récupérer TOUS les produits (pas de limite)
+            page_size = 1000
+            offset = 0
+            
+            while True:
+                result = supabase.table('products').select('sku, quantity').range(offset, offset + page_size - 1).execute()
+                
+                if not result.data:
+                    break
+                    
+                for item in result.data:
+                    existing_products[item['sku']] = item['quantity']
+                
+                if len(result.data) < page_size:
+                    break
+                    
+                offset += page_size
+            
+            print(f"📊 Produits existants en base: {len(existing_products)}")
+        except Exception as e:
+            print(f"⚠️ Impossible de récupérer les stocks existants: {e}")
+            # Continuer sans préservation de stock si erreur
         
-        # Identifier les nouveaux SKU
+        # Identifier les nouveaux SKU et gérer les stocks selon les règles métier
         new_skus = []
-        for product in products:
-            if product['sku'] not in existing_skus:
-                new_skus.append(product['sku'])
+        out_of_stock_skus = []  # SKU qui passent à 0 (retirés du catalogue)
+        updated_products = []
         
-        # Import par batch
+        for product in products:
+            sku = product['sku']
+            new_quantity = product['quantity']
+            
+            if sku in existing_products:
+                # Produit existant : mettre à jour avec le nouveau stock du catalogue
+                old_quantity = existing_products[sku]
+                
+                if new_quantity == 0 and old_quantity > 0:
+                    # Produit retiré du catalogue fournisseur
+                    out_of_stock_skus.append(sku)
+                    product['is_active'] = False
+                    print(f"📦 {sku}: retiré du catalogue ({old_quantity} → 0)")
+                elif new_quantity > 0:
+                    # Réapprovisionner le stock avec le nouveau catalogue
+                    product['is_active'] = True
+                    if old_quantity != new_quantity:
+                        print(f"🔄 {sku}: stock mis à jour ({old_quantity} → {new_quantity})")
+                    # Si même quantité, pas de log (import identique)
+                # Note: On utilise TOUJOURS les nouvelles quantités du catalogue
+            else:
+                # Nouveau produit : SKU qui n'existait pas avant OU qui était à 0
+                old_quantity = 0  # Par défaut si vraiment nouveau
+                
+                if new_quantity > 0:
+                    new_skus.append(sku)
+                    product['is_active'] = True
+                    print(f"✨ {sku}: nouveau produit avec stock {new_quantity}")
+                else:
+                    # Nouveau produit mais en rupture dans le catalogue
+                    product['is_active'] = False
+            
+            updated_products.append(product)
+        
+        # Marquer comme en rupture les SKU qui étaient en base mais absents du nouveau catalogue
+        catalog_skus = set(product['sku'] for product in products)
+        missing_skus = []
+        
+        for existing_sku, old_quantity in existing_products.items():
+            if existing_sku not in catalog_skus and old_quantity > 0:
+                # Ce SKU n'est plus dans le nouveau catalogue mais était actif
+                missing_skus.append(existing_sku)
+                
+                # Créer un produit virtuel pour le marquer en rupture
+                missing_product = {
+                    'sku': existing_sku,
+                    'quantity': 0,
+                    'is_active': False
+                    # Les autres champs restent inchangés dans la DB
+                }
+                
+                # Mettre à jour uniquement quantity et is_active
+                try:
+                    supabase.table('products').update({
+                        'quantity': 0,
+                        'is_active': False
+                    }).eq('sku', existing_sku).execute()
+                    
+                    print(f"🚫 {existing_sku}: marqué en rupture (absent du nouveau catalogue)")
+                    out_of_stock_skus.append(existing_sku)
+                except Exception as e:
+                    print(f"⚠️ Erreur mise à jour rupture {existing_sku}: {e}")
+        
+        print(f"\n📊 Résumé de l'import:")
+        print(f"  - Nouveaux SKU: {len(new_skus)}")
+        print(f"  - SKU mis en rupture: {len(out_of_stock_skus)}")
+        print(f"  - SKU manquants du catalogue: {len(missing_skus)}")
+        print(f"  - Total à traiter: {len(updated_products)}")
+        
+        # Import par batch avec UPSERT
         batch_size = 100
         total_imported = 0
         
-        for i in range(0, len(products), batch_size):
-            batch = products[i:i + batch_size]
+        for i in range(0, len(updated_products), batch_size):
+            batch = updated_products[i:i + batch_size]
             
             # Upsert : insert ou update si SKU existe déjà
             result = supabase.table('products').upsert(
@@ -162,7 +248,7 @@ def import_to_supabase(products):
             ).execute()
             
             total_imported += len(batch)
-            print(f"Importé: {total_imported}/{len(products)} produits...")
+            print(f"📤 Importé: {total_imported}/{len(updated_products)} produits...")
         
         return total_imported, new_skus
         

@@ -23,7 +23,8 @@ import {
   Minus,
   Trash2,
   Check,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Edit
 } from 'lucide-react';
 
 export default function OrderDetailPage({ params }: { params: { id: string } }) {
@@ -33,6 +34,8 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
   const [products, setProducts] = useState<Product[]>([]);
   const [productsLoaded, setProductsLoaded] = useState(false);
   const [validating, setValidating] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [originalOrderItems, setOriginalOrderItems] = useState<any[]>([]);
   const router = useRouter();
 
   // Charger les produits depuis Supabase
@@ -112,14 +115,9 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
           const items = Object.entries(order.items || {}).map(([sku, quantity]: [string, any]) => {
             const product = products.find(p => p.sku === sku);
             if (product) {
-              // Extraire le manufacturer depuis le nom du produit
-              const manufacturer = ['Apple', 'Samsung', 'Xiaomi', 'Google', 'Huawei', 'OnePlus', 'Motorola', 'Honor', 'Oppo', 'Realme', 'Sony', 'LG', 'TCL', 'Nokia', 'Vivo', 'Asus', 'ZTE', 'Nothing', 'Gigaset', 'HTC']
-                .find(m => product.product_name.toLowerCase().includes(m.toLowerCase())) || 'Unknown';
-              
               return {
                 sku: product.sku,
                 name: product.product_name,
-                manufacturer: manufacturer,
                 appearance: product.appearance,
                 functionality: product.functionality,
                 color: product.color,
@@ -154,6 +152,9 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
             return acc;
           }, {});
           setEditableQuantities(quantities);
+
+          // Sauvegarder les items originaux
+          setOriginalOrderItems(items);
         } else {
           console.log('❌ Commande non trouvée dans localStorage');
         }
@@ -179,21 +180,44 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
       [sku]: newQuantity
     }));
 
-    // Mettre à jour dans localStorage
-    try {
-      const savedOrders = localStorage.getItem('draftOrders');
-      if (savedOrders) {
-        const draftOrders = JSON.parse(savedOrders);
-        if (draftOrders[params.id]) {
-          draftOrders[params.id].items[sku] = newQuantity;
-          localStorage.setItem('draftOrders', JSON.stringify(draftOrders));
-          
-          // Recharger les détails
-          loadOrderDetail();
+    // Mettre à jour orderDetail directement
+    if (orderDetail) {
+      const updatedItems = orderDetail.items.map((item: any) => 
+        item.sku === sku ? { ...item, quantity: newQuantity } : item
+      );
+      
+      const totalItems = updatedItems.reduce((sum: number, item: any) => 
+        sum + (editableQuantities[item.sku] === undefined ? item.quantity : editableQuantities[item.sku]), 0
+      );
+      
+      const totalAmount = updatedItems.reduce((sum: number, item: any) => 
+        sum + (item.unitPrice * (editableQuantities[item.sku] === undefined ? item.quantity : editableQuantities[item.sku])), 0
+      );
+
+      const updatedOrder = {
+        ...orderDetail,
+        items: updatedItems,
+        totalItems,
+        totalAmount
+      };
+
+      setOrderDetail(updatedOrder);
+
+      // Mettre à jour dans localStorage
+      try {
+        const savedOrders = localStorage.getItem('draftOrders');
+        if (savedOrders) {
+          const draftOrders = JSON.parse(savedOrders);
+          if (draftOrders[params.id]) {
+            draftOrders[params.id].items[sku] = newQuantity;
+            draftOrders[params.id].totalItems = totalItems;
+            draftOrders[params.id].totalAmount = totalAmount;
+            localStorage.setItem('draftOrders', JSON.stringify(draftOrders));
+          }
         }
+      } catch (error) {
+        console.error('Erreur lors de la mise à jour:', error);
       }
-    } catch (error) {
-      console.error('Erreur lors de la mise à jour:', error);
     }
   };
 
@@ -244,42 +268,9 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
       
       // Vérifier la connexion Supabase
       const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-      if (!supabaseUrl || supabaseUrl.includes('fake-project')) {
-        console.warn('⚠️ Supabase non configuré - Mode démonstration');
-        
-        // Simuler une validation réussie en mode démo
-        setTimeout(() => {
-          const updatedOrder = {
-            ...orderDetail,
-            status: 'pending',
-            statusLabel: 'En attente'
-          };
-          setOrderDetail(updatedOrder);
-
-          // Mettre à jour localStorage
-          const savedOrders = localStorage.getItem('draftOrders');
-          if (savedOrders) {
-            const draftOrders = JSON.parse(savedOrders);
-            draftOrders[params.id] = {
-              ...draftOrders[params.id],
-              status: 'pending',
-              statusLabel: 'En attente'
-            };
-            localStorage.setItem('draftOrders', JSON.stringify(draftOrders));
-            
-            // Supprimer de la commande active
-            const currentOrder = localStorage.getItem('currentDraftOrder');
-            if (currentOrder === params.id) {
-              localStorage.removeItem('currentDraftOrder');
-            }
-          }
-          
-          alert('✅ Commande validée avec succès ! (Mode démonstration - les données ne sont pas envoyées à une vraie base de données)');
-          setValidating(false);
-        }, 1500);
-        
-        return;
-      }
+      
+      // FORCER la validation même en mode démo pour décrémenter le stock
+      console.log('🔄 Validation en mode production - décrémentation du stock');
       
       // Vérifier que tous les produits sont encore disponibles
       for (const item of orderDetail.items) {
@@ -312,8 +303,8 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
       // Mettre à jour le statut local
       const updatedOrder = {
         ...orderDetail,
-        status: 'pending',
-        statusLabel: 'En attente'
+        status: 'validated',
+        statusLabel: 'Validée'
       };
       setOrderDetail(updatedOrder);
 
@@ -323,8 +314,8 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
         const draftOrders = JSON.parse(savedOrders);
         draftOrders[params.id] = {
           ...draftOrders[params.id],
-          status: 'pending',
-          statusLabel: 'En attente'
+          status: 'validated',
+          statusLabel: 'Validée'
         };
         localStorage.setItem('draftOrders', JSON.stringify(draftOrders));
         
@@ -391,6 +382,8 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
       case 'processing': return <Clock className="h-5 w-5" />;
       case 'pending': return <AlertCircle className="h-5 w-5" />;
       case 'draft': return <Package className="h-5 w-5" />;
+      case 'validated': return <CheckCircle className="h-5 w-5" />;
+      case 'editing': return <Clock className="h-5 w-5" />;
       default: return <Package className="h-5 w-5" />;
     }
   };
@@ -402,6 +395,8 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
       case 'processing': return 'bg-yellow-100 text-yellow-800';
       case 'pending': return 'bg-gray-100 text-gray-800';
       case 'draft': return 'bg-orange-100 text-orange-800';
+      case 'validated': return 'bg-emerald-100 text-emerald-800';
+      case 'editing': return 'bg-amber-100 text-amber-800';
       default: return 'bg-gray-100 text-gray-800';
     }
   };
@@ -415,17 +410,16 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
         // Créer les données pour Excel
         const worksheetData = [
           // Headers
-          ['SKU', 'Nom du produit', 'Marque', 'Grade', 'État', 'Couleur', 'Emballage', 'Info', 'Quantité', 'Prix unitaire', 'Total'],
+          ['SKU', 'Nom du produit', 'Apparence', 'Fonctionnalité', 'Informations', 'Couleur', 'Emballage', 'Quantité', 'Prix unitaire', 'Total'],
           // Données
           ...orderDetail.items.map((item: any) => [
             item.sku,
             item.name,
-            item.manufacturer,
             item.appearance,
             item.functionality,
+            item.additional_info,
             item.color,
             item.boxed,
-            item.additional_info,
             editableQuantities[item.sku] || item.quantity,
             item.unitPrice,
             (item.unitPrice * (editableQuantities[item.sku] || item.quantity))
@@ -457,12 +451,11 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
         worksheet['!cols'] = [
           { width: 15 }, // SKU
           { width: 30 }, // Nom du produit
-          { width: 15 }, // Marque
-          { width: 10 }, // Grade
-          { width: 10 }, // État
+          { width: 10 }, // Apparence
+          { width: 10 }, // Fonctionnalité
+          { width: 20 }, // Informations
           { width: 10 }, // Couleur
           { width: 15 }, // Emballage
-          { width: 20 }, // Info
           { width: 8 },  // Quantité
           { width: 12 }, // Prix unitaire
           { width: 12 }  // Total
@@ -482,6 +475,284 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
     } catch (error) {
       console.error('❌ Erreur export Excel:', error);
       alert('❌ Erreur lors de l\'export Excel');
+    }
+  };
+
+  // Fonction pour obtenir la classe CSS de la couleur
+  const getColorClass = (color: string | null) => {
+    if (!color) return 'bg-gray-100 text-gray-800';
+    
+    const colorLower = color.toLowerCase();
+    
+    switch (colorLower) {
+      case 'black':
+        return 'bg-gray-900 text-white';
+      case 'white':
+        return 'bg-gray-100 text-gray-900 border border-gray-300';
+      case 'red':
+        return 'bg-red-500 text-white';
+      case 'blue':
+        return 'bg-blue-500 text-white';
+      case 'green':
+        return 'bg-green-500 text-white';
+      case 'yellow':
+        return 'bg-yellow-400 text-gray-900';
+      case 'purple':
+        return 'bg-purple-500 text-white';
+      case 'pink':
+        return 'bg-pink-500 text-white';
+      case 'orange':
+        return 'bg-orange-500 text-white';
+      case 'gray':
+      case 'grey':
+        return 'bg-gray-500 text-white';
+      case 'silver':
+        return 'bg-gray-300 text-gray-900';
+      case 'gold':
+        return 'bg-yellow-600 text-white';
+      case 'rose':
+        return 'bg-rose-500 text-white';
+      case 'coral':
+        return 'bg-coral-500 text-white';
+      case 'midnight':
+        return 'bg-slate-900 text-white';
+      case 'graphite':
+        return 'bg-slate-700 text-white';
+      default:
+        return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+  // Nouvelles fonctions d'édition
+  const handleEditByImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      console.log('📁 Début d\'édition par import pour la commande:', params.id);
+
+      const formData = new FormData();
+      formData.append('file', file);
+
+      // Appeler l'API d'édition par import
+      const response = await fetch(`/api/orders/import?orderId=${params.id}`, {
+        method: 'PUT',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        throw new Error(`Erreur ${response.status}: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      
+      if (data.error) {
+        throw new Error(data.error);
+      }
+
+      console.log('📋 Résultat édition:', data);
+
+      // Si des changements sont détectés, afficher la confirmation
+      if (data.hasChanges) {
+        // Rediriger vers une page de confirmation d'édition
+        // ou afficher un modal de confirmation
+        if (window.confirm(
+          `Édition détectée:\n` +
+          `- ${data.validProducts?.length || 0} produits existants\n` +
+          `- ${data.missingProducts?.length || 0} produits à créer\n` +
+          `- ${data.editData?.productsToUpdate || 0} produits à mettre à jour\n\n` +
+          `Voulez-vous confirmer l'édition ?`
+        )) {
+          // Confirmer l'édition
+          const confirmResponse = await fetch('/api/orders/import/edit', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              orderId: params.id,
+              addToGatalog: true, // Par défaut, ajouter les produits manquants
+              validProducts: data.validProducts,
+              missingProducts: data.missingProducts,
+              editData: data.editData
+            }),
+          });
+
+          const confirmData = await confirmResponse.json();
+          
+          if (confirmData.success) {
+            // Mettre à jour la commande localement
+            const updatedOrder = confirmData.order;
+            setOrderDetail(updatedOrder);
+
+            // Mettre à jour localStorage
+            const savedOrders = localStorage.getItem('draftOrders');
+            if (savedOrders) {
+              const draftOrders = JSON.parse(savedOrders);
+              draftOrders[params.id] = updatedOrder;
+              localStorage.setItem('draftOrders', JSON.stringify(draftOrders));
+            }
+
+            alert(`✅ ${confirmData.message}`);
+            // Rafraîchir la page pour afficher les changements
+            window.location.reload();
+          } else {
+            throw new Error(confirmData.error || 'Erreur lors de l\'édition');
+          }
+        }
+      } else {
+        alert('ℹ️ Aucun changement détecté dans le fichier Excel.');
+      }
+
+    } catch (error) {
+      console.error('❌ Erreur édition par import:', error);
+      alert(`❌ Erreur lors de l'édition par import: ${error instanceof Error ? error.message : 'Erreur inconnue'}`);
+    }
+
+    // Réinitialiser le champ file
+    event.target.value = '';
+  };
+
+  const handleManualEdit = () => {
+    try {
+      // Sauvegarder l'état original des items avant édition
+      if (orderDetail && orderDetail.items) {
+        const originalItems = orderDetail.items.map((item: any) => ({
+          sku: item.sku,
+          quantity: item.quantity,
+          product_name: item.name,
+          unit_price: item.unitPrice
+        }));
+        setOriginalOrderItems(originalItems);
+        
+        // Initialiser les quantités éditables avec les quantités actuelles
+        const currentQuantities = orderDetail.items.reduce((acc: any, item: any) => {
+          acc[item.sku] = item.quantity;
+          return acc;
+        }, {});
+        setEditableQuantities(currentQuantities);
+      }
+
+      // Changer le statut en "editing"
+      const updatedOrder = {
+        ...orderDetail,
+        status: 'editing',
+        statusLabel: 'En édition',
+        editHistory: {
+          ...orderDetail.editHistory,
+          manualEditStarted: new Date().toISOString()
+        }
+      };
+
+      setOrderDetail(updatedOrder);
+
+      // Mettre à jour localStorage
+      const savedOrders = localStorage.getItem('draftOrders');
+      if (savedOrders) {
+        const draftOrders = JSON.parse(savedOrders);
+        draftOrders[params.id] = updatedOrder;
+        localStorage.setItem('draftOrders', JSON.stringify(draftOrders));
+      }
+
+      // Activer le mode édition pour les quantités
+      setIsEditing(true);
+
+      alert('📝 Mode édition manuel activé. Vous pouvez maintenant modifier les quantités.');
+
+    } catch (error) {
+      console.error('❌ Erreur édition manuelle:', error);
+      alert('❌ Erreur lors de l\'activation du mode édition');
+    }
+  };
+
+  const revalidateOrder = async () => {
+    if (!orderDetail || !originalOrderItems || originalOrderItems.length === 0) {
+      alert('❌ Impossible de revalider : données originales manquantes');
+      return;
+    }
+
+    try {
+      setValidating(true);
+
+      // Préparer les items édités
+      const editedItems = orderDetail.items
+        .filter((item: any) => (editableQuantities[item.sku] || item.quantity) > 0)
+        .map((item: { sku: string; name: string; quantity: number; unitPrice: number }) => ({
+          sku: item.sku,
+          quantity: editableQuantities[item.sku] || item.quantity,
+          product_name: item.name,
+          unit_price: item.unitPrice
+        }));
+
+      console.log('📊 Revalidation avec comparaison:');
+      console.log('- Items originaux:', originalOrderItems.length);
+      console.log('- Items édités:', editedItems.length);
+
+      // Utiliser la nouvelle méthode de revalidation
+      const result = await orderService.revalidateEditedOrder(params.id, originalOrderItems, editedItems);
+
+      // Mettre à jour le statut local vers "validated"
+      const updatedOrder = {
+        ...orderDetail,
+        status: 'validated',
+        statusLabel: 'Validée',
+        items: orderDetail.items.filter((item: any) => (editableQuantities[item.sku] || item.quantity) > 0),
+        editHistory: {
+          ...orderDetail.editHistory,
+          revalidatedAt: new Date().toISOString(),
+          changes: result
+        }
+      };
+
+      // Recalculer les totaux
+      const totalItems = editedItems.reduce((sum: number, item: any) => sum + item.quantity, 0);
+      const totalAmount = editedItems.reduce((sum: number, item: any) => sum + (item.unit_price * item.quantity), 0);
+      
+      updatedOrder.totalItems = totalItems;
+      updatedOrder.totalAmount = totalAmount;
+
+      setOrderDetail(updatedOrder);
+
+      // Mettre à jour localStorage
+      const savedOrders = localStorage.getItem('draftOrders');
+      if (savedOrders) {
+        const draftOrders = JSON.parse(savedOrders);
+        draftOrders[params.id] = updatedOrder;
+        localStorage.setItem('draftOrders', JSON.stringify(draftOrders));
+      }
+
+      // Désactiver le mode édition
+      setIsEditing(false);
+
+      // Message de succès détaillé
+      let message = '✅ Commande revalidée avec succès !\n\n';
+      if (result.stockAdded.length > 0) {
+        message += `📈 Stock restauré pour ${result.stockAdded.length} produits\n`;
+      }
+      if (result.stockRemoved.length > 0) {
+        message += `📉 Stock décrémenté pour ${result.stockRemoved.length} produits\n`;
+      }
+      if (result.productsRemovedFromCatalog.length > 0) {
+        message += `🗑️ ${result.productsRemovedFromCatalog.length} produits désactivés du catalogue`;
+      }
+
+      alert(message);
+
+    } catch (error) {
+      console.error('❌ Erreur revalidation:', error);
+      
+      let errorMessage = '❌ Erreur lors de la revalidation de la commande';
+      if (error instanceof Error) {
+        if (error.message.includes('Stock insuffisant')) {
+          errorMessage += '\n\n' + error.message;
+        } else {
+          errorMessage += '\n\n' + error.message;
+        }
+      }
+      
+      alert(errorMessage);
+    } finally {
+      setValidating(false);
     }
   };
 
@@ -638,6 +909,53 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
               
               {orderDetail.status !== 'draft' && (
                 <>
+                  {/* Boutons d'édition pour commandes validées */}
+                  {(orderDetail.status === 'validated' || orderDetail.status === 'editing') && (
+                    <div className="flex space-x-3">
+                      {/* Édition par import */}
+                      <label className="flex items-center space-x-2 px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 cursor-pointer text-sm">
+                        <input
+                          type="file"
+                          accept=".xlsx,.xls"
+                          onChange={handleEditByImport}
+                          className="hidden"
+                        />
+                        <FileSpreadsheet className="h-4 w-4" />
+                        <span>Éditer par import</span>
+                      </label>
+
+                      {/* Édition manuelle */}
+                      <button
+                        onClick={handleManualEdit}
+                        className="flex items-center space-x-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 text-sm"
+                      >
+                        <Edit className="h-4 w-4" />
+                        <span>Éditer manuellement</span>
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Bouton de revalidation pour commandes en édition */}
+                  {orderDetail.status === 'editing' && (
+                    <button
+                      onClick={revalidateOrder}
+                      disabled={validating}
+                      className="flex items-center space-x-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                    >
+                      {validating ? (
+                        <>
+                          <Clock className="h-4 w-4 animate-spin" />
+                          <span>Revalidation...</span>
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle className="h-4 w-4" />
+                          <span>Revalider</span>
+                        </>
+                      )}
+                    </button>
+                  )}
+
                   <button className="flex items-center space-x-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 text-sm">
                     <FileText className="h-4 w-4" />
                     <span>Facture</span>
@@ -680,12 +998,11 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
                 <tr>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">SKU</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nom du produit</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Marque</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Grade</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">État</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Apparence</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fonctionnalité</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Informations</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Couleur</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Emballage</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Info</th>
                   <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Qté</th>
                   <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Prix unit.</th>
                   <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Total</th>
@@ -699,7 +1016,6 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
                   <tr key={item.sku}>
                     <td className="px-4 py-3 text-sm font-mono text-gray-900">{item.sku}</td>
                     <td className="px-4 py-3 text-sm text-gray-900 font-medium">{item.name}</td>
-                    <td className="px-4 py-3 text-sm text-gray-900">{item.manufacturer}</td>
                     <td className="px-4 py-3">
                       <span className={`inline-flex px-2 py-1 text-xs font-medium rounded ${
                         item.appearance === 'Grade A+' ? 'bg-green-100 text-green-800' :
@@ -714,24 +1030,16 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
                         {item.functionality}
                       </span>
                     </td>
+                    <td className="px-4 py-3 text-sm text-gray-800">{item.additional_info}</td>
                     <td className="px-4 py-3 text-sm text-gray-900">
                       <div className="flex items-center space-x-2">
-                        <div className={`w-3 h-3 rounded-full border ${
-                          item.color.toLowerCase().includes('black') ? 'bg-black' :
-                          item.color.toLowerCase().includes('white') ? 'bg-white border-gray-300' :
-                          item.color.toLowerCase().includes('blue') ? 'bg-blue-500' :
-                          item.color.toLowerCase().includes('red') ? 'bg-red-500' :
-                          item.color.toLowerCase().includes('gray') ? 'bg-gray-500' :
-                          item.color.toLowerCase().includes('silver') ? 'bg-gray-300' :
-                          'bg-gray-400'
-                        }`}></div>
+                        <div className={`w-3 h-3 rounded-full border ${getColorClass(item.color)}`}></div>
                         <span>{item.color}</span>
                       </div>
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-900">{item.boxed}</td>
-                    <td className="px-4 py-3 text-sm text-gray-800">{item.additional_info}</td>
                     <td className="px-4 py-3 text-center">
-                      {orderDetail.status === 'draft' ? (
+                      {(orderDetail.status === 'draft' || orderDetail.status === 'editing' || isEditing) ? (
                         <div className="flex items-center justify-center space-x-1">
                           <button
                             onClick={() => updateQuantity(item.sku, editableQuantities[item.sku] - 1)}
@@ -758,7 +1066,7 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
                     <td className="px-4 py-3 text-sm text-right font-semibold text-gray-900">
                       {(item.unitPrice * editableQuantities[item.sku]).toFixed(2)}€
                     </td>
-                    {orderDetail.status === 'draft' && (
+                    {(orderDetail.status === 'draft' || orderDetail.status === 'editing' || isEditing) && (
                       <td className="px-4 py-3 text-center">
                         <button
                           onClick={() => removeItem(item.sku)}

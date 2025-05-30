@@ -776,47 +776,6 @@ export default function CatalogPage() {
     console.log('Filtres réinitialisés');
   };
 
-  // Fonction pour obtenir la couleur de la pastille
-  const getColorDot = (colorName: string) => {
-    if (!colorName) return null;
-    
-    const colorMap: {[key: string]: string} = {
-      'Black': '#000000',
-      'White': '#FFFFFF',
-      'Red': '#DC2626',
-      'Blue': '#2563EB',
-      'Green': '#16A34A',
-      'Yellow': '#EAB308',
-      'Purple': '#9333EA',
-      'Pink': '#EC4899',
-      'Orange': '#EA580C',
-      'Gray': '#6B7280',
-      'Grey': '#6B7280',
-      'Silver': '#9CA3AF',
-      'Gold': '#F59E0B',
-      'Rose': '#F43F5E',
-      'Coral': '#FF7F7F',
-      'Midnight': '#1E293B',
-      'Graphite': '#374151'
-    };
-    
-    const color = colorMap[colorName] || '#6B7280';
-    const borderColor = colorName === 'White' ? '#D1D5DB' : color;
-    
-    return (
-      <div className="flex items-center gap-2">
-        <div 
-          className="w-3 h-3 rounded-full border"
-          style={{ 
-            backgroundColor: color,
-            borderColor: borderColor
-          }}
-        />
-        <span className="text-sm text-gray-900">{colorName}</span>
-      </div>
-    );
-  };
-
   // Fonction d'export
   const exportCatalog = (format: 'xlsx' | 'csv') => {
     console.log(`📊 Export catalogue au format ${format}...`);
@@ -949,11 +908,56 @@ export default function CatalogPage() {
     }
   }, [currentDraftOrder, draftOrders, products]);
 
+  // Fonction pour obtenir la classe CSS de la couleur
+  const getColorClass = (color: string | null) => {
+    if (!color) return 'bg-gray-100 text-gray-800';
+    
+    const colorLower = color.toLowerCase();
+    
+    switch (colorLower) {
+      case 'black':
+        return 'bg-gray-900 text-white';
+      case 'white':
+        return 'bg-gray-100 text-gray-900 border border-gray-300';
+      case 'red':
+        return 'bg-red-500 text-white';
+      case 'blue':
+        return 'bg-blue-500 text-white';
+      case 'green':
+        return 'bg-green-500 text-white';
+      case 'yellow':
+        return 'bg-yellow-400 text-gray-900';
+      case 'purple':
+        return 'bg-purple-500 text-white';
+      case 'pink':
+        return 'bg-pink-500 text-white';
+      case 'orange':
+        return 'bg-orange-500 text-white';
+      case 'gray':
+      case 'grey':
+        return 'bg-gray-500 text-white';
+      case 'silver':
+        return 'bg-gray-300 text-gray-900';
+      case 'gold':
+        return 'bg-yellow-600 text-white';
+      case 'rose':
+        return 'bg-rose-500 text-white';
+      case 'coral':
+        return 'bg-coral-500 text-white';
+      case 'midnight':
+        return 'bg-slate-900 text-white';
+      case 'graphite':
+        return 'bg-slate-700 text-white';
+      default:
+        return 'bg-gray-100 text-gray-800';
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
       <header className="bg-dbc-dark-green shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="max-w-[1800px] mx-auto px-8">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center space-x-4">
               <button
@@ -1000,7 +1004,8 @@ export default function CatalogPage() {
         </div>
       </header>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      {/* Conteneur principal avec plus d'espace et centrage */}
+      <div className="max-w-[2000px] mx-auto px-4 py-6">
         {/* Barre d'outils principale */}
         <div className="bg-white rounded-lg shadow-sm border p-6 mb-6">
           {/* Recherche et actions */}
@@ -1358,206 +1363,195 @@ export default function CatalogPage() {
         </div>
 
         {/* Tableau des produits avec pagination en bas aussi */}
-        <div className="bg-white rounded-lg shadow-sm border overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    <input type="checkbox" className="rounded border-gray-300" />
-                  </th>
-                  <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    <button onClick={() => handleSort('sku')} className="flex items-center space-x-1">
-                      <span>SKU</span>
-                      <ArrowUpDown className="h-3 w-3" />
-                    </button>
-                  </th>
-                  <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    <button onClick={() => handleSort('product_name')} className="flex items-center space-x-1">
-                      <span>Nom du produit</span>
-                      <ArrowUpDown className="h-3 w-3" />
-                    </button>
-                  </th>
-                  <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Marque</th>
-                  <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Apparence</th>
-                  <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fonction.</th>
-                  <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Couleur</th>
-                  <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Emballage</th>
-                  <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Informations</th>
-                  <th className="px-2 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    <button onClick={() => handleSort('quantity')} className="flex items-center space-x-1 ml-auto">
-                      <span>Stock</span>
-                      <ArrowUpDown className="h-3 w-3" />
-                    </button>
-                  </th>
-                  <th className="px-2 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    <button onClick={() => handleSort('price_dbc')} className="flex items-center space-x-1 ml-auto">
-                      <span>Prix</span>
-                      <ArrowUpDown className="h-3 w-3" />
-                    </button>
-                  </th>
-                  <th className="px-2 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Qté</th>
-                  <th className="px-2 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {paginatedProducts.map((product) => {
-                  const manufacturer = MANUFACTURERS.find(m => 
-                    product.product_name.toLowerCase().includes(m.toLowerCase())
-                  ) || '-';
-                  
-                  const quantityInCart = currentDraftOrder && draftOrders[currentDraftOrder]?.items?.[product.sku] || 0;
-                  // La case est cochée SEULEMENT si on a pris TOUTE la quantité disponible
-                  const isChecked = quantityInCart === product.quantity && quantityInCart > 0;
-                  // La ligne est en surbrillance dès qu'il y a une quantité dans le panier
-                  const isHighlighted = quantityInCart > 0;
-                  
-                  return (
-                    <tr 
-                      key={product.sku} 
-                      className={`hover:bg-gray-50 ${isHighlighted ? 'bg-green-50 border-l-4 border-dbc-light-green' : ''}`}
-                    >
-                      <td className="px-2 py-2">
-                        <input
-                          type="checkbox"
-                          checked={isChecked}
-                          onChange={(e) => {
-                            e.stopPropagation();
-                            const isChecked = e.target.checked;
-                            
-                            if (isChecked) {
-                              // Si coché, sélectionner TOUTE la quantité disponible
-                              selectFullQuantity(product.sku, product.quantity);
-                              setSelectedProducts(prev => ({ ...prev, [product.sku]: true }));
-                            } else {
-                              // Si décoché, retirer du panier
-                              if (currentDraftOrder && draftOrders[currentDraftOrder]) {
-                                const newItems = { ...draftOrders[currentDraftOrder].items };
-                                delete newItems[product.sku];
-                                
-                                const newDraftOrders = {
-                                  ...draftOrders,
-                                  [currentDraftOrder]: {
-                                    ...draftOrders[currentDraftOrder],
-                                    items: newItems
-                                  }
-                                };
-                                
-                                setDraftOrders(newDraftOrders);
-                                
-                                setQuantities(prev => {
-                                  const newQuantities = { ...prev };
-                                  delete newQuantities[product.sku];
-                                  return newQuantities;
-                                });
-                                
-                                // Sauvegarder immédiatement
-                                saveDraftOrdersToLocalStorage(newDraftOrders);
-                              }
-                              setSelectedProducts(prev => ({ ...prev, [product.sku]: false }));
-                            }
-                          }}
-                          className="rounded border-gray-300"
-                        />
-                      </td>
-                      <td className="px-2 py-2 text-xs font-mono text-gray-900 truncate max-w-[80px]" title={product.sku}>{product.sku}</td>
-                      <td className="px-2 py-2 text-xs text-gray-900">
-                        <div className="truncate max-w-[180px]" title={product.product_name}>
-                          {product.product_name}
-                        </div>
-                      </td>
-                      <td className="px-2 py-2 text-xs text-gray-900 truncate max-w-[60px]">{manufacturer}</td>
-                      <td className="px-2 py-2">
-                        <span className={`inline-flex px-1 py-0.5 text-xs font-medium rounded-full ${
-                          product.appearance.includes('A+') ? 'bg-green-100 text-green-800' :
-                          product.appearance.includes('A') && !product.appearance.includes('AB') ? 'bg-blue-100 text-blue-800' :
-                          product.appearance.includes('B') ? 'bg-yellow-100 text-yellow-800' :
-                          'bg-orange-100 text-orange-800'
-                        }`}>
-                          {product.appearance.replace('Grade ', '')}
-                        </span>
-                      </td>
-                      <td className="px-2 py-2 text-xs text-gray-900 truncate max-w-[60px]">{product.functionality}</td>
-                      <td className="px-2 py-2">
-                        {product.color ? (
-                          <div className="flex items-center gap-1">
-                            <div 
-                              className="w-2 h-2 rounded-full border flex-shrink-0"
-                              style={{ 
-                                backgroundColor: getColorDot(product.color)?.props?.children?.[0]?.props?.style?.backgroundColor || '#6B7280',
-                                borderColor: product.color === 'White' ? '#D1D5DB' : (getColorDot(product.color)?.props?.children?.[0]?.props?.style?.backgroundColor || '#6B7280')
-                              }}
-                            />
-                            <span className="text-xs text-gray-900 truncate max-w-[50px]">{product.color}</span>
-                          </div>
-                        ) : (
-                          <span className="text-xs text-gray-400">-</span>
-                        )}
-                      </td>
-                      <td className="px-2 py-2 text-xs text-gray-900 truncate max-w-[70px]">{product.boxed}</td>
-                      <td className="px-2 py-2 text-xs text-gray-900">
-                        <div className="truncate max-w-[80px]" title={product.additional_info || ''}>
-                          {product.additional_info || '-'}
-                        </div>
-                      </td>
-                      <td className="px-2 py-2 text-xs text-right font-medium text-gray-900">{product.quantity}</td>
-                      <td className="px-2 py-2 text-xs text-right font-medium text-gray-900 whitespace-nowrap">{product.price_dbc.toFixed(2)}€</td>
-                      <td className="px-2 py-2">
-                        <input
-                          type="number"
-                          min="0"
-                          max={product.quantity}
-                          placeholder="0"
-                          value={quantityInCart || (quantities[product.sku] || '')}
-                          onChange={(e) => {
-                            const newValue = e.target.value;
-                            const numValue = parseInt(newValue);
-                            
-                            // Permettre 0 ou vide, et empêcher de dépasser la quantité disponible
-                            if (newValue === '' || (numValue >= 0 && numValue <= product.quantity)) {
-                              updateQuantity(product.sku, newValue);
-                            }
-                          }}
-                          className={`w-10 px-1 py-0.5 text-xs border rounded focus:border-dbc-light-green focus:outline-none text-center bg-white font-medium text-gray-900 ${
-                            isHighlighted ? 'border-dbc-light-green bg-green-50' : 'border-gray-300'
-                          }`}
-                        />
-                      </td>
-                      <td className="px-2 py-2">
-                        <div className="flex items-center justify-center gap-0.5">
-                          {/* Bouton décrémenter */}
-                          <button
-                            onClick={() => decrementQuantity(product.sku)}
-                            disabled={!quantityInCart || quantityInCart === 0}
-                            className={`inline-flex items-center p-1 border border-transparent text-xs rounded focus:outline-none ${
-                              !quantityInCart || quantityInCart === 0
-                                ? 'bg-gray-200 text-gray-400 cursor-not-allowed' 
-                                : 'bg-red-500 text-white hover:bg-red-600'
-                            }`}
-                          >
-                            <Minus className="h-2.5 w-2.5" />
-                          </button>
+        <div className="bg-white rounded-lg shadow-sm border overflow-x-auto">
+          <table className="w-full table-auto divide-y divide-gray-200 min-w-[1400px]">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="w-12 px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <input
+                    type="checkbox"
+                    checked={selectedProducts && products.length > 0 && products.every(p => selectedProducts[p.sku])}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        // Sélectionner tous les produits visibles avec leur quantité max
+                        const newSelection: {[key: string]: boolean} = {};
+                        const newQuantities: {[key: string]: number} = {};
+                        products.forEach(product => {
+                          newSelection[product.sku] = true;
+                          newQuantities[product.sku] = product.quantity;
+                        });
+                        setSelectedProducts(newSelection);
+                        setQuantities(newQuantities);
+                      } else {
+                        // Désélectionner tous
+                        setSelectedProducts({});
+                        setQuantities({});
+                      }
+                    }}
+                    className="rounded border-gray-300"
+                  />
+                </th>
+                <th className="w-32 px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">SKU</th>
+                <th className="w-80 px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nom du produit</th>
+                <th className="w-24 px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Apparence</th>
+                <th className="w-24 px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fonction.</th>
+                <th className="w-32 px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Informations</th>
+                <th className="w-24 px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Couleur</th>
+                <th className="w-24 px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Emballage</th>
+                <th className="w-16 px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Stock</th>
+                <th className="w-20 px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Prix</th>
+                <th className="w-16 px-2 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Qté</th>
+                <th className="w-20 px-2 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {paginatedProducts.map((product) => {
+                const quantityInCart = currentDraftOrder && draftOrders[currentDraftOrder]?.items?.[product.sku] || 0;
+                // La case est cochée SEULEMENT si on a pris TOUTE la quantité disponible
+                const isChecked = quantityInCart === product.quantity && quantityInCart > 0;
+                // La ligne est en surbrillance dès qu'il y a une quantité dans le panier
+                const isHighlighted = quantityInCart > 0;
+                
+                return (
+                  <tr 
+                    key={product.sku} 
+                    className={`hover:bg-gray-50 ${isHighlighted ? 'bg-green-50 border-l-4 border-dbc-light-green' : ''}`}
+                  >
+                    <td className="px-2 py-2">
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={(e) => {
+                          e.stopPropagation();
+                          const isChecked = e.target.checked;
                           
-                          {/* Bouton incrémenter */}
-                          <button
-                            onClick={() => addToCart(product.sku)}
-                            disabled={quantityInCart >= product.quantity}
-                            className={`inline-flex items-center p-1 border border-transparent text-xs rounded focus:outline-none ${
-                              quantityInCart >= product.quantity 
-                                ? 'bg-gray-400 cursor-not-allowed text-white' 
-                                : 'bg-dbc-light-green hover:bg-green-600 text-white'
-                            }`}
-                          >
-                            <Plus className="h-2.5 w-2.5" />
-                          </button>
+                          if (isChecked) {
+                            // Si coché, sélectionner TOUTE la quantité disponible
+                            selectFullQuantity(product.sku, product.quantity);
+                            setSelectedProducts(prev => ({ ...prev, [product.sku]: true }));
+                          } else {
+                            // Si décoché, retirer du panier
+                            if (currentDraftOrder && draftOrders[currentDraftOrder]) {
+                              const newItems = { ...draftOrders[currentDraftOrder].items };
+                              delete newItems[product.sku];
+                              
+                              const newDraftOrders = {
+                                ...draftOrders,
+                                [currentDraftOrder]: {
+                                  ...draftOrders[currentDraftOrder],
+                                  items: newItems
+                                }
+                              };
+                              
+                              setDraftOrders(newDraftOrders);
+                              
+                              setQuantities(prev => {
+                                const newQuantities = { ...prev };
+                                delete newQuantities[product.sku];
+                                return newQuantities;
+                              });
+                              
+                              // Sauvegarder immédiatement
+                              saveDraftOrdersToLocalStorage(newDraftOrders);
+                            }
+                            setSelectedProducts(prev => ({ ...prev, [product.sku]: false }));
+                          }
+                        }}
+                        className="rounded border-gray-300"
+                      />
+                    </td>
+                    <td className="px-2 py-2 text-xs font-mono text-gray-900">{product.sku}</td>
+                    <td className="px-2 py-2 text-xs text-gray-900">
+                      <div className="break-words" title={product.product_name}>
+                        {product.product_name}
+                      </div>
+                    </td>
+                    <td className="px-2 py-2">
+                      <span className={`inline-flex px-1 py-0.5 text-xs font-medium rounded-full ${
+                        product.appearance.includes('A+') ? 'bg-green-100 text-green-800' :
+                        product.appearance.includes('A') && !product.appearance.includes('AB') ? 'bg-blue-100 text-blue-800' :
+                        product.appearance.includes('B') ? 'bg-yellow-100 text-yellow-800' :
+                        'bg-orange-100 text-orange-800'
+                      }`}>
+                        {product.appearance.replace('Grade ', '')}
+                      </span>
+                    </td>
+                    <td className="px-2 py-2 text-xs text-gray-900">{product.functionality}</td>
+                    <td className="px-2 py-2 text-xs text-gray-900">
+                      <div className="break-words">
+                        {product.additional_info || '-'}
+                      </div>
+                    </td>
+                    <td className="px-2 py-2">
+                      {product.color ? (
+                        <div className="flex items-center gap-1">
+                          <div 
+                            className={`w-2 h-2 rounded-full border flex-shrink-0 ${getColorClass(product.color)}`}
+                          />
+                          <span className="text-xs text-gray-900">{product.color}</span>
                         </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                      ) : (
+                        <span className="text-xs text-gray-400">-</span>
+                      )}
+                    </td>
+                    <td className="px-2 py-2 text-xs text-gray-900">{product.boxed}</td>
+                    <td className="px-2 py-2 text-xs text-left font-medium text-gray-900">{product.quantity}</td>
+                    <td className="px-2 py-2 text-xs text-left font-medium text-gray-900">{product.price_dbc.toFixed(2)}€</td>
+                    <td className="px-2 py-2">
+                      <input
+                        type="number"
+                        min="0"
+                        max={product.quantity}
+                        placeholder="0"
+                        value={quantityInCart || (quantities[product.sku] || '')}
+                        onChange={(e) => {
+                          const newValue = e.target.value;
+                          const numValue = parseInt(newValue);
+                          
+                          // Permettre 0 ou vide, et empêcher de dépasser la quantité disponible
+                          if (newValue === '' || (numValue >= 0 && numValue <= product.quantity)) {
+                            updateQuantity(product.sku, newValue);
+                          }
+                        }}
+                        className={`w-10 px-1 py-0.5 text-xs border rounded focus:border-dbc-light-green focus:outline-none text-center bg-white font-medium text-gray-900 ${
+                          isHighlighted ? 'border-dbc-light-green bg-green-50' : 'border-gray-300'
+                        }`}
+                      />
+                    </td>
+                    <td className="px-2 py-2">
+                      <div className="flex items-center justify-center gap-0.5">
+                        {/* Bouton décrémenter */}
+                        <button
+                          onClick={() => decrementQuantity(product.sku)}
+                          disabled={!quantityInCart || quantityInCart === 0}
+                          className={`inline-flex items-center p-1 border border-transparent text-xs rounded focus:outline-none ${
+                            !quantityInCart || quantityInCart === 0
+                              ? 'bg-gray-200 text-gray-400 cursor-not-allowed' 
+                              : 'bg-red-500 text-white hover:bg-red-600'
+                          }`}
+                        >
+                          <Minus className="h-2.5 w-2.5" />
+                        </button>
+                        
+                        {/* Bouton incrémenter */}
+                        <button
+                          onClick={() => addToCart(product.sku)}
+                          disabled={quantityInCart >= product.quantity}
+                          className={`inline-flex items-center p-1 border border-transparent text-xs rounded focus:outline-none ${
+                            quantityInCart >= product.quantity 
+                              ? 'bg-gray-400 cursor-not-allowed text-white' 
+                              : 'bg-dbc-light-green hover:bg-green-600 text-white'
+                          }`}
+                        >
+                          <Plus className="h-2.5 w-2.5" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
 
         {/* Pagination en bas */}

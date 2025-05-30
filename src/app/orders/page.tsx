@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import DBCLogo from '../../components/DBCLogo';
+import OrderImportButton from '../../components/OrderImportButton';
 import { supabase, Product } from '../../lib/supabase';
 import { 
   User, 
@@ -50,41 +51,41 @@ export default function OrdersPage() {
   }, []);
 
   // Charger les commandes brouillon depuis localStorage
-  useEffect(() => {
-    const loadDraftOrders = () => {
-      try {
-        const savedOrders = localStorage.getItem('draftOrders');
+  const loadDraftOrders = () => {
+    try {
+      const savedOrders = localStorage.getItem('draftOrders');
+      
+      if (savedOrders && products.length > 0) {
+        const draftOrders = JSON.parse(savedOrders);
         
-        if (savedOrders && products.length > 0) {
-          const draftOrders = JSON.parse(savedOrders);
+        const ordersArray = Object.values(draftOrders).map((order: any) => {
+          // Calculer le nombre d'articles et le montant total
+          const items = order.items || {};
+          const itemCount = Object.values(items).reduce((sum: number, qty: any) => sum + (typeof qty === 'number' ? qty : 0), 0);
           
-          const ordersArray = Object.values(draftOrders).map((order: any) => {
-            // Calculer le nombre d'articles et le montant total
-            const items = order.items || {};
-            const itemCount = Object.values(items).reduce((sum: number, qty: any) => sum + (typeof qty === 'number' ? qty : 0), 0);
-            
-            // Utiliser les données réelles du catalogue
-            const totalAmount = Object.entries(items).reduce((sum: number, [sku, qty]: [string, any]) => {
-              const product = products.find(p => p.sku === sku);
-              const quantity = typeof qty === 'number' ? qty : 0;
-              return sum + (product ? product.price_dbc * quantity : 0);
-            }, 0);
+          // Utiliser les données réelles du catalogue
+          const totalAmount = Object.entries(items).reduce((sum: number, [sku, qty]: [string, any]) => {
+            const product = products.find(p => p.sku === sku);
+            const quantity = typeof qty === 'number' ? qty : 0;
+            return sum + (product ? product.price_dbc * quantity : 0);
+          }, 0);
 
-            return {
-              ...order,
-              itemCount,
-              totalAmount,
-              canDelete: true
-            };
-          });
-          
-          setOrders(ordersArray);
-        }
-      } catch (error) {
-        console.error('Erreur lors du chargement des commandes:', error);
+          return {
+            ...order,
+            itemCount,
+            totalAmount,
+            canDelete: true
+          };
+        });
+        
+        setOrders(ordersArray);
       }
-    };
+    } catch (error) {
+      console.error('Erreur lors du chargement des commandes:', error);
+    }
+  };
 
+  useEffect(() => {
     loadDraftOrders();
     
     // Écouter les changements dans localStorage
@@ -104,7 +105,7 @@ export default function OrdersPage() {
   }, [products]);
 
   const deleteOrder = (orderId: string) => {
-    if (window.confirm('Êtes-vous sûr de vouloir supprimer cette commande brouillon ?')) {
+    if (window.confirm('Êtes-vous sûr de vouloir supprimer cette commande ?')) {
       try {
         const savedOrders = localStorage.getItem('draftOrders');
         if (savedOrders) {
@@ -112,12 +113,66 @@ export default function OrdersPage() {
           delete draftOrders[orderId];
           localStorage.setItem('draftOrders', JSON.stringify(draftOrders));
           
-          // Mettre à jour l'état local
-          setOrders(prev => prev.filter(order => order.id !== orderId));
+          // Supprimer la commande active si c'est celle-ci
+          const currentOrder = localStorage.getItem('currentDraftOrder');
+          if (currentOrder === orderId) {
+            localStorage.removeItem('currentDraftOrder');
+          }
+          
+          // Recharger les commandes
+          loadDraftOrders();
         }
       } catch (error) {
         console.error('Erreur lors de la suppression:', error);
       }
+    }
+  };
+
+  const handleImportComplete = (result: any) => {
+    if (result.success && result.order) {
+      console.log('✅ Import terminé:', result);
+      
+      // Ajouter la nouvelle commande au localStorage
+      try {
+        const savedOrders = localStorage.getItem('draftOrders');
+        const draftOrders = savedOrders ? JSON.parse(savedOrders) : {};
+        
+        draftOrders[result.order.id] = result.order;
+        localStorage.setItem('draftOrders', JSON.stringify(draftOrders));
+        
+        // Définir comme commande active
+        localStorage.setItem('currentDraftOrder', result.order.id);
+        
+        // Recharger les commandes
+        loadDraftOrders();
+        
+        // Message de succès avec détails
+        const message = [
+          `${result.message}`,
+          `Commande "${result.orderName}" créée avec ${result.totalItems} articles.`,
+          `Total: ${result.totalAmount?.toFixed(2)}€`
+        ];
+        
+        if (result.productsCreated > 0) {
+          message.push(`${result.productsCreated} nouveaux produits ajoutés au catalogue.`);
+        }
+        
+        if (result.productsUpdated > 0) {
+          message.push(`${result.productsUpdated} produits mis à jour (stock initialisé).`);
+        }
+        
+        alert(message.join('\n\n'));
+        
+        // Rediriger vers les détails de la commande
+        router.push(`/orders/${result.order.id}`);
+        
+      } catch (error) {
+        console.error('Erreur sauvegarde commande importée:', error);
+        alert('Commande importée mais erreur de sauvegarde locale');
+      }
+    } else if (result.error) {
+      console.error('❌ Erreur import:', result.error);
+      // L'erreur est déjà gérée dans le composant
     }
   };
 
@@ -132,6 +187,9 @@ export default function OrdersPage() {
       case 'processing': return <Clock className="h-4 w-4" />;
       case 'pending': return <AlertCircle className="h-4 w-4" />;
       case 'draft': return <Package className="h-4 w-4" />;
+      case 'imported': return <Package className="h-4 w-4" />;
+      case 'validated': return <CheckCircle className="h-4 w-4" />;
+      case 'editing': return <Clock className="h-4 w-4" />;
       default: return <Package className="h-4 w-4" />;
     }
   };
@@ -143,6 +201,9 @@ export default function OrdersPage() {
       case 'processing': return 'bg-yellow-100 text-yellow-800';
       case 'pending': return 'bg-gray-100 text-gray-800';
       case 'draft': return 'bg-orange-100 text-orange-800';
+      case 'imported': return 'bg-purple-100 text-purple-800';
+      case 'validated': return 'bg-emerald-100 text-emerald-800';
+      case 'editing': return 'bg-amber-100 text-amber-800';
       default: return 'bg-gray-100 text-gray-800';
     }
   };
@@ -199,20 +260,27 @@ export default function OrdersPage() {
           <div className="flex items-center justify-between mb-4">
             <h1 className="text-2xl font-bold text-gray-900">Mes commandes</h1>
             
-            <div className="flex items-center space-x-2">
-              <span className="text-sm text-gray-600">Filtrer par statut:</span>
-              <select
-                value={selectedStatus}
-                onChange={(e) => setSelectedStatus(e.target.value)}
-                className="text-sm border border-gray-300 rounded px-3 py-1 focus:ring-1 focus:ring-dbc-light-green focus:border-transparent"
-              >
-                <option value="all">Toutes</option>
-                <option value="draft">Brouillons</option>
-                <option value="pending">En attente</option>
-                <option value="processing">En traitement</option>
-                <option value="shipped">Expédiées</option>
-                <option value="delivered">Livrées</option>
-              </select>
+            <div className="flex items-center space-x-4">
+              <OrderImportButton onImportComplete={handleImportComplete} />
+              
+              <div className="flex items-center space-x-2">
+                <span className="text-sm text-gray-600">Filtrer par statut:</span>
+                <select
+                  value={selectedStatus}
+                  onChange={(e) => setSelectedStatus(e.target.value)}
+                  className="text-sm border border-gray-300 rounded px-3 py-1 focus:ring-1 focus:ring-dbc-light-green focus:border-transparent"
+                >
+                  <option value="all">Toutes</option>
+                  <option value="draft">Brouillons</option>
+                  <option value="validated">Validées</option>
+                  <option value="editing">En édition</option>
+                  <option value="imported">Importées</option>
+                  <option value="pending">En attente</option>
+                  <option value="processing">En traitement</option>
+                  <option value="shipped">Expédiées</option>
+                  <option value="delivered">Livrées</option>
+                </select>
+              </div>
             </div>
           </div>
 
