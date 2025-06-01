@@ -24,10 +24,66 @@ import {
 const mockOrders: any[] = [];
 
 export default function OrdersPage() {
-  const [selectedStatus, setSelectedStatus] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all');
   const [orders, setOrders] = useState(mockOrders);
   const [products, setProducts] = useState<Product[]>([]);
+  const [loading, setLoading] = useState(false);
   const router = useRouter();
+
+  // Fonction pour charger les commandes depuis Supabase
+  const loadOrders = async () => {
+    setLoading(true);
+    try {
+      console.log('📦 Chargement des commandes depuis Supabase uniquement...');
+      
+      // Charger toutes les commandes depuis Supabase
+      const { data: supabaseOrders, error } = await supabase
+        .from('orders')
+        .select(`
+          id,
+          name,
+          status,
+          status_label,
+          customer_ref,
+          created_at,
+          updated_at,
+          total_amount,
+          total_items,
+          vat_type
+        `)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('❌ Erreur chargement Supabase:', error);
+        throw error;
+      }
+
+      console.log('✅ Commandes Supabase chargées:', supabaseOrders?.length || 0);
+
+      // Convertir au format attendu
+      const allOrders = supabaseOrders?.map(order => ({
+        id: order.id, // Utiliser l'UUID Supabase
+        name: order.name,
+        status: order.status,
+        status_label: order.status_label,
+        createdAt: order.created_at,
+        totalAmount: order.total_amount,
+        totalItems: order.total_items,
+        customerRef: order.customer_ref,
+        vatType: order.vat_type,
+        source: 'supabase'
+      })) || [];
+
+      console.log('📋 Commandes formatées:', allOrders.length);
+      setOrders(allOrders);
+
+    } catch (error) {
+      console.error('❌ Erreur chargement commandes:', error);
+      setOrders([]);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // Charger les produits depuis Supabase
   useEffect(() => {
@@ -50,80 +106,37 @@ export default function OrdersPage() {
     loadProducts();
   }, []);
 
-  // Charger les commandes brouillon depuis localStorage
-  const loadDraftOrders = () => {
-    try {
-      const savedOrders = localStorage.getItem('draftOrders');
-      
-      if (savedOrders && products.length > 0) {
-        const draftOrders = JSON.parse(savedOrders);
-        
-        const ordersArray = Object.values(draftOrders).map((order: any) => {
-          // Calculer le nombre d'articles et le montant total
-          const items = order.items || {};
-          const itemCount = Object.values(items).reduce((sum: number, qty: any) => sum + (typeof qty === 'number' ? qty : 0), 0);
-          
-          // Utiliser les données réelles du catalogue
-          const totalAmount = Object.entries(items).reduce((sum: number, [sku, qty]: [string, any]) => {
-            const product = products.find(p => p.sku === sku);
-            const quantity = typeof qty === 'number' ? qty : 0;
-            return sum + (product ? product.price_dbc * quantity : 0);
-          }, 0);
-
-          return {
-            ...order,
-            itemCount,
-            totalAmount,
-            canDelete: true
-          };
-        });
-        
-        setOrders(ordersArray);
-      }
-    } catch (error) {
-      console.error('Erreur lors du chargement des commandes:', error);
-    }
-  };
-
   useEffect(() => {
-    loadDraftOrders();
-    
-    // Écouter les changements dans localStorage
-    const handleStorageChange = () => {
-      loadDraftOrders();
-    };
-    
-    window.addEventListener('storage', handleStorageChange);
-    
-    // Vérifier périodiquement les changements (pour les changements dans la même fenêtre)
-    const interval = setInterval(loadDraftOrders, 1000);
-    
-    return () => {
-      window.removeEventListener('storage', handleStorageChange);
-      clearInterval(interval);
-    };
-  }, [products]);
+    loadOrders();
+  }, []);
 
-  const deleteOrder = (orderId: string) => {
+  const deleteOrder = async (orderId: string) => {
     if (window.confirm('Êtes-vous sûr de vouloir supprimer cette commande ?')) {
       try {
-        const savedOrders = localStorage.getItem('draftOrders');
-        if (savedOrders) {
-          const draftOrders = JSON.parse(savedOrders);
-          delete draftOrders[orderId];
-          localStorage.setItem('draftOrders', JSON.stringify(draftOrders));
-          
-          // Supprimer la commande active si c'est celle-ci
-          const currentOrder = localStorage.getItem('currentDraftOrder');
-          if (currentOrder === orderId) {
-            localStorage.removeItem('currentDraftOrder');
-          }
-          
-          // Recharger les commandes
-          loadDraftOrders();
-        }
+        // Supprimer d'abord les items de commande
+        const { error: itemsError } = await supabase
+          .from('order_items')
+          .delete()
+          .eq('order_id', orderId);
+
+        if (itemsError) throw itemsError;
+
+        // Puis supprimer la commande
+        const { error: orderError } = await supabase
+          .from('orders')
+          .delete()
+          .eq('id', orderId);
+
+        if (orderError) throw orderError;
+
+        alert('✅ Commande supprimée avec succès');
+        
+        // Recharger les commandes
+        loadOrders();
+        
       } catch (error) {
-        console.error('Erreur lors de la suppression:', error);
+        console.error('❌ Erreur lors de la suppression:', error);
+        alert('❌ Erreur lors de la suppression de la commande');
       }
     }
   };
@@ -132,78 +145,55 @@ export default function OrdersPage() {
     if (result.success && result.order) {
       console.log('✅ Import terminé:', result);
       
-      // Ajouter la nouvelle commande au localStorage
-      try {
-        const savedOrders = localStorage.getItem('draftOrders');
-        const draftOrders = savedOrders ? JSON.parse(savedOrders) : {};
-        
-        draftOrders[result.order.id] = result.order;
-        localStorage.setItem('draftOrders', JSON.stringify(draftOrders));
-        
-        // Définir comme commande active
-        localStorage.setItem('currentDraftOrder', result.order.id);
-        
-        // Recharger les commandes
-        loadDraftOrders();
-        
-        // Message de succès avec détails
-        const message = [
-          `${result.message}`,
-          `Commande "${result.orderName}" créée avec ${result.totalItems} articles.`,
-          `Total: ${result.totalAmount?.toFixed(2)}€`
-        ];
-        
-        if (result.productsCreated > 0) {
-          message.push(`${result.productsCreated} nouveaux produits ajoutés au catalogue.`);
-        }
-        
-        if (result.productsUpdated > 0) {
-          message.push(`${result.productsUpdated} produits mis à jour (stock initialisé).`);
-        }
-        
-        alert(message.join('\n\n'));
-        
-        // Rediriger vers les détails de la commande
-        router.push(`/orders/${result.order.id}`);
-        
-      } catch (error) {
-        console.error('Erreur sauvegarde commande importée:', error);
-        alert('Commande importée mais erreur de sauvegarde locale');
+      // Recharger les commandes depuis Supabase
+      loadOrders();
+      
+      // Message de succès avec détails
+      const message = [
+        `${result.message}`,
+        `Commande "${result.orderName}" créée avec ${result.totalItems} articles.`,
+        `Total: ${result.totalAmount?.toFixed(2)}€`
+      ];
+      
+      if (result.productsCreated > 0) {
+        message.push(`${result.productsCreated} nouveaux produits ajoutés au catalogue.`);
       }
+      
+      if (result.productsUpdated > 0) {
+        message.push(`${result.productsUpdated} produits mis à jour (stock initialisé).`);
+      }
+      
+      alert(message.join('\n\n'));
+      
+      // Rediriger vers les détails de la commande (utiliser l'UUID Supabase)
+      router.push(`/orders/${result.order.id}`);
+      
     } else if (result.error) {
       console.error('❌ Erreur import:', result.error);
       // L'erreur est déjà gérée dans le composant
     }
   };
 
-  const filteredOrders = selectedStatus === 'all' 
+  const filteredOrders = statusFilter === 'all' 
     ? orders 
-    : orders.filter(order => order.status === selectedStatus);
+    : orders.filter(order => order.status === statusFilter);
 
   const getStatusIcon = (status: string) => {
     switch (status) {
-      case 'delivered': return <CheckCircle className="h-4 w-4" />;
-      case 'shipped': return <Truck className="h-4 w-4" />;
-      case 'processing': return <Clock className="h-4 w-4" />;
-      case 'pending': return <AlertCircle className="h-4 w-4" />;
+      case 'completed': return <CheckCircle className="h-4 w-4" />;
+      case 'shipping': return <Truck className="h-4 w-4" />;
+      case 'pending_payment': return <AlertCircle className="h-4 w-4" />;
       case 'draft': return <Package className="h-4 w-4" />;
-      case 'imported': return <Package className="h-4 w-4" />;
-      case 'validated': return <CheckCircle className="h-4 w-4" />;
-      case 'editing': return <Clock className="h-4 w-4" />;
       default: return <Package className="h-4 w-4" />;
     }
   };
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'delivered': return 'bg-green-100 text-green-800';
-      case 'shipped': return 'bg-blue-100 text-blue-800';
-      case 'processing': return 'bg-yellow-100 text-yellow-800';
-      case 'pending': return 'bg-gray-100 text-gray-800';
-      case 'draft': return 'bg-orange-100 text-orange-800';
-      case 'imported': return 'bg-purple-100 text-purple-800';
-      case 'validated': return 'bg-emerald-100 text-emerald-800';
-      case 'editing': return 'bg-amber-100 text-amber-800';
+      case 'completed': return 'bg-green-100 text-green-800';
+      case 'shipping': return 'bg-blue-100 text-blue-800';
+      case 'pending_payment': return 'bg-yellow-100 text-yellow-800';
+      case 'draft': return 'bg-gray-100 text-gray-800';
       default: return 'bg-gray-100 text-gray-800';
     }
   };
@@ -266,19 +256,15 @@ export default function OrdersPage() {
               <div className="flex items-center space-x-2">
                 <span className="text-sm text-gray-600">Filtrer par statut:</span>
                 <select
-                  value={selectedStatus}
-                  onChange={(e) => setSelectedStatus(e.target.value)}
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
                   className="text-sm border border-gray-300 rounded px-3 py-1 focus:ring-1 focus:ring-dbc-light-green focus:border-transparent"
                 >
                   <option value="all">Toutes</option>
                   <option value="draft">Brouillons</option>
-                  <option value="validated">Validées</option>
-                  <option value="editing">En édition</option>
-                  <option value="imported">Importées</option>
-                  <option value="pending">En attente</option>
-                  <option value="processing">En traitement</option>
-                  <option value="shipped">Expédiées</option>
-                  <option value="delivered">Livrées</option>
+                  <option value="pending_payment">En attente de paiement</option>
+                  <option value="shipping">En cours de livraison</option>
+                  <option value="completed">Terminées</option>
                 </select>
               </div>
             </div>
@@ -328,7 +314,7 @@ export default function OrdersPage() {
                   <td className="px-6 py-4 whitespace-nowrap">
                     <span className={`inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(order.status)}`}>
                       {getStatusIcon(order.status)}
-                      <span>{order.statusLabel}</span>
+                      <span>{order.status_label}</span>
                     </span>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
@@ -340,7 +326,7 @@ export default function OrdersPage() {
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="flex items-center text-sm text-gray-900">
                       <Package className="h-4 w-4 mr-1 text-gray-400" />
-                      {order.itemCount} article{order.itemCount > 1 ? 's' : ''}
+                      {order.totalItems} article{order.totalItems > 1 ? 's' : ''}
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
@@ -357,11 +343,11 @@ export default function OrdersPage() {
                       >
                         Voir détails →
                       </button>
-                      {order.canDelete && (
+                      {order.source === 'supabase' && (
                         <button
                           onClick={() => deleteOrder(order.id)}
                           className="text-red-600 hover:text-red-800 p-1"
-                          title="Supprimer cette commande brouillon"
+                          title="Supprimer cette commande"
                         >
                           <Trash2 className="h-4 w-4" />
                         </button>

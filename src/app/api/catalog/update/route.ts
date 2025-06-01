@@ -115,7 +115,7 @@ export async function POST(request: NextRequest) {
       oldProductCount: oldCount || 0,
       newProductCount: newCount || 0,
       importedProducts: resultData.imported_count || 0,
-      newSkus: resultData.new_skus?.length || 0,
+      newSkus: resultData.new_skus_count || 0,
       stats: resultData.stats,
       processedAt: new Date().toISOString(),
       newProducts: newProducts

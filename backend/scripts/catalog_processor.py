@@ -50,10 +50,16 @@ def process_catalog_file(file_path):
     Traite un fichier catalogue et retourne les statistiques
     """
     try:
-        # Lire le fichier Excel
-        df = pd.read_excel(file_path)
+        # Lire le fichier Excel en forçant la colonne SKU comme texte
+        print(f"📁 Lecture du fichier: {file_path}")
         
-        print(f"Fichier lu: {len(df)} lignes")
+        # Spécifier les types de colonnes pour préserver les zéros de tête des SKU
+        dtype_dict = {'SKU': str}  # Forcer la colonne SKU en texte
+        
+        df = pd.read_excel(file_path, dtype=dtype_dict)
+        
+        print(f"📊 Fichier lu: {len(df)} lignes")
+        print(f"🔍 Colonnes détectées: {list(df.columns)}")
         
         # Vérifier les colonnes requises
         required_columns = ['SKU', 'Product Name', 'Price', 'Quantity']
@@ -61,6 +67,10 @@ def process_catalog_file(file_path):
         
         if missing_columns:
             raise Exception(f"Colonnes manquantes: {missing_columns}")
+        
+        # Vérifier quelques SKU pour le debug
+        sample_skus = df['SKU'].head(5).tolist()
+        print(f"📋 Échantillon de SKU: {sample_skus}")
         
         # Appliquer les marges DBC
         processed_products = []
@@ -78,13 +88,18 @@ def process_catalog_file(file_path):
             
             # Convertir et valider les données
             try:
-                sku = str(row.get('SKU', ''))
+                # SKU déjà en format texte grâce au dtype
+                sku = str(row.get('SKU', '')).strip()
                 quantity = int(row.get('Quantity', 0)) if pd.notna(row.get('Quantity')) and str(row.get('Quantity')).isdigit() else 0
                 price = float(row.get('Price', 0)) if pd.notna(row.get('Price')) and str(row.get('Price')).replace('.', '').isdigit() else 0
                 
                 # Ignorer les lignes sans SKU ou avec des données invalides
                 if not sku or sku == 'nan':
                     continue
+                
+                # Vérifier que le SKU a bien été préservé (pour debug)
+                if len(processed_products) < 3:  # Log seulement pour les premiers
+                    print(f"🔍 SKU traité: '{sku}' (longueur: {len(sku)})")
                     
             except (ValueError, TypeError) as e:
                 print(f"Ligne ignorée - erreur de conversion: {e}")
@@ -286,7 +301,8 @@ def main():
             'success': True,
             'stats': stats,
             'imported_count': imported_count,
-            'new_skus': new_skus[:50]  # Limiter à 50 pour l'aperçu
+            'new_skus_count': len(new_skus),  # Nombre total réel
+            'new_skus': new_skus[:50]  # Liste limitée pour l'aperçu seulement
         }
         print("\n" + json.dumps(result))
         

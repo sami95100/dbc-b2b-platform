@@ -244,10 +244,53 @@ export default function CatalogPage() {
     }
   }, []); // Exécuter seulement au montage
 
-  // Fonction pour sauvegarder immédiatement dans localStorage
-  const saveDraftOrdersToLocalStorage = (orders: any) => {
+  // Fonction pour sauvegarder immédiatement dans localStorage et Supabase
+  const saveDraftOrdersToLocalStorage = async (orders: any) => {
     console.log('💾 Sauvegarde immédiate dans localStorage:', Object.keys(orders));
     localStorage.setItem('draftOrders', JSON.stringify(orders));
+    
+    // Synchroniser avec Supabase pour les commandes qui ont un supabaseId
+    for (const [orderId, order] of Object.entries(orders)) {
+      const orderData = order as any;
+      if (orderData.supabaseId && orderData.source === 'manual') {
+        try {
+          await syncOrderWithSupabase(orderData);
+        } catch (error) {
+          console.warn('⚠️ Erreur sync Supabase pour commande', orderId, ':', error);
+        }
+      }
+    }
+  };
+
+  // Fonction pour synchroniser une commande avec Supabase
+  const syncOrderWithSupabase = async (order: any) => {
+    try {
+      console.log('🔄 Synchronisation commande avec Supabase:', order.id);
+      
+      const response = await fetch('/api/orders/draft', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          orderId: order.supabaseId,
+          name: order.name,
+          items: order.items || {},
+          totalItems: Object.values(order.items || {}).reduce((sum: number, qty: any) => 
+            sum + (typeof qty === 'number' ? qty : 0), 0
+          )
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.warn('⚠️ Erreur mise à jour Supabase:', errorData.error);
+      } else {
+        console.log('✅ Commande synchronisée avec Supabase');
+      }
+    } catch (error) {
+      console.warn('⚠️ Erreur réseau sync Supabase:', error);
+    }
   };
 
   // Fonction pour sauvegarder la commande active
@@ -555,7 +598,7 @@ export default function CatalogPage() {
   }, []);
 
   // Gestion du panier - CORRIGÉ selon feedback
-  const updateQuantity = (sku: string, value: string) => {
+  const updateQuantity = async (sku: string, value: string) => {
     const newQuantity = value === '' ? 0 : parseInt(value);
     
     // Valider que la quantité est >= 0
@@ -594,20 +637,20 @@ export default function CatalogPage() {
         
         setDraftOrders(newDraftOrders);
         
-        // Sauvegarder immédiatement
-        saveDraftOrdersToLocalStorage(newDraftOrders);
+        // Sauvegarder avec sync Supabase
+        await saveDraftOrdersToLocalStorage(newDraftOrders);
       }
     }
   };
 
-  const addToCart = (sku: string) => {
+  const addToCart = async (sku: string) => {
     // Le bouton ajouter incrémente de 1
     const currentQuantity = quantities[sku] || 0;
     const newQuantity = typeof currentQuantity === 'string' ? parseInt(currentQuantity) + 1 : currentQuantity + 1;
-    addToCartWithQuantity(sku, newQuantity, true); // Replace avec la nouvelle quantité
+    await addToCartWithQuantity(sku, newQuantity, true); // Replace avec la nouvelle quantité
   };
 
-  const addToCartWithQuantity = (sku: string, quantity: number, replace: boolean = false) => {
+  const addToCartWithQuantity = async (sku: string, quantity: number, replace: boolean = false) => {
     console.log('🛒 ADD TO CART WITH QUANTITY');
     console.log('SKU:', sku, 'Quantity:', quantity, 'Replace:', replace);
     console.log('Current draft order AVANT:', currentDraftOrder);
@@ -652,8 +695,8 @@ export default function CatalogPage() {
         setQuantities(prev => ({ ...prev, [sku]: newQuantity }));
         setSelectedProducts(prev => ({ ...prev, [sku]: true }));
         
-        // Sauvegarder immédiatement
-        saveDraftOrdersToLocalStorage(newDraftOrders);
+        // Sauvegarder avec sync Supabase
+        await saveDraftOrdersToLocalStorage(newDraftOrders);
         
         console.log('✅ Produit ajouté à la commande existante');
         return;
@@ -691,55 +734,131 @@ export default function CatalogPage() {
     // Mettre à jour visuellement la case cochée
     setSelectedProducts(prev => ({ ...prev, [sku]: true }));
     
-    // Sauvegarder immédiatement
-    saveDraftOrdersToLocalStorage(newDraftOrders);
+    // Sauvegarder avec sync Supabase
+    await saveDraftOrdersToLocalStorage(newDraftOrders);
     
     console.log('✅ Produit ajouté à la commande active');
   };
 
   // Fonction pour sélectionner toute la quantité disponible (case à cocher)
-  const selectFullQuantity = (sku: string, productQuantity: number) => {
-    addToCartWithQuantity(sku, productQuantity, true); // Replace avec toute la quantité
+  const selectFullQuantity = async (sku: string, productQuantity: number) => {
+    await addToCartWithQuantity(sku, productQuantity, true); // Replace avec toute la quantité
   };
 
-  const createNewOrder = () => {
-    const orderId = `DRAFT-${Date.now()}`;
+  const createNewOrder = async () => {
     const finalOrderName = orderName.trim() || `Commande ${new Date().toLocaleDateString('fr-FR')}`;
     
-    const newOrder = {
-      id: orderId,
-      name: finalOrderName,
-      status: 'draft',
-      statusLabel: 'Brouillon',
-      createdAt: new Date().toISOString(),
-      items: {}
-    };
-
-    const newDraftOrders = { ...draftOrders, [orderId]: newOrder };
-    
-    setDraftOrders(newDraftOrders);
-    setCurrentDraftOrder(orderId);
-    setShowOrderNamePopup(false);
-    setOrderName('');
-    
-    // Sauvegarder immédiatement
-    saveDraftOrdersToLocalStorage(newDraftOrders);
-    saveCurrentOrderToLocalStorage(orderId);
-
-    // Traiter le produit en attente
-    const pendingProduct = sessionStorage.getItem('pendingProduct');
-    
-    if (pendingProduct) {
-      const { sku, quantity, replace } = JSON.parse(pendingProduct);
+    try {
+      console.log('🔄 Création nouvelle commande avec sauvegarde Supabase...');
       
-      newDraftOrders[orderId].items = { [sku]: quantity };
+      // Préparer les items de la commande en attente
+      const pendingProduct = sessionStorage.getItem('pendingProduct');
+      const initialItems: {[key: string]: number} = {};
+      
+      if (pendingProduct) {
+        const { sku, quantity } = JSON.parse(pendingProduct);
+        initialItems[sku] = quantity;
+      }
+
+      // Calculer les totaux initiaux
+      const totalItems = Object.values(initialItems).reduce((sum, qty) => sum + qty, 0);
+      
+      // Appeler l'API pour créer la commande dans Supabase
+      const response = await fetch('/api/orders/draft', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          name: finalOrderName,
+          items: initialItems,
+          totalItems: totalItems
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Erreur création commande');
+      }
+
+      const result = await response.json();
+      const supabaseOrder = result.order;
+      
+      console.log('✅ Commande créée dans Supabase:', supabaseOrder.id);
+
+      // Créer l'objet commande pour localStorage avec l'UUID Supabase
+      const newOrder = {
+        id: supabaseOrder.id, // Utiliser l'UUID Supabase
+        name: finalOrderName,
+        status: 'draft',
+        status_label: 'Brouillon',
+        createdAt: supabaseOrder.created_at,
+        items: initialItems,
+        supabaseId: supabaseOrder.id, // Garder une référence explicite
+        source: 'manual'
+      };
+
+      const newDraftOrders = { ...draftOrders, [supabaseOrder.id]: newOrder };
+      
       setDraftOrders(newDraftOrders);
-      setQuantities(prev => ({ ...prev, [sku]: quantity }));
-      setSelectedProducts(prev => ({ ...prev, [sku]: true }));
-      sessionStorage.removeItem('pendingProduct');
+      setCurrentDraftOrder(supabaseOrder.id);
+      setShowOrderNamePopup(false);
+      setOrderName('');
       
-      // Sauvegarder encore avec le produit ajouté
+      // Sauvegarder dans localStorage avec l'UUID Supabase
       saveDraftOrdersToLocalStorage(newDraftOrders);
+      saveCurrentOrderToLocalStorage(supabaseOrder.id);
+
+      // Traiter le produit en attente
+      if (pendingProduct) {
+        const { sku, quantity } = JSON.parse(pendingProduct);
+        
+        setQuantities(prev => ({ ...prev, [sku]: quantity }));
+        setSelectedProducts(prev => ({ ...prev, [sku]: true }));
+        sessionStorage.removeItem('pendingProduct');
+      }
+
+      console.log('✅ Commande créée et sauvegardée:', supabaseOrder.id);
+      
+    } catch (error) {
+      console.error('❌ Erreur création commande:', error);
+      alert(`Erreur lors de la création de la commande: ${error instanceof Error ? error.message : 'Erreur inconnue'}`);
+      
+      // En cas d'erreur, revenir au mode localStorage uniquement
+      const orderId = `DRAFT-${Date.now()}`;
+      const newOrder = {
+        id: orderId,
+        name: finalOrderName,
+        status: 'draft',
+        status_label: 'Brouillon',
+        createdAt: new Date().toISOString(),
+        items: {},
+        source: 'manual_fallback'
+      };
+
+      const newDraftOrders = { ...draftOrders, [orderId]: newOrder };
+      
+      setDraftOrders(newDraftOrders);
+      setCurrentDraftOrder(orderId);
+      setShowOrderNamePopup(false);
+      setOrderName('');
+      
+      saveDraftOrdersToLocalStorage(newDraftOrders);
+      saveCurrentOrderToLocalStorage(orderId);
+
+      // Traiter le produit en attente
+      const pendingProduct = sessionStorage.getItem('pendingProduct');
+      if (pendingProduct) {
+        const { sku, quantity } = JSON.parse(pendingProduct);
+        
+        newDraftOrders[orderId].items = { [sku]: quantity };
+        setDraftOrders(newDraftOrders);
+        setQuantities(prev => ({ ...prev, [sku]: quantity }));
+        setSelectedProducts(prev => ({ ...prev, [sku]: true }));
+        sessionStorage.removeItem('pendingProduct');
+        
+        saveDraftOrdersToLocalStorage(newDraftOrders);
+      }
     }
   };
 
@@ -853,12 +972,12 @@ export default function CatalogPage() {
   };
 
   // Fonction pour décrémenter la quantité
-  const decrementQuantity = (sku: string) => {
+  const decrementQuantity = async (sku: string) => {
     const currentQuantity = quantities[sku] || 0;
     const numQuantity = typeof currentQuantity === 'string' ? parseInt(currentQuantity) : currentQuantity;
     
     if (numQuantity > 1) {
-      addToCartWithQuantity(sku, numQuantity - 1, true);
+      await addToCartWithQuantity(sku, numQuantity - 1, true);
     } else if (numQuantity === 1) {
       // Retirer complètement du panier
       if (currentDraftOrder && draftOrders[currentDraftOrder]) {
@@ -880,7 +999,7 @@ export default function CatalogPage() {
           return newQuantities;
         });
         
-        saveDraftOrdersToLocalStorage(newDraftOrders);
+        await saveDraftOrdersToLocalStorage(newDraftOrders);
       }
       setSelectedProducts(prev => ({ ...prev, [sku]: false }));
     }
@@ -1421,13 +1540,13 @@ export default function CatalogPage() {
                       <input
                         type="checkbox"
                         checked={isChecked}
-                        onChange={(e) => {
+                        onChange={async (e) => {
                           e.stopPropagation();
                           const isChecked = e.target.checked;
                           
                           if (isChecked) {
                             // Si coché, sélectionner TOUTE la quantité disponible
-                            selectFullQuantity(product.sku, product.quantity);
+                            await selectFullQuantity(product.sku, product.quantity);
                             setSelectedProducts(prev => ({ ...prev, [product.sku]: true }));
                           } else {
                             // Si décoché, retirer du panier
@@ -1451,8 +1570,8 @@ export default function CatalogPage() {
                                 return newQuantities;
                               });
                               
-                              // Sauvegarder immédiatement
-                              saveDraftOrdersToLocalStorage(newDraftOrders);
+                              // Sauvegarder avec sync Supabase
+                              await saveDraftOrdersToLocalStorage(newDraftOrders);
                             }
                             setSelectedProducts(prev => ({ ...prev, [product.sku]: false }));
                           }
@@ -1504,13 +1623,13 @@ export default function CatalogPage() {
                         max={product.quantity}
                         placeholder="0"
                         value={quantityInCart || (quantities[product.sku] || '')}
-                        onChange={(e) => {
+                        onChange={async (e) => {
                           const newValue = e.target.value;
                           const numValue = parseInt(newValue);
                           
                           // Permettre 0 ou vide, et empêcher de dépasser la quantité disponible
                           if (newValue === '' || (numValue >= 0 && numValue <= product.quantity)) {
-                            updateQuantity(product.sku, newValue);
+                            await updateQuantity(product.sku, newValue);
                           }
                         }}
                         className={`w-10 px-1 py-0.5 text-xs border rounded focus:border-dbc-light-green focus:outline-none text-center bg-white font-medium text-gray-900 ${
@@ -1522,7 +1641,7 @@ export default function CatalogPage() {
                       <div className="flex items-center justify-center gap-0.5">
                         {/* Bouton décrémenter */}
                         <button
-                          onClick={() => decrementQuantity(product.sku)}
+                          onClick={async () => await decrementQuantity(product.sku)}
                           disabled={!quantityInCart || quantityInCart === 0}
                           className={`inline-flex items-center p-1 border border-transparent text-xs rounded focus:outline-none ${
                             !quantityInCart || quantityInCart === 0
@@ -1535,7 +1654,7 @@ export default function CatalogPage() {
                         
                         {/* Bouton incrémenter */}
                         <button
-                          onClick={() => addToCart(product.sku)}
+                          onClick={async () => await addToCart(product.sku)}
                           disabled={quantityInCart >= product.quantity}
                           className={`inline-flex items-center p-1 border border-transparent text-xs rounded focus:outline-none ${
                             quantityInCart >= product.quantity 

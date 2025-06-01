@@ -40,7 +40,7 @@ export interface Product {
 export interface Order {
   id: string
   name: string
-  status: 'draft' | 'pending' | 'processing' | 'shipped' | 'delivered'
+  status: 'draft' | 'pending_payment' | 'shipping' | 'completed' | 'cancelled'
   status_label: string
   customer_ref?: string
   created_at: string
@@ -58,6 +58,24 @@ export interface OrderItem {
   quantity: number
   unit_price: number
   total_price: number
+  created_at: string
+}
+
+// Nouveau type pour les IMEI des articles de commande
+export interface OrderItemImei {
+  id: string
+  order_item_id: string
+  sku: string
+  imei: string
+  product_name: string
+  appearance: string
+  functionality: string
+  boxed: string
+  color: string | null
+  cloud_lock: string | null
+  additional_info: string | null
+  supplier_price: number
+  dbc_price: number
   created_at: string
 }
 
@@ -160,42 +178,26 @@ export const orderService = {
     try {
       console.log('🔄 Validation de la commande:', orderId);
       
-      // 1. Créer la commande dans Supabase avec un nouvel UUID
-      const orderData = {
-        name: `Commande ${new Date().toLocaleDateString('fr-FR')}`,
-        status: 'validated' as const,
-        status_label: 'Validée',
-        total_amount: orderItems.reduce((sum, item) => sum + (item.unit_price * item.quantity), 0),
-        total_items: orderItems.reduce((sum, item) => sum + item.quantity, 0),
-        customer_ref: 'DBC-CLIENT-001',
-        vat_type: 'Bien d\'occasion - TVA calculée sur la marge, non récupérable'
-      };
-
+      // 1. Mettre à jour le statut de la commande existante au lieu d'en créer une nouvelle
       const { data: order, error: orderError } = await supabase
         .from('orders')
-        .insert([orderData])
+        .update({
+          status: 'pending_payment' as const,
+          status_label: 'En attente de paiement',
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', orderId)
         .select()
         .single();
 
-      if (orderError) throw orderError;
+      if (orderError) {
+        console.error('❌ Erreur mise à jour statut commande:', orderError);
+        throw orderError;
+      }
 
-      // 2. Ajouter les items de commande avec l'UUID généré
-      const itemsData = orderItems.map(item => ({
-        order_id: order.id, // Utiliser l'UUID généré
-        sku: item.sku,
-        product_name: item.product_name,
-        quantity: item.quantity,
-        unit_price: item.unit_price,
-        total_price: item.unit_price * item.quantity
-      }));
+      console.log('✅ Statut de commande mis à jour:', order.id, '→', order.status);
 
-      const { error: itemsError } = await supabase
-        .from('order_items')
-        .insert(itemsData);
-
-      if (itemsError) throw itemsError;
-
-      // 3. Décrémenter le stock des produits
+      // 2. Décrémenter le stock des produits
       for (const item of orderItems) {
         const { data: product, error: getError } = await supabase
           .from('products')
@@ -225,7 +227,7 @@ export const orderService = {
         }
       }
 
-      console.log('✅ Commande validée avec succès');
+      console.log('✅ Commande validée avec succès - statut changé sans créer de nouvelle commande');
       return order;
 
     } catch (error) {
@@ -411,8 +413,8 @@ export const orderService = {
           const { error: updateError } = await supabaseAdmin
             .from('orders')
             .update({
-              status: 'validated',
-              status_label: 'Validée',
+              status: 'pending_payment',
+              status_label: 'En attente de paiement',
               total_amount: totalAmount,
               total_items: totalItems,
               updated_at: new Date().toISOString()

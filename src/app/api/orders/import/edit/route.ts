@@ -162,8 +162,8 @@ export async function POST(request: NextRequest) {
     const updatedOrder = {
       id: orderId,
       name: orderName,
-      status: 'editing',
-      statusLabel: 'En édition',
+      status: 'draft',
+      status_label: 'Brouillon',
       updatedAt: new Date().toISOString(),
       items: orderItems,
       source: 'excel_edit',
@@ -196,8 +196,8 @@ export async function POST(request: NextRequest) {
         const { error: updateError } = await supabaseAdmin
           .from('orders')
           .update({
-            status: 'editing',
-            status_label: 'En édition',
+            status: 'draft',
+            status_label: 'Brouillon',
             total_amount: updatedOrder.totalAmount,
             total_items: totalItems,
             updated_at: new Date().toISOString()
@@ -244,7 +244,7 @@ export async function POST(request: NextRequest) {
     console.log('✅ Commande éditée:', {
       id: orderId,
       name: orderName,
-      status: 'editing',
+      status: 'draft',
       totalProducts: allOrderProducts.length,
       totalAmount: updatedOrder.totalAmount,
       totalItems,
@@ -262,7 +262,7 @@ export async function POST(request: NextRequest) {
       totalItems,
       productsCreated: newlyAddedProducts.length,
       productsUpdated: updatedProducts.length,
-      message: `Commande "${orderName}" éditée avec succès. Statut: En édition. ${newlyAddedProducts.length} nouveaux produits créés, ${updatedProducts.length} produits mis à jour.`
+      message: `Commande "${orderName}" éditée avec succès. Statut: Brouillon. ${newlyAddedProducts.length} nouveaux produits créés, ${updatedProducts.length} produits mis à jour.`
     });
 
   } catch (error) {

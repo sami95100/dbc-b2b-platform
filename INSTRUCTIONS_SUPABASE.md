@@ -15,14 +15,16 @@ Copiez et exécutez les requêtes SQL suivantes une par une :
 CREATE TABLE IF NOT EXISTS orders (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   name TEXT NOT NULL,
-  status TEXT NOT NULL CHECK (status IN ('draft', 'pending', 'processing', 'shipped', 'delivered')),
+  status TEXT NOT NULL CHECK (status IN ('draft', 'pending_payment', 'shipping', 'completed', 'cancelled')),
   status_label TEXT NOT NULL,
   customer_ref TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW(),
   total_amount DECIMAL(10,2) DEFAULT 0,
   total_items INTEGER DEFAULT 0,
-  vat_type TEXT
+  vat_type TEXT,
+  tracking_number TEXT,
+  shipping_cost DECIMAL(10,2) DEFAULT 0
 );
 ```
 
@@ -50,11 +52,41 @@ CREATE INDEX IF NOT EXISTS idx_order_items_order_id ON order_items(order_id);
 CREATE INDEX IF NOT EXISTS idx_order_items_sku ON order_items(sku);
 ```
 
+### 3bis. Table des IMEI des articles de commande (order_item_imei)
+
+```sql
+CREATE TABLE IF NOT EXISTS order_item_imei (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  order_item_id UUID REFERENCES order_items(id) ON DELETE CASCADE,
+  sku TEXT NOT NULL,
+  imei TEXT NOT NULL UNIQUE,
+  product_name TEXT NOT NULL,
+  appearance TEXT NOT NULL,
+  functionality TEXT NOT NULL,
+  boxed TEXT NOT NULL,
+  color TEXT,
+  cloud_lock TEXT,
+  additional_info TEXT,
+  supplier_price DECIMAL(10,2) NOT NULL,
+  dbc_price DECIMAL(10,2) NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+```
+
+### 3ter. Index pour la table order_item_imei
+
+```sql
+CREATE INDEX IF NOT EXISTS idx_order_item_imei_order_item_id ON order_item_imei(order_item_id);
+CREATE INDEX IF NOT EXISTS idx_order_item_imei_sku ON order_item_imei(sku);
+CREATE INDEX IF NOT EXISTS idx_order_item_imei_imei ON order_item_imei(imei);
+```
+
 ### 4. Activation de Row Level Security (RLS)
 
 ```sql
 ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE order_items ENABLE ROW LEVEL SECURITY;
+ALTER TABLE order_item_imei ENABLE ROW LEVEL SECURITY;
 ```
 
 ### 5. Politiques RLS (permettre tout pour l'instant)
@@ -62,6 +94,7 @@ ALTER TABLE order_items ENABLE ROW LEVEL SECURITY;
 ```sql
 CREATE POLICY "Allow all operations on orders" ON orders FOR ALL USING (true);
 CREATE POLICY "Allow all operations on order_items" ON order_items FOR ALL USING (true);
+CREATE POLICY "Allow all operations on order_item_imei" ON order_item_imei FOR ALL USING (true);
 ```
 
 ### 6. Fonction pour mettre à jour automatiquement updated_at

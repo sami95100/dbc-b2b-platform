@@ -3,263 +3,261 @@ import { supabase, supabaseAdmin } from '../../../../../lib/supabase';
 
 export async function POST(request: NextRequest) {
   try {
-    console.log('🔄 Confirmation d\'import de commande...');
+    console.log('🔄 Début de la confirmation d\'import...');
     
-    // Debug: vérifier les clés Supabase
-    console.log('🔑 URL Supabase:', process.env.NEXT_PUBLIC_SUPABASE_URL?.substring(0, 30) + '...');
-    console.log('🔑 Service Role Key présente:', !!process.env.SUPABASE_SERVICE_ROLE_KEY);
-    console.log('🔑 Service Role Key commence par:', process.env.SUPABASE_SERVICE_ROLE_KEY?.substring(0, 20) + '...');
-
     const body = await request.json();
-    const { addToGatalog, missingProducts, validProducts, orderData } = body;
+    const { 
+      orderData,
+      productsExistingWithGoodStock,
+      productsToUpdateStock,
+      productsToCreate,
+      addToCatalog 
+    } = body;
 
-    console.log('📋 Paramètres reçus:');
-    console.log('- Ajouter au catalogue:', addToGatalog);
-    console.log('- Produits manquants:', missingProducts?.length || 0);
-    console.log('- Produits valides:', validProducts?.length || 0);
-    console.log('- Produits à créer:', orderData?.productsToCreate || 0);
-    console.log('- Produits à mettre à jour:', orderData?.productsToUpdate || 0);
+    console.log('📋 Données reçues:');
+    console.log('- Produits existants OK:', productsExistingWithGoodStock?.length || 0);
+    console.log('- Produits à mettre à jour:', productsToUpdateStock?.length || 0);
+    console.log('- Produits à créer:', productsToCreate?.length || 0);
+    console.log('- Ajouter au catalogue:', addToCatalog);
 
-    // Vérifications de sécurité
-    if (!validProducts || !Array.isArray(validProducts)) {
-      throw new Error('Produits valides manquants ou invalides');
-    }
-
-    if (!orderData || !orderData.fileName) {
-      throw new Error('Données de commande manquantes');
-    }
-
-    let newlyAddedProducts: any[] = [];
-    let updatedProducts: any[] = [];
-
-    // Mettre à jour les produits existants avec stock = 0
-    if (orderData?.productsToUpdateData && Array.isArray(orderData.productsToUpdateData) && orderData.productsToUpdateData.length > 0) {
-      console.log(`🔄 Mise à jour de ${orderData.productsToUpdateData.length} produits...`);
+    // 1. METTRE À JOUR LES STOCKS si demandé
+    if (addToCatalog && productsToUpdateStock && productsToUpdateStock.length > 0) {
+      console.log('📦 Mise à jour des stocks...');
       
-      for (const product of orderData.productsToUpdateData) {
-        if (!product.sku) {
-          console.warn('⚠️ Produit sans SKU ignoré:', product);
-          continue;
-        }
-
-        const updateData: any = { quantity: product.quantity || 0 };
-        
-        // Mettre à jour aussi le prix DBC si calculé
-        if (product.price_dbc && product.price_dbc > 0) {
-          updateData.price_dbc = product.price_dbc;
-        }
-        
-        const { error } = await supabaseAdmin
-          .from('products')
-          .update(updateData)
-          .eq('sku', product.sku);
-          
-        if (error) {
-          console.error(`❌ Erreur mise à jour ${product.sku}:`, error);
-        } else {
-          updatedProducts.push(product);
-          console.log(`✅ Produit ${product.sku} mis à jour`);
-        }
-      }
-      
-      console.log(`✅ ${updatedProducts.length} produits mis à jour`);
-    }
-
-    // Si on doit ajouter les produits manquants au catalogue
-    if (addToGatalog && orderData?.productsToCreateData && Array.isArray(orderData.productsToCreateData) && orderData.productsToCreateData.length > 0) {
-      console.log('➕ Ajout des produits manquants au catalogue...');
-      
-      const productsToAdd = orderData.productsToCreateData.filter((p: any) => p.sku); // Filtrer les produits sans SKU
-
-      if (productsToAdd.length === 0) {
-        console.warn('⚠️ Aucun produit valide à créer');
-      } else {
-        // Insérer par batch pour éviter les timeouts
-        const batchSize = 50; // Réduire la taille du batch
-        for (let i = 0; i < productsToAdd.length; i += batchSize) {
-          const batch = productsToAdd.slice(i, i + batchSize);
-          
-          console.log(`Insertion batch ${Math.floor(i/batchSize) + 1}: ${batch.length} produits`);
-          
-          const { data: insertedProducts, error } = await supabaseAdmin
+      for (const product of productsToUpdateStock) {
+        try {
+          const { error: updateError } = await supabaseAdmin
             .from('products')
-            .insert(batch)
-            .select('sku, product_name, price_dbc');
+            .update({ 
+              quantity: product.new_stock,
+              price_dbc: product.dbc_price 
+            })
+            .eq('sku', product.sku);
 
-          if (error) {
-            console.error('❌ Erreur insertion batch:', error);
-            console.error('Batch qui a échoué:', batch);
-            throw new Error(`Erreur insertion produits: ${error.message}`);
+          if (updateError) {
+            console.error(`❌ Erreur mise à jour stock ${product.sku}:`, updateError);
+          } else {
+            console.log(`✅ Stock mis à jour pour ${product.sku}: ${product.new_stock}`);
           }
-
-          if (insertedProducts) {
-            newlyAddedProducts = [...newlyAddedProducts, ...insertedProducts];
-            console.log(`✅ Batch ${Math.floor(i/batchSize) + 1}: ${insertedProducts.length} produits ajoutés`);
-          }
+        } catch (error) {
+          console.error(`❌ Erreur mise à jour ${product.sku}:`, error);
         }
       }
-
-      console.log('✅ Total produits ajoutés au catalogue:', newlyAddedProducts.length);
     }
 
-    // Préparer tous les produits pour la commande
-    let allOrderProducts = [...validProducts];
-
-    if (addToGatalog && newlyAddedProducts.length > 0 && missingProducts && Array.isArray(missingProducts)) {
-      // Ajouter les nouveaux produits à la commande
-      const newProductsForOrder = missingProducts.map((missingProduct: any) => {
-        const addedProduct = newlyAddedProducts.find(p => p.sku === missingProduct.sku);
-        return {
-          sku: missingProduct.sku,
-          product_name: addedProduct?.product_name || missingProduct.product_name || `Produit ${missingProduct.sku}`,
-          quantity: missingProduct.quantity || 0,
-          unit_price: addedProduct?.price_dbc || missingProduct.calculated_price_dbc || 0,
-          catalog_quantity: missingProduct.quantity || 0 // Stock initial
-        };
-      });
+    // 2. CRÉER LES NOUVEAUX PRODUITS si demandé
+    let newlyAddedProducts = [];
+    if (addToCatalog && productsToCreate && productsToCreate.length > 0) {
+      console.log('➕ Création des nouveaux produits...');
       
-      allOrderProducts = [...allOrderProducts, ...newProductsForOrder];
-    } else if (!addToGatalog && missingProducts && Array.isArray(missingProducts) && missingProducts.length > 0) {
-      // Créer la commande même avec des produits manquants (avec prix 0)
-      const missingProductsForOrder = missingProducts.map((missingProduct: any) => ({
-        sku: missingProduct.sku,
-        product_name: missingProduct.product_name || `Produit ${missingProduct.sku}`,
-        quantity: missingProduct.quantity || 0,
-        unit_price: 0, // Prix 0 pour les produits non catalogués
-        catalog_quantity: 0
+      const productsToInsert = productsToCreate.map((product: any) => ({
+        sku: product.sku,
+        item_group: 'Mobiles',
+        product_name: product.product_name,
+        appearance: product.appearance || 'Grade A',
+        functionality: product.functionality || '100%',
+        boxed: product.boxed || 'Non renseigné',
+        color: product.color || null,
+        cloud_lock: null,
+        additional_info: product.additional_info || null,
+        quantity: product.quantity,
+        price: product.supplier_price,
+        campaign_price: null,
+        vat_type: product.vat_type || 'Non marginal',
+        price_dbc: product.dbc_price,
+        is_active: true
       }));
+
+      // Vérifier d'abord quels produits existent déjà pour éviter les doublons
+      console.log('🔍 Vérification des doublons avant insertion...');
+      const skusToCreate = productsToInsert.map((p: any) => p.sku);
       
-      allOrderProducts = [...allOrderProducts, ...missingProductsForOrder];
+      const { data: existingProducts, error: checkError } = await supabaseAdmin
+        .from('products')
+        .select('sku')
+        .in('sku', skusToCreate);
+
+      if (checkError) {
+        console.warn('⚠️ Erreur vérification doublons:', checkError);
+      }
+
+      const existingSkus = new Set(existingProducts?.map((p: any) => p.sku) || []);
+      const productsToActuallyInsert = productsToInsert.filter((p: any) => !existingSkus.has(p.sku));
+      
+      console.log(`📊 Résultat vérification doublons:`);
+      console.log(`- Produits à créer: ${productsToInsert.length}`);
+      console.log(`- Produits déjà existants: ${existingSkus.size}`);
+      console.log(`- Produits à réellement insérer: ${productsToActuallyInsert.length}`);
+
+      if (existingSkus.size > 0) {
+        console.log('⚠️ Produits détectés comme existants:', Array.from(existingSkus));
+      }
+
+      if (productsToActuallyInsert.length > 0) {
+        try {
+          const { data: insertedProducts, error: insertError } = await supabaseAdmin
+            .from('products')
+            .insert(productsToActuallyInsert)
+            .select('sku, product_name');
+
+          if (insertError) {
+            console.error('❌ Erreur insertion produits:', insertError);
+            
+            // Si c'est encore une erreur de contrainte unique, essayer d'insérer un par un
+            if (insertError.code === '23505') { // Contrainte unique violée
+              console.log('🔄 Tentative d\'insertion individuelle...');
+              newlyAddedProducts = [];
+              
+              for (const product of productsToActuallyInsert) {
+                try {
+                  const { data: singleInsert, error: singleError } = await supabaseAdmin
+                    .from('products')
+                    .insert([product])
+                    .select('sku, product_name');
+
+                  if (singleError) {
+                    if (singleError.code === '23505') {
+                      console.log(`⚠️ Produit ${product.sku} existe déjà, ignoré`);
+                    } else {
+                      console.error(`❌ Erreur insertion ${product.sku}:`, singleError);
+                    }
+                  } else if (singleInsert && singleInsert.length > 0) {
+                    newlyAddedProducts.push(singleInsert[0]);
+                    console.log(`✅ Produit ${product.sku} créé individuellement`);
+                  }
+                } catch (singleProductError) {
+                  console.error(`❌ Erreur produit individuel ${product.sku}:`, singleProductError);
+                }
+              }
+              
+              console.log(`✅ ${newlyAddedProducts.length} produits créés avec insertion individuelle`);
+            } else {
+              throw new Error(`Erreur lors de la création des produits: ${insertError.message}`);
+            }
+          } else {
+            newlyAddedProducts = insertedProducts || [];
+            console.log(`✅ ${newlyAddedProducts.length} nouveaux produits créés en batch`);
+          }
+        } catch (error) {
+          console.error('❌ Erreur création produits:', error);
+          throw error;
+        }
+      } else {
+        console.log('ℹ️ Aucun nouveau produit à créer (tous existent déjà)');
+        newlyAddedProducts = [];
+      }
     }
 
-    // Créer la commande
-    console.log('📦 Création de la commande avec', allOrderProducts.length, 'produits...');
+    // 3. PRÉPARER LES DONNÉES DE COMMANDE
+    console.log('📝 Préparation de la commande...');
     
-    const orderId = `IMP-${Date.now()}`;
-    const fileName = orderData.fileName || 'commande';
-    const orderName = `Import ${fileName.replace(/\.[^/.]+$/, "")}`;
-    
-    // Préparer les items de la commande
-    const orderItems: {[key: string]: number} = {};
-    allOrderProducts.forEach((product: any) => {
-      if (product.sku && product.quantity > 0) {
-        orderItems[product.sku] = product.quantity;
-      }
-    });
+    // Tous les produits pour la commande
+    const allOrderProducts = [
+      ...productsExistingWithGoodStock,
+      ...productsToUpdateStock,
+      ...productsToCreate
+    ];
 
-    // Calculer le total avec les prix DBC
-    const totalAmount = allOrderProducts.reduce((sum: number, product: any) => 
-      sum + ((product.unit_price || 0) * (product.quantity || 0)), 0
+    if (allOrderProducts.length === 0) {
+      throw new Error('Aucun produit à commander');
+    }
+
+    // Calculer les totaux
+    const totalAmount = allOrderProducts.reduce((sum, product) => 
+      sum + (product.dbc_price * product.quantity), 0
     );
 
-    const totalItems = allOrderProducts.reduce((sum: number, product: any) => 
-      sum + (product.quantity || 0), 0
+    const totalItems = allOrderProducts.reduce((sum, product) => 
+      sum + product.quantity, 0
     );
 
-    // Créer l'objet commande pour localStorage (côté frontend)
-    const newOrder = {
-      id: orderId,
+    const fileName = orderData.fileName || 'commande_importee';
+    const orderName = `Import ${fileName} - ${new Date().toLocaleDateString('fr-FR')}`;
+
+    // 4. CRÉER LA COMMANDE EN BROUILLON
+    console.log('📋 Création de la commande en base...');
+    
+    const orderForSupabase = {
       name: orderName,
-      status: 'validated',
-      statusLabel: 'Validée',
-      createdAt: new Date().toISOString(),
-      items: orderItems,
-      source: 'excel_import',
-      fileName: fileName,
-      totalAmount: Math.round(totalAmount * 100) / 100, // Arrondir à 2 décimales
-      totalItems,
-      productsCreated: newlyAddedProducts.length,
-      productsUpdated: updatedProducts.length,
-      missingProducts: addToGatalog ? 0 : (missingProducts?.length || 0)
+      status: 'draft' as const,
+      status_label: 'Brouillon',
+      total_amount: Math.round(totalAmount * 100) / 100,
+      total_items: totalItems,
+      customer_ref: 'IMPORT-AUTO',
+      vat_type: 'Bien d\'occasion - TVA calculée sur la marge'
     };
 
-    // Sauvegarder aussi dans Supabase
-    try {
-      const orderForSupabase = {
-        name: orderName,
-        status: 'validated' as const,
-        status_label: 'Validée',
-        total_amount: newOrder.totalAmount,
-        total_items: totalItems,
-        customer_ref: 'IMPORT-AUTO',
-        vat_type: 'Bien d\'occasion - TVA calculée sur la marge'
-      };
+    const { data: insertedOrder, error: orderError } = await supabaseAdmin
+      .from('orders')
+      .insert([orderForSupabase])
+      .select()
+      .single();
 
-      const { data: supabaseOrder, error: orderError } = await supabaseAdmin
-        .from('orders')
-        .insert([orderForSupabase])
-        .select()
-        .single();
-
-      if (orderError) {
-        console.warn('⚠️ Erreur sauvegarde commande Supabase:', orderError);
-        // Continuer même si la sauvegarde Supabase échoue
-      } else {
-        console.log('✅ Commande sauvegardée dans Supabase:', supabaseOrder.id);
-        
-        // Ajouter les items de commande dans Supabase
-        if (allOrderProducts.length > 0) {
-          const orderItemsForSupabase = allOrderProducts.map(product => ({
-            order_id: supabaseOrder.id,
-            sku: product.sku,
-            product_name: product.product_name,
-            quantity: product.quantity,
-            unit_price: product.unit_price,
-            total_price: (product.unit_price || 0) * (product.quantity || 0)
-          }));
-
-          const { error: itemsError } = await supabaseAdmin
-            .from('order_items')
-            .insert(orderItemsForSupabase);
-
-          if (itemsError) {
-            console.warn('⚠️ Erreur sauvegarde items Supabase:', itemsError);
-          } else {
-            console.log('✅ Items de commande sauvegardés dans Supabase');
-          }
-        }
-      }
-    } catch (supabaseError) {
-      console.warn('⚠️ Erreur générale Supabase:', supabaseError);
-      // Continuer même si Supabase échoue
+    if (orderError) {
+      console.error('❌ Erreur création commande:', orderError);
+      throw new Error(`Erreur création commande: ${orderError.message}`);
     }
 
-    console.log('✅ Commande créée:', {
-      id: orderId,
-      name: orderName,
-      totalProducts: allOrderProducts.length,
-      totalAmount: newOrder.totalAmount,
-      totalItems,
-      productsCreated: newlyAddedProducts.length,
-      productsUpdated: updatedProducts.length
-    });
+    console.log('✅ Commande créée:', insertedOrder.id);
 
-    return NextResponse.json({
+    // 5. AJOUTER LES ITEMS DE COMMANDE
+    console.log('📦 Ajout des items de commande...');
+    
+    const orderItemsData = allOrderProducts.map(product => ({
+      order_id: insertedOrder.id,
+      sku: product.sku,
+      product_name: product.product_name,
+      quantity: product.quantity,
+      unit_price: product.dbc_price,
+      total_price: product.dbc_price * product.quantity
+    }));
+
+    const { error: itemsError } = await supabaseAdmin
+      .from('order_items')
+      .insert(orderItemsData);
+
+    if (itemsError) {
+      console.error('❌ Erreur ajout items:', itemsError);
+      // Ne pas faire échouer pour ça, juste avertir
+      console.warn('⚠️ Items non ajoutés mais commande créée');
+    } else {
+      console.log(`✅ ${orderItemsData.length} items ajoutés à la commande`);
+    }
+
+    // 6. PRÉPARER LA RÉPONSE
+    const response = {
       success: true,
-      orderId,
-      orderName,
-      order: newOrder,
-      totalProducts: allOrderProducts.length,
-      totalAmount: newOrder.totalAmount,
-      totalItems,
-      productsCreated: newlyAddedProducts.length,
-      productsUpdated: updatedProducts.length,
-      message: `Commande "${orderName}" créée avec succès. ${newlyAddedProducts.length} nouveaux produits créés, ${updatedProducts.length} produits mis à jour.`
-    });
+      order: {
+        id: insertedOrder.id,
+        name: insertedOrder.name,
+        status: insertedOrder.status,
+        status_label: insertedOrder.status_label,
+        total_amount: insertedOrder.total_amount,
+        total_items: insertedOrder.total_items,
+        created_at: insertedOrder.created_at
+      },
+      summary: {
+        totalProducts: allOrderProducts.length,
+        existingProducts: productsExistingWithGoodStock.length,
+        updatedProducts: productsToUpdateStock.length,
+        createdProducts: newlyAddedProducts.length,
+        catalogUpdated: addToCatalog,
+        totalAmount: Math.round(totalAmount * 100) / 100,
+        totalItems
+      },
+      message: `Commande "${orderName}" créée avec succès. ${allOrderProducts.length} produits, ${addToCatalog ? newlyAddedProducts.length + ' créés et ' + productsToUpdateStock.length + ' mis à jour dans le catalogue.' : 'sans modification du catalogue.'}`
+    };
+
+    console.log('✅ Import terminé avec succès:', response.summary);
+    return NextResponse.json(response);
 
   } catch (error) {
-    console.error('❌ Erreur confirmation import:', error);
-    
-    // Log détaillé de l'erreur
-    if (error instanceof Error) {
-      console.error('Message d\'erreur:', error.message);
-      console.error('Stack trace:', error.stack);
-    }
-    
+    console.error('❌ Erreur lors de la confirmation d\'import:', error);
     return NextResponse.json(
       { 
-        error: error instanceof Error ? error.message : 'Erreur interne', 
-        details: error instanceof Error ? error.stack : 'Erreur inconnue'
+        success: false,
+        error: error instanceof Error ? error.message : 'Erreur interne',
+        details: error instanceof Error ? error.stack : undefined
       },
       { status: 500 }
     );

@@ -2,7 +2,7 @@
 CREATE TABLE IF NOT EXISTS orders (
   id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
   name TEXT NOT NULL,
-  status TEXT NOT NULL CHECK (status IN ('draft', 'pending', 'processing', 'shipped', 'delivered')),
+  status TEXT NOT NULL CHECK (status IN ('draft', 'pending', 'processing', 'shipped', 'delivered', 'validated', 'editing')),
   status_label TEXT NOT NULL,
   customer_ref TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW(),
