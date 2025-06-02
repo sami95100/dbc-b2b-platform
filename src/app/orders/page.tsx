@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import DBCLogo from '../../components/DBCLogo';
+import AppHeader from '../../components/AppHeader';
 import OrderImportButton from '../../components/OrderImportButton';
 import { supabase, Product } from '../../lib/supabase';
 import { 
@@ -20,58 +20,57 @@ import {
   Trash2
 } from 'lucide-react';
 
-// Données de démonstration pour les commandes
-const mockOrders: any[] = [];
+// Page des commandes - Gestion des commandes client
 
 export default function OrdersPage() {
   const [statusFilter, setStatusFilter] = useState('all');
-  const [orders, setOrders] = useState(mockOrders);
+  const [orders, setOrders] = useState<any[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true); // Démarrer avec loading=true
   const router = useRouter();
 
-  // Fonction pour charger les commandes depuis Supabase
+  // Fonction pour charger les commandes via l'API
   const loadOrders = async () => {
     setLoading(true);
     try {
-      console.log('📦 Chargement des commandes depuis Supabase uniquement...');
+      console.log('📦 Chargement des commandes via API...');
       
-      // Charger toutes les commandes depuis Supabase
-      const { data: supabaseOrders, error } = await supabase
-        .from('orders')
-        .select(`
-          id,
-          name,
-          status,
-          status_label,
-          customer_ref,
-          created_at,
-          updated_at,
-          total_amount,
-          total_items,
-          vat_type
-        `)
-        .order('created_at', { ascending: false });
+      // Charger les commandes via l'API qui utilise supabaseAdmin
+      const response = await fetch('/api/orders');
+      const result = await response.json();
 
-      if (error) {
-        console.error('❌ Erreur chargement Supabase:', error);
-        throw error;
+      if (!response.ok) {
+        console.error('❌ Erreur API orders:', result.error);
+        throw new Error(result.error || 'Erreur de chargement');
       }
 
-      console.log('✅ Commandes Supabase chargées:', supabaseOrders?.length || 0);
+      console.log('✅ Commandes chargées via API:', result.count);
+
+      // Fonction pour garantir les bons labels de statut
+      const getCorrectStatusLabel = (status: string) => {
+        switch (status) {
+          case 'draft': return 'Brouillon';
+          case 'pending_payment': return 'En attente de paiement';
+          case 'shipping': return 'En cours de livraison';
+          case 'completed': return 'Terminée';
+          case 'cancelled': return 'Annulée';
+          default: return status;
+        }
+      };
 
       // Convertir au format attendu
-      const allOrders = supabaseOrders?.map(order => ({
+      const allOrders = result.orders?.map((order: any) => ({
         id: order.id, // Utiliser l'UUID Supabase
         name: order.name,
         status: order.status,
-        status_label: order.status_label,
+        status_label: getCorrectStatusLabel(order.status), // Forcer le bon label selon le statut
         createdAt: order.created_at,
         totalAmount: order.total_amount,
         totalItems: order.total_items,
         customerRef: order.customer_ref,
         vatType: order.vat_type,
-        source: 'supabase'
+        items: order.order_items || [],
+        source: 'api'
       })) || [];
 
       console.log('📋 Commandes formatées:', allOrders.length);
@@ -111,23 +110,42 @@ export default function OrdersPage() {
   }, []);
 
   const deleteOrder = async (orderId: string) => {
-    if (window.confirm('Êtes-vous sûr de vouloir supprimer cette commande ?')) {
+    if (window.confirm('Êtes-vous sûr de vouloir supprimer cette commande brouillon ?')) {
       try {
-        // Supprimer d'abord les items de commande
-        const { error: itemsError } = await supabase
-          .from('order_items')
-          .delete()
-          .eq('order_id', orderId);
+        console.log('🗑️ Suppression de la commande:', orderId);
+        
+        const response = await fetch(`/api/orders/${orderId}`, {
+          method: 'DELETE'
+        });
 
-        if (itemsError) throw itemsError;
+        if (!response.ok) {
+          const result = await response.json();
+          throw new Error(result.error || 'Erreur de suppression');
+        }
 
-        // Puis supprimer la commande
-        const { error: orderError } = await supabase
-          .from('orders')
-          .delete()
-          .eq('id', orderId);
+        const result = await response.json();
+        console.log('✅ Réponse suppression:', result);
 
-        if (orderError) throw orderError;
+        // Nettoyer le localStorage si demandé
+        if (result.cleanupLocalStorage) {
+          console.log('🧹 Nettoyage localStorage pour commande:', result.orderId);
+          
+          // Supprimer la commande des draftOrders
+          const savedOrders = localStorage.getItem('draftOrders');
+          if (savedOrders) {
+            const draftOrders = JSON.parse(savedOrders);
+            delete draftOrders[result.orderId];
+            localStorage.setItem('draftOrders', JSON.stringify(draftOrders));
+            console.log('✅ Commande supprimée de draftOrders');
+          }
+
+          // Si c'était la commande active, la supprimer aussi
+          const currentOrder = localStorage.getItem('currentDraftOrder');
+          if (currentOrder === result.orderId) {
+            localStorage.removeItem('currentDraftOrder');
+            console.log('✅ currentDraftOrder supprimé');
+          }
+        }
 
         alert('✅ Commande supprimée avec succès');
         
@@ -199,40 +217,15 @@ export default function OrdersPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-gray-50 to-emerald-50">
       {/* Header */}
-      <header className="bg-dbc-dark-green shadow-sm border-b">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            <div className="flex items-center space-x-4">
-              <div className="flex items-center space-x-2">
-                <DBCLogo />
-                <h1 className="text-xl font-bold text-white">DBC Electronics</h1>
-              </div>
-            </div>
-            
-            <div className="flex items-center space-x-4">
-              <button 
-                onClick={() => router.push('/orders')}
-                className="relative hover:text-dbc-bright-green transition-colors"
-              >
-                <ShoppingCart className="h-6 w-6 text-white" />
-              </button>
-              
-              <div className="flex items-center space-x-2">
-                <User className="h-5 w-5 text-white" />
-                <span className="text-sm text-white">Demo User</span>
-              </div>
-              
-              <button className="text-white hover:text-dbc-bright-green transition-colors">
-                <LogOut className="h-5 w-5" />
-              </button>
-            </div>
-          </div>
-        </div>
-      </header>
+      <AppHeader 
+        cartItemsCount={0}
+        onCartClick={() => router.push('/orders')}
+        onLogoClick={() => router.push('/catalog')}
+      />
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      <div className="max-w-[2000px] mx-auto px-8 py-6">
         {/* Navigation */}
         <div className="flex items-center space-x-4 mb-6">
           <button
@@ -277,7 +270,15 @@ export default function OrdersPage() {
 
         {/* Tableau des commandes */}
         <div className="bg-white rounded-lg shadow-sm border overflow-hidden">
-          <table className="w-full">
+          {loading ? (
+            <div className="flex items-center justify-center py-12">
+              <div className="text-center">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-dbc-light-green mx-auto mb-4"></div>
+                <p className="text-gray-600">Chargement des commandes...</p>
+              </div>
+            </div>
+          ) : (
+            <table className="w-full">
             <thead className="bg-gray-50 border-b">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -339,15 +340,15 @@ export default function OrdersPage() {
                     <div className="flex items-center space-x-2">
                       <button
                         onClick={() => router.push(`/orders/${order.id}`)}
-                        className="text-dbc-light-green hover:text-dbc-dark-green text-sm font-medium"
+                        className="px-3 py-1 bg-gradient-to-r from-dbc-bright-green to-emerald-400 text-dbc-dark-green hover:from-emerald-300 hover:to-emerald-500 hover:text-white rounded-lg text-sm font-semibold transition-all duration-200 shadow-sm backdrop-blur-sm"
                       >
                         Voir détails →
                       </button>
-                      {order.source === 'supabase' && (
+                      {order.status === 'draft' && (
                         <button
                           onClick={() => deleteOrder(order.id)}
                           className="text-red-600 hover:text-red-800 p-1"
-                          title="Supprimer cette commande"
+                          title="Supprimer cette commande brouillon"
                         >
                           <Trash2 className="h-4 w-4" />
                         </button>
@@ -358,16 +359,17 @@ export default function OrdersPage() {
               ))}
             </tbody>
           </table>
+          )}
         </div>
 
-        {filteredOrders.length === 0 && (
+        {!loading && filteredOrders.length === 0 && (
           <div className="text-center py-12">
             <Package className="h-12 w-12 text-gray-400 mx-auto mb-4" />
             <h3 className="text-lg font-medium text-gray-900 mb-2">Aucune commande trouvée</h3>
             <p className="text-gray-600 mb-4">Vous n'avez pas encore passé de commande</p>
             <button
               onClick={() => router.push('/catalog')}
-              className="bg-dbc-light-green text-white py-2 px-6 rounded-lg hover:bg-green-600 transition-colors"
+              className="bg-gradient-to-r from-dbc-bright-green to-emerald-400 text-dbc-dark-green py-2 px-6 rounded-xl hover:from-emerald-300 hover:to-emerald-500 hover:text-white font-semibold shadow-lg backdrop-blur-sm transition-all duration-200"
             >
               Voir le catalogue
             </button>

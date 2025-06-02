@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useMemo, useEffect, useRef } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import AppHeader from '../../components/AppHeader';
+import DBCLogo from '../../components/DBCLogo';
 import CatalogUpdateButton from '../../components/CatalogUpdateButton';
 import { supabase, Product } from '../../lib/supabase';
 import { 
@@ -52,7 +52,7 @@ export default function CatalogPage() {
   // États de tri et pagination
   const [sortField, setSortField] = useState<SortField>('product_name');
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
-  const [itemsPerPage, setItemsPerPage] = useState(250); // 250 par défaut pour de meilleures performances
+  const [itemsPerPage, setItemsPerPage] = useState(500); // 500 par défaut
   const [currentPage, setCurrentPage] = useState(1);
   
   // États des commandes - Initialisés depuis localStorage
@@ -88,7 +88,6 @@ export default function CatalogPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [totalProductsCount, setTotalProductsCount] = useState<number | null>(null);
-  const [creatingOrder, setCreatingOrder] = useState(false);
   
   const router = useRouter();
 
@@ -104,169 +103,62 @@ export default function CatalogPage() {
   });
   const [closeTimeout, setCloseTimeout] = useState<NodeJS.Timeout | null>(null);
 
-  // Fonction pour synchroniser les commandes brouillon avec Supabase
-  const syncDraftOrdersWithSupabase = async () => {
-    try {
-      const response = await fetch('/api/orders/draft', {
-        method: 'GET'
-      });
-      
-      if (response.ok) {
-        const result = await response.json();
-        const supabaseDrafts = result.draftOrders || [];
-        
-        if (supabaseDrafts.length > 0) {
-          console.log('🔄 Synchronisation avec commandes Supabase:', supabaseDrafts.length);
-          
-          // Si on a des commandes en brouillon en base, les synchroniser avec le localStorage
-          const syncedDraftOrders: {[key: string]: any} = {};
-          
-          for (const draft of supabaseDrafts) {
-            syncedDraftOrders[draft.id] = {
-              id: draft.id,
-              name: draft.name,
-              status: 'draft',
-              status_label: 'Brouillon',
-              createdAt: draft.created_at,
-              items: draft.items || {}, // Utiliser les items récupérés depuis l'API
-              supabaseId: draft.id,
-              source: 'supabase',
-              total_amount: draft.total_amount,
-              total_items: draft.total_items
-            };
-          }
-          
-          // Mettre à jour les states
-          setDraftOrders(syncedDraftOrders);
-          
-          // Si pas de commande active mais qu'on en a en base, prendre la plus récente
-          if (!currentDraftOrder && supabaseDrafts.length > 0) {
-            const latestDraft = supabaseDrafts[0]; // Déjà triée par date desc
-            setCurrentDraftOrder(latestDraft.id);
-            saveCurrentOrderToLocalStorage(latestDraft.id);
-            
-            // Mettre à jour les quantités avec les items de la commande active
-            setQuantities(latestDraft.items || {});
-          } else if (currentDraftOrder && syncedDraftOrders[currentDraftOrder]) {
-            // Si on a déjà une commande active, synchroniser ses quantités
-            setQuantities(syncedDraftOrders[currentDraftOrder].items || {});
-          }
-          
-          // Sauvegarder dans localStorage
-          localStorage.setItem('draftOrders', JSON.stringify(syncedDraftOrders));
-        }
-      }
-    } catch (error) {
-      console.warn('⚠️ Erreur synchronisation commandes brouillon:', error);
-    }
-  };
-
   // Charger les quantités de la commande active
   useEffect(() => {
     // Marquer qu'on est côté client
     setIsClient(true);
     
-    // Synchroniser avec Supabase au chargement
-    const initializeOrders = async () => {
-      await syncDraftOrdersWithSupabase();
-      
-      // Après la synchronisation, vérifier la commande active
-      const savedCurrentOrder = localStorage.getItem('currentDraftOrder');
-      const savedDraftOrders = localStorage.getItem('draftOrders');
-      
-      if (savedDraftOrders) {
-        const parsedDraftOrders = JSON.parse(savedDraftOrders);
-        
-        if (savedCurrentOrder && parsedDraftOrders[savedCurrentOrder]) {
-          const currentOrderItems = parsedDraftOrders[savedCurrentOrder].items || {};
-          setQuantities(currentOrderItems);
-        } else if (savedCurrentOrder) {
-          // La commande active n'existe plus
-          setCurrentDraftOrder(null);
-          localStorage.removeItem('currentDraftOrder');
-          
-          // Chercher une autre commande brouillon
-          const drafts = Object.values(parsedDraftOrders).filter((order: any) => order.status === 'draft');
-          if (drafts.length > 0) {
-            const lastDraft = drafts.sort((a: any, b: any) => 
-              new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-            )[0] as any;
-            
-            setCurrentDraftOrder(lastDraft.id);
-            setQuantities(lastDraft.items || {});
-            saveCurrentOrderToLocalStorage(lastDraft.id);
-          }
-        }
-      }
-    };
+    console.log('🔄 INITIALISATION');
+    console.log('Current draft order:', currentDraftOrder);
+    console.log('Draft orders:', Object.keys(draftOrders));
     
-    initializeOrders();
+    if (currentDraftOrder && draftOrders[currentDraftOrder]) {
+      const currentOrderItems = draftOrders[currentDraftOrder].items || {};
+      setQuantities(currentOrderItems);
+      console.log('✅ Quantités chargées:', Object.keys(currentOrderItems).length, 'produits');
+    } else if (currentDraftOrder) {
+      // La commande active n'existe plus
+      console.log('⚠️ Commande active introuvable, reset');
+      setCurrentDraftOrder(null);
+      localStorage.removeItem('currentDraftOrder');
+      
+      // Chercher une autre commande brouillon
+      const drafts = Object.values(draftOrders).filter((order: any) => order.status === 'draft');
+      if (drafts.length > 0) {
+        const lastDraft = drafts.sort((a: any, b: any) => 
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        )[0] as any;
+        
+        console.log('🔄 Nouvelle commande active:', lastDraft.id);
+        setCurrentDraftOrder(lastDraft.id);
+        setQuantities(lastDraft.items || {});
+        saveCurrentOrderToLocalStorage(lastDraft.id);
+      }
+    }
   }, []); // Exécuter seulement au montage
 
-  // Resynchroniser quand la page devient visible (retour d'un autre onglet/page)
-  useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (!document.hidden && isClient) {
-        console.log('🔄 Page visible - resynchronisation...');
-        syncDraftOrdersWithSupabase();
-      }
-    };
-
-    const handleFocus = () => {
-      if (isClient) {
-        console.log('🔄 Page focus - resynchronisation...');
-        syncDraftOrdersWithSupabase();
-      }
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    window.addEventListener('focus', handleFocus);
-
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.removeEventListener('focus', handleFocus);
-    };
-  }, [isClient]);
-
-  // Protection contre les appels multiples simultanés
-  const [isSaving, setIsSaving] = useState(false);
-  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-
-  // Fonction pour sauvegarder immédiatement dans localStorage et Supabase avec debounce
+  // Fonction pour sauvegarder immédiatement dans localStorage et Supabase
   const saveDraftOrdersToLocalStorage = async (orders: any) => {
-    // Sauvegarder immédiatement dans localStorage
+    console.log('💾 Sauvegarde immédiate dans localStorage:', Object.keys(orders));
     localStorage.setItem('draftOrders', JSON.stringify(orders));
     
-    // Debounce la synchronisation Supabase pour éviter les doublons
-    if (saveTimeoutRef.current) {
-      clearTimeout(saveTimeoutRef.current);
-    }
-    
-    saveTimeoutRef.current = setTimeout(async () => {
-      if (isSaving) return; // Éviter les appels multiples
-      
-      setIsSaving(true);
-      try {
-        // Synchroniser avec Supabase pour les commandes qui ont un supabaseId
-        for (const [orderId, order] of Object.entries(orders)) {
-          const orderData = order as any;
-          if (orderData.supabaseId && orderData.source === 'manual') {
-            try {
-              await syncOrderWithSupabase(orderData);
-            } catch (error) {
-              console.warn('⚠️ Erreur sync Supabase pour commande', orderId, ':', error);
-            }
-          }
+    // Synchroniser avec Supabase pour les commandes qui ont un supabaseId
+    for (const [orderId, order] of Object.entries(orders)) {
+      const orderData = order as any;
+      if (orderData.supabaseId && orderData.source === 'manual') {
+        try {
+          await syncOrderWithSupabase(orderData);
+        } catch (error) {
+          console.warn('⚠️ Erreur sync Supabase pour commande', orderId, ':', error);
         }
-      } finally {
-        setIsSaving(false);
       }
-    }, 500); // Debounce de 500ms
+    }
   };
 
   // Fonction pour synchroniser une commande avec Supabase
   const syncOrderWithSupabase = async (order: any) => {
     try {
+      console.log('🔄 Synchronisation commande avec Supabase:', order.id);
       
       const response = await fetch('/api/orders/draft', {
         method: 'PUT',
@@ -287,6 +179,7 @@ export default function CatalogPage() {
         const errorData = await response.json();
         console.warn('⚠️ Erreur mise à jour Supabase:', errorData.error);
       } else {
+        console.log('✅ Commande synchronisée avec Supabase');
       }
     } catch (error) {
       console.warn('⚠️ Erreur réseau sync Supabase:', error);
@@ -295,6 +188,7 @@ export default function CatalogPage() {
 
   // Fonction pour sauvegarder la commande active
   const saveCurrentOrderToLocalStorage = (orderId: string | null) => {
+    console.log('💾 Sauvegarde commande active:', orderId);
     if (orderId) {
       localStorage.setItem('currentDraftOrder', orderId);
     } else {
@@ -309,7 +203,7 @@ export default function CatalogPage() {
         setLoading(true);
         setError(null);
         
-        // D'abord, obtenir le nombre total de produits (tous les produits actifs)
+        // D'abord, obtenir le nombre total de produits
         const { count: totalCount, error: countError } = await supabase
           .from('products')
           .select('*', { count: 'exact', head: true })
@@ -317,76 +211,56 @@ export default function CatalogPage() {
           
         if (countError) throw countError;
         
+        console.log('📊 Nombre total de produits actifs dans Supabase:', totalCount);
         setTotalProductsCount(totalCount);
         
-        // Charger d'abord les premiers produits pour afficher rapidement
-        console.log('📦 Chargement initial des premiers 500 produits...');
-        const { data: initialProducts, error: initialError } = await supabase
-          .from('products')
-          .select('*')
-          .eq('is_active', true)
-          .order('product_name')
-          .limit(500);
+        // Charger TOUS les produits par batch
+        let allProducts: Product[] = [];
+        const batchSize = 1000;
+        let currentBatch = 0;
         
-        if (initialError) throw initialError;
-        
-        if (initialProducts) {
-          setProducts(initialProducts);
-          setLoading(false); // Arrêter le loading pour les premiers produits
-        }
-        
-        // Charger le reste en arrière-plan si nécessaire
-        if (totalCount && totalCount > 500) {
-          console.log('📦 Chargement du reste des produits en arrière-plan...');
+        while (allProducts.length < (totalCount || 0)) {
+          const from = currentBatch * batchSize;
+          const to = from + batchSize - 1;
           
-          let allProducts: Product[] = [...initialProducts];
-          const batchSize = 1000;
-          let currentBatch = 1; // Commencer à 1 car on a déjà la première batch
+          console.log(`📦 Chargement batch ${currentBatch + 1}: produits ${from} à ${to}`);
           
-          while (allProducts.length < totalCount) {
-            const from = currentBatch * batchSize;
-            const to = from + batchSize - 1;
-            
-            const { data, error } = await supabase
-              .from('products')
-              .select('*')
-              .eq('is_active', true)
-              .order('product_name')
-              .range(from, to);
-            
-            if (error) {
-              console.warn('⚠️ Erreur chargement batch', currentBatch, ':', error);
-              break;
-            }
-            
-            if (data && data.length > 0) {
-              allProducts = [...allProducts, ...data];
-              // Mettre à jour progressivement
-              setProducts([...allProducts]);
-            } else {
-              break; // Plus de données
-            }
-            
-            currentBatch++;
-            
-            // Sécurité
-            if (currentBatch > 20) {
-              console.warn('⚠️ Arrêt sécurité après 20 batchs');
-              break;
-            }
-            
-            // Petite pause pour ne pas surcharger
-            await new Promise(resolve => setTimeout(resolve, 100));
+          const { data, error } = await supabase
+            .from('products')
+            .select('*')
+            .eq('is_active', true)
+            .order('product_name')
+            .range(from, to);
+          
+          if (error) throw error;
+          
+          if (data && data.length > 0) {
+            allProducts = [...allProducts, ...data];
+            console.log(`✅ Batch chargé: ${data.length} produits (total chargé: ${allProducts.length}/${totalCount})`);
+          } else {
+            break; // Plus de données
           }
           
-          console.log('✅ Chargement complet terminé:', allProducts.length, 'produits');
+          currentBatch++;
+          
+          // Sécurité
+          if (currentBatch > 50) {
+            console.warn('⚠️ Arrêt sécurité après 50 batchs');
+            break;
+          }
         }
         
+        console.log('🔍 TOUS les produits chargés:', allProducts.length, 'sur', totalCount, 'total');
+        console.log('📊 DEBUG: Taille du tableau reçu:', allProducts.length);
+        console.log('📊 DEBUG: Count exact Supabase:', totalCount);
+        setProducts(allProducts);
       } catch (err) {
         console.error('Erreur chargement produits:', err);
         setError('Erreur lors du chargement des produits');
+        // TODO: Gérer l'erreur proprement - rediriger vers login ou afficher message d'erreur
         setProducts([]);
         setTotalProductsCount(0);
+      } finally {
         setLoading(false);
       }
     }
@@ -396,6 +270,7 @@ export default function CatalogPage() {
 
   // Fonction pour rafraîchir les données après mise à jour du catalogue
   const refreshProducts = async () => {
+    console.log('🔄 Rafraîchissement des produits...');
     
     try {
       setLoading(true);
@@ -409,6 +284,7 @@ export default function CatalogPage() {
         
       if (countError) throw countError;
       
+      console.log('📊 Nombre total de produits après mise à jour:', totalCount);
       setTotalProductsCount(totalCount);
       
       // Charger TOUS les produits par batch
@@ -443,6 +319,7 @@ export default function CatalogPage() {
         }
       }
       
+      console.log('✅ Produits rafraîchis:', allProducts.length, 'produits');
       setProducts(allProducts);
       
       // Réinitialiser la page courante si nécessaire
@@ -474,15 +351,6 @@ export default function CatalogPage() {
   // Filtrage et tri des produits
   const filteredAndSortedProducts = useMemo(() => {
     let filtered = products.filter(product => {
-      // NOUVEAU: Filtrer les produits à quantité 0 sauf si recherche active
-      const hasSearch = searchTerm.trim().length > 0;
-      const hasStock = product.quantity > 0;
-      
-      // Si pas de recherche et pas de stock, exclure le produit
-      if (!hasSearch && !hasStock) {
-        return false;
-      }
-      
       // Recherche globale
       const matchesSearch = !searchTerm || 
         product.product_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -630,7 +498,7 @@ export default function CatalogPage() {
       setQuantities(prev => ({ ...prev, [sku]: value === '' ? '' : newQuantity }));
       
       // Mettre à jour dans la commande actuelle si elle existe
-      if (currentDraftOrder && draftOrders[currentDraftOrder]) {
+      if (currentDraftOrder) {
         let newDraftOrders;
         
         if (newQuantity === 0 || value === '') {
@@ -645,9 +513,6 @@ export default function CatalogPage() {
               items: newItems
             }
           };
-          
-          // Mettre à jour les produits sélectionnés
-          setSelectedProducts(prev => ({ ...prev, [sku]: false }));
         } else {
           // Sinon, mettre à jour la quantité
           newDraftOrders = {
@@ -660,15 +525,6 @@ export default function CatalogPage() {
               }
             }
           };
-          
-          // Vérifier si c'est la quantité maximale pour cocher la case
-          const product = products.find(p => p.sku === sku);
-          if (product) {
-            setSelectedProducts(prev => ({ 
-              ...prev, 
-              [sku]: newQuantity === product.quantity && newQuantity > 0 
-            }));
-          }
         }
         
         setDraftOrders(newDraftOrders);
@@ -687,12 +543,18 @@ export default function CatalogPage() {
   };
 
   const addToCartWithQuantity = async (sku: string, quantity: number, replace: boolean = false) => {
+    console.log('🛒 ADD TO CART WITH QUANTITY');
+    console.log('SKU:', sku, 'Quantity:', quantity, 'Replace:', replace);
+    console.log('Current draft order AVANT:', currentDraftOrder);
+    console.log('Draft orders AVANT:', Object.keys(draftOrders));
     
     // Si pas de commande active, chercher d'abord s'il y a une commande brouillon existante
     if (!currentDraftOrder) {
+      console.log('🔍 Pas de commande active, recherche...');
       
       // Chercher une commande brouillon existante
       const existingDrafts = Object.values(draftOrders).filter((order: any) => order.status === 'draft');
+      console.log('Commandes brouillon trouvées:', existingDrafts.length);
       
       if (existingDrafts.length > 0) {
         // Utiliser la dernière commande brouillon
@@ -700,6 +562,7 @@ export default function CatalogPage() {
           new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
         )[0] as any;
         
+        console.log('✅ Commande brouillon réactivée:', lastDraft.id);
         setCurrentDraftOrder(lastDraft.id);
         saveCurrentOrderToLocalStorage(lastDraft.id);
         
@@ -707,6 +570,7 @@ export default function CatalogPage() {
         const currentQuantity = lastDraft.items?.[sku] || 0;
         const newQuantity = replace ? quantity : currentQuantity + quantity;
         
+        console.log('Quantité actuelle:', currentQuantity, '→ Nouvelle quantité:', newQuantity);
         
         const newDraftOrders = {
           ...draftOrders,
@@ -726,37 +590,22 @@ export default function CatalogPage() {
         // Sauvegarder avec sync Supabase
         await saveDraftOrdersToLocalStorage(newDraftOrders);
         
+        console.log('✅ Produit ajouté à la commande existante');
         return;
       }
       
-      // Vérifier s'il existe une commande brouillon dans Supabase
-      try {
-        const response = await fetch('/api/orders/draft', {
-          method: 'GET'
-        });
-        
-        if (response.ok) {
-          const result = await response.json();
-          if (result.draftOrders && result.draftOrders.length > 0) {
-            const existingDraft = result.draftOrders[0];
-            alert(`⚠️ Une commande en brouillon existe déjà: "${existingDraft.name}"\n\nVeuillez d'abord la supprimer ou la finaliser avant d'en créer une nouvelle.\n\nVous pouvez gérer vos commandes depuis la page "Commandes".`);
-            return;
-          }
-        }
-      } catch (error) {
-        console.warn('⚠️ Erreur vérification commandes brouillon:', error);
-        // Continuer en mode dégradé en cas d'erreur réseau
-      }
-      
+      console.log('🆕 Aucune commande brouillon, demande de nom');
       // Si vraiment aucune commande brouillon, alors demander un nom
       setShowOrderNamePopup(true);
       sessionStorage.setItem('pendingProduct', JSON.stringify({ sku, quantity, replace }));
       return;
     }
 
+    console.log('🎯 Commande active trouvée:', currentDraftOrder);
     const currentQuantity = draftOrders[currentDraftOrder]?.items?.[sku] || 0;
     const newQuantity = replace ? quantity : currentQuantity + quantity;
     
+    console.log('Quantité actuelle:', currentQuantity, '→ Nouvelle quantité:', newQuantity);
     
     const newDraftOrders = {
       ...draftOrders,
@@ -769,6 +618,7 @@ export default function CatalogPage() {
       }
     };
     
+    console.log('Draft orders APRÈS:', Object.keys(newDraftOrders));
     
     setDraftOrders(newDraftOrders);
     setQuantities(prev => ({ ...prev, [sku]: newQuantity }));
@@ -779,6 +629,7 @@ export default function CatalogPage() {
     // Sauvegarder avec sync Supabase
     await saveDraftOrdersToLocalStorage(newDraftOrders);
     
+    console.log('✅ Produit ajouté à la commande active');
   };
 
   // Fonction pour sélectionner toute la quantité disponible (case à cocher)
@@ -787,13 +638,10 @@ export default function CatalogPage() {
   };
 
   const createNewOrder = async () => {
-    // Protection contre les double-clics
-    if (creatingOrder) return;
-    setCreatingOrder(true);
-    
     const finalOrderName = orderName.trim() || `Commande ${new Date().toLocaleDateString('fr-FR')}`;
     
     try {
+      console.log('🔄 Création nouvelle commande avec sauvegarde Supabase...');
       
       // Préparer les items de la commande en attente
       const pendingProduct = sessionStorage.getItem('pendingProduct');
@@ -822,24 +670,13 @@ export default function CatalogPage() {
 
       if (!response.ok) {
         const errorData = await response.json();
-        
-        // Si c'est une erreur 409 (commande brouillon existante), afficher un message spécifique
-        if (response.status === 409) {
-          const existingDraft = errorData.existingDraft;
-          alert(`⚠️ ${errorData.message}\n\nCommande existante: "${existingDraft.name}"\nCréée le: ${new Date(existingDraft.created_at).toLocaleDateString('fr-FR')}\n\nVous pouvez gérer vos commandes depuis la page "Commandes".`);
-          setShowOrderNamePopup(false);
-          setOrderName('');
-          sessionStorage.removeItem('pendingProduct');
-          setCreatingOrder(false);
-          return;
-        }
-        
         throw new Error(errorData.error || 'Erreur création commande');
       }
 
       const result = await response.json();
       const supabaseOrder = result.order;
       
+      console.log('✅ Commande créée dans Supabase:', supabaseOrder.id);
 
       // Créer l'objet commande pour localStorage avec l'UUID Supabase
       const newOrder = {
@@ -873,6 +710,7 @@ export default function CatalogPage() {
         sessionStorage.removeItem('pendingProduct');
       }
 
+      console.log('✅ Commande créée et sauvegardée:', supabaseOrder.id);
       
     } catch (error) {
       console.error('❌ Erreur création commande:', error);
@@ -913,8 +751,6 @@ export default function CatalogPage() {
         
         saveDraftOrdersToLocalStorage(newDraftOrders);
       }
-    } finally {
-      setCreatingOrder(false);
     }
   };
 
@@ -948,10 +784,12 @@ export default function CatalogPage() {
     setQuantityMax('');
     setCurrentPage(1);
     
+    console.log('Filtres réinitialisés');
   };
 
   // Fonction d'export
   const exportCatalog = (format: 'xlsx' | 'csv') => {
+    console.log(`📊 Export catalogue au format ${format}...`);
     
     // Préparer les données pour l'export
     const exportData = filteredAndSortedProducts.map(product => {
@@ -985,6 +823,7 @@ export default function CatalogPage() {
         const fileName = `catalogue_dbc_${new Date().toISOString().split('T')[0]}.xlsx`;
         XLSX.writeFile(workbook, fileName);
         
+        console.log('✅ Export Excel terminé');
       }).catch(err => {
         console.error('Erreur export Excel:', err);
         alert('Erreur lors de l\'export Excel');
@@ -1020,6 +859,7 @@ export default function CatalogPage() {
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
       
+      console.log('✅ Export CSV terminé');
     }
   };
 
@@ -1061,6 +901,7 @@ export default function CatalogPage() {
   useEffect(() => {
     if (currentDraftOrder && draftOrders[currentDraftOrder]) {
       const items = draftOrders[currentDraftOrder].items || {};
+      console.log('🔄 Synchronisation - Items:', Object.keys(items).length, 'produits');
       
       const newSelectedProducts: {[key: string]: boolean} = {};
       
@@ -1073,6 +914,7 @@ export default function CatalogPage() {
       
       setSelectedProducts(newSelectedProducts);
     } else {
+      console.log('🔄 Synchronisation - Pas de commande active');
       setSelectedProducts({});
     }
   }, [currentDraftOrder, draftOrders, products]);
@@ -1122,128 +964,56 @@ export default function CatalogPage() {
     }
   };
 
-  // Fonction pour forcer une resynchronisation en cas d'incohérence
-  const forceResync = async () => {
-    console.log('🔄 Resynchronisation forcée...');
-    try {
-      await syncDraftOrdersWithSupabase();
-      
-      // Après la sync, vérifier et corriger la commande active
-      const savedCurrentOrder = localStorage.getItem('currentDraftOrder');
-      const savedDraftOrders = localStorage.getItem('draftOrders');
-      
-      if (savedCurrentOrder && savedDraftOrders) {
-        const parsedDraftOrders = JSON.parse(savedDraftOrders);
-        if (parsedDraftOrders[savedCurrentOrder]) {
-          setQuantities(parsedDraftOrders[savedCurrentOrder].items || {});
-          console.log('✅ Quantités resynchronisées');
-        }
-      }
-    } catch (error) {
-      console.error('❌ Erreur lors de la resynchronisation:', error);
-    }
-  };
-
-  // Fonction pour détecter les incohérences et corriger
-  const checkAndFixInconsistencies = () => {
-    if (currentDraftOrder && draftOrders[currentDraftOrder]) {
-      const orderItems = draftOrders[currentDraftOrder].items || {};
-      const totalInOrder = Object.values(orderItems).reduce((sum: number, qty: any) => 
-        sum + (typeof qty === 'number' ? qty : 0), 0
-      );
-      const totalInQuantities = Object.values(quantities).reduce((sum: number, qty: any) => 
-        sum + (typeof qty === 'number' ? parseInt(qty.toString()) : 0), 0
-      );
-      
-      // Si les totaux ne correspondent pas, forcer une resync
-      if (Math.abs(totalInOrder - totalInQuantities) > 0) {
-        console.warn('⚠️ Incohérence détectée - resynchronisation...');
-        forceResync();
-      }
-    }
-  };
-
-  // Vérifier les incohérences périodiquement
-  useEffect(() => {
-    if (isClient && currentDraftOrder) {
-      const interval = setInterval(checkAndFixInconsistencies, 10000); // Toutes les 10 secondes
-      return () => clearInterval(interval);
-    }
-  }, [isClient, currentDraftOrder, draftOrders, quantities]);
-
-  // Nettoyage au démontage du composant
-  useEffect(() => {
-    return () => {
-      if (saveTimeoutRef.current) {
-        clearTimeout(saveTimeoutRef.current);
-      }
-    };
-  }, []);
-
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-gray-50 to-emerald-50">
+    <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <AppHeader 
-        cartItemsCount={isClient ? getTotalCartItems() : 0}
-        currentOrder={currentDraftOrder && draftOrders[currentDraftOrder] ? {
-          name: draftOrders[currentDraftOrder].name,
-          totalItems: getTotalCartItems(),
-          totalAmount: getTotalCartAmount()
-        } : undefined}
-        onCartClick={() => router.push('/orders')}
-        onLogoClick={() => router.push('/catalog')}
-      />
+      <header className="bg-dbc-dark-green shadow-sm">
+        <div className="max-w-[1800px] mx-auto px-8">
+          <div className="flex items-center justify-between h-16">
+            <div className="flex items-center space-x-4">
+              <button
+                onClick={() => router.push('/catalog')}
+                className="flex items-center space-x-2 hover:opacity-80 transition-opacity"
+              >
+                <DBCLogo className="h-8 w-8" />
+                <h1 className="text-xl font-semibold text-white">DBC B2B Platform</h1>
+              </button>
+            </div>
+            
+            <div className="flex items-center space-x-4">
+              <button 
+                onClick={() => router.push('/orders')}
+                className="relative hover:text-dbc-bright-green transition-colors"
+              >
+                <ShoppingCart className="h-6 w-6 text-white" />
+                {isClient && getTotalCartItems() > 0 && (
+                  <span className="absolute -top-2 -right-2 bg-dbc-light-green text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">
+                    {getTotalCartItems()}
+                  </span>
+                )}
+              </button>
 
-      {/* Zone d'information pour les commandes en brouillon */}
-      {isClient && (
-        <div className="bg-blue-50 border-l-4 border-blue-400 p-4 mb-6">
-          <div className="max-w-[2000px] mx-auto px-4">
-            <div className="flex items-start justify-between">
-              <div className="flex items-start">
-                <div className="flex-shrink-0">
-                  <Package className="h-5 w-5 text-blue-400" />
-                </div>
-                <div className="ml-3">
-                  <p className="text-sm text-blue-700">
-                    <span className="font-medium">Gestion des commandes :</span> 
-                    {currentDraftOrder && draftOrders[currentDraftOrder] ? (
-                      <>
-                        {' '}Vous travaillez actuellement sur la commande "{draftOrders[currentDraftOrder].name}". 
-                        Une seule commande en brouillon peut être active à la fois. 
-                        Finalisez ou supprimez cette commande pour en créer une nouvelle.
-                      </>
-                    ) : (
-                      <>
-                        {' '}Vous pouvez créer une nouvelle commande en ajoutant des produits au panier. 
-                        Une seule commande en brouillon peut être active à la fois.
-                      </>
-                    )}
-                  </p>
-                </div>
-              </div>
-              
-                                {currentDraftOrder && (
-                <div className="flex items-center space-x-2">
-                  {isSaving && (
-                    <div className="flex items-center px-2 py-1 text-xs text-blue-600">
-                      <div className="animate-spin rounded-full h-3 w-3 border-b border-blue-600 mr-1"></div>
-                      Sync...
-                    </div>
-                  )}
-                  <button
-                    onClick={forceResync}
-                    className="flex items-center px-3 py-1 text-xs bg-white bg-opacity-70 backdrop-blur-sm text-dbc-dark-green rounded-lg hover:bg-opacity-90 hover:shadow-md transition-all duration-200 border border-white border-opacity-30"
-                    title="Resynchroniser avec la base de données"
-                  >
-                    <ArrowUpDown className="h-3 w-3 mr-1" />
-                    Resync
-                  </button>
+              {currentDraftOrder && draftOrders[currentDraftOrder] && (
+                <div className="text-white text-sm">
+                  <span className="text-dbc-bright-green">Commande:</span> {draftOrders[currentDraftOrder].name}
+                  <div className="text-xs text-dbc-bright-green">
+                    {getTotalCartItems()} article{getTotalCartItems() > 1 ? 's' : ''} • {getTotalCartAmount().toFixed(2)}€
+                  </div>
                 </div>
               )}
+              
+              <div className="flex items-center space-x-2">
+                <User className="h-5 w-5 text-white" />
+                <span className="text-sm text-white">Admin</span>
+              </div>
+              
+              <button className="text-white hover:text-dbc-bright-green transition-colors">
+                <LogOut className="h-5 w-5" />
+              </button>
             </div>
           </div>
         </div>
-      )}
+      </header>
 
       {/* Conteneur principal avec plus d'espace et centrage */}
       <div className="max-w-[2000px] mx-auto px-4 py-6">
@@ -1267,7 +1037,7 @@ export default function CatalogPage() {
             <div className="flex items-center space-x-3">
               <button
                 onClick={resetFilters}
-                className="px-4 py-2 bg-white bg-opacity-80 backdrop-blur-sm border border-white border-opacity-30 rounded-xl hover:bg-opacity-90 hover:shadow-lg text-sm text-gray-700 transition-all duration-200 shadow-md"
+                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 text-sm text-gray-700"
               >
                 Réinitialiser filtres
               </button>
@@ -1282,7 +1052,7 @@ export default function CatalogPage() {
                     e.stopPropagation();
                     toggleDropdown('export');
                   }}
-                  className="flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-dbc-bright-green to-emerald-400 text-dbc-dark-green rounded-xl hover:from-emerald-300 hover:to-emerald-500 hover:text-white transition-all duration-200 text-sm font-semibold shadow-lg backdrop-blur-sm"
+                  className="flex items-center space-x-2 px-4 py-2 bg-dbc-light-green text-white rounded-lg hover:bg-green-600 text-sm"
                 >
                   <FileSpreadsheet className="h-4 w-4" />
                   <span>Export Catalogue</span>
@@ -1354,31 +1124,31 @@ export default function CatalogPage() {
                 <button
                   onClick={() => setCurrentPage(1)}
                   disabled={currentPage === 1}
-                  className="px-3 py-1 text-sm bg-white bg-opacity-80 backdrop-blur-sm border border-white border-opacity-30 rounded-lg disabled:bg-opacity-50 disabled:text-gray-400 text-gray-700 hover:bg-opacity-90 hover:shadow-md transition-all duration-200 shadow-sm"
+                  className="px-3 py-1 text-sm border border-gray-300 rounded disabled:bg-gray-100 disabled:text-gray-400 text-gray-700 hover:bg-gray-50"
                 >
                   Premier
                 </button>
                 <button
                   onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
                   disabled={currentPage === 1}
-                  className="px-3 py-1 text-sm bg-white bg-opacity-80 backdrop-blur-sm border border-white border-opacity-30 rounded-lg disabled:bg-opacity-50 disabled:text-gray-400 text-gray-700 hover:bg-opacity-90 hover:shadow-md transition-all duration-200 shadow-sm"
+                  className="px-3 py-1 text-sm border border-gray-300 rounded disabled:bg-gray-100 disabled:text-gray-400 text-gray-700 hover:bg-gray-50"
                 >
                   ←
                 </button>
-                <span className="px-3 py-1 text-sm text-gray-700 bg-white bg-opacity-60 backdrop-blur-sm rounded-lg border border-white border-opacity-20 shadow-sm">
+                <span className="px-3 py-1 text-sm text-gray-700">
                   Page {currentPage} sur {totalPages}
                 </span>
                 <button
                   onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
                   disabled={currentPage === totalPages}
-                  className="px-3 py-1 text-sm bg-white bg-opacity-80 backdrop-blur-sm border border-white border-opacity-30 rounded-lg disabled:bg-opacity-50 disabled:text-gray-400 text-gray-700 hover:bg-opacity-90 hover:shadow-md transition-all duration-200 shadow-sm"
+                  className="px-3 py-1 text-sm border border-gray-300 rounded disabled:bg-gray-100 disabled:text-gray-400 text-gray-700 hover:bg-gray-50"
                 >
                   →
                 </button>
                 <button
                   onClick={() => setCurrentPage(totalPages)}
                   disabled={currentPage === totalPages}
-                  className="px-3 py-1 text-sm bg-white bg-opacity-80 backdrop-blur-sm border border-white border-opacity-30 rounded-lg disabled:bg-opacity-50 disabled:text-gray-400 text-gray-700 hover:bg-opacity-90 hover:shadow-md transition-all duration-200 shadow-sm"
+                  className="px-3 py-1 text-sm border border-gray-300 rounded disabled:bg-gray-100 disabled:text-gray-400 text-gray-700 hover:bg-gray-50"
                 >
                   Dernier
                 </button>
@@ -1778,10 +1548,10 @@ export default function CatalogPage() {
                         <button
                           onClick={async () => await addToCart(product.sku)}
                           disabled={quantityInCart >= product.quantity}
-                          className={`inline-flex items-center p-1 border border-transparent text-xs rounded-lg focus:outline-none transition-all duration-200 ${
+                          className={`inline-flex items-center p-1 border border-transparent text-xs rounded focus:outline-none ${
                             quantityInCart >= product.quantity 
                               ? 'bg-gray-400 cursor-not-allowed text-white' 
-                              : 'bg-gradient-to-r from-dbc-bright-green to-emerald-400 hover:from-emerald-300 hover:to-emerald-500 text-dbc-dark-green hover:text-white shadow-sm backdrop-blur-sm'
+                              : 'bg-dbc-light-green hover:bg-green-600 text-white'
                           }`}
                         >
                           <Plus className="h-2.5 w-2.5" />
@@ -1801,31 +1571,31 @@ export default function CatalogPage() {
             <button
               onClick={() => setCurrentPage(1)}
               disabled={currentPage === 1}
-              className="px-4 py-2 text-sm bg-white bg-opacity-80 backdrop-blur-sm border border-white border-opacity-30 rounded-xl disabled:bg-opacity-50 disabled:text-gray-400 text-gray-700 hover:bg-opacity-90 hover:shadow-lg transition-all duration-200 shadow-md"
+              className="px-4 py-2 text-sm border border-gray-300 rounded-lg disabled:bg-gray-100 disabled:text-gray-400 text-gray-700 hover:bg-gray-50"
             >
               Premier
             </button>
             <button
               onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
               disabled={currentPage === 1}
-              className="px-4 py-2 text-sm bg-white bg-opacity-80 backdrop-blur-sm border border-white border-opacity-30 rounded-xl disabled:bg-opacity-50 disabled:text-gray-400 text-gray-700 hover:bg-opacity-90 hover:shadow-lg transition-all duration-200 shadow-md"
+              className="px-4 py-2 text-sm border border-gray-300 rounded-lg disabled:bg-gray-100 disabled:text-gray-400 text-gray-700 hover:bg-gray-50"
             >
               ← Précédent
             </button>
-            <span className="px-4 py-2 text-sm text-gray-700 bg-white bg-opacity-60 backdrop-blur-sm rounded-xl border border-white border-opacity-20 shadow-md">
+            <span className="px-4 py-2 text-sm text-gray-700 bg-gray-50 rounded-lg">
               Page {currentPage} sur {totalPages}
             </span>
             <button
               onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
               disabled={currentPage === totalPages}
-              className="px-4 py-2 text-sm bg-white bg-opacity-80 backdrop-blur-sm border border-white border-opacity-30 rounded-xl disabled:bg-opacity-50 disabled:text-gray-400 text-gray-700 hover:bg-opacity-90 hover:shadow-lg transition-all duration-200 shadow-md"
+              className="px-4 py-2 text-sm border border-gray-300 rounded-lg disabled:bg-gray-100 disabled:text-gray-400 text-gray-700 hover:bg-gray-50"
             >
               Suivant →
             </button>
             <button
               onClick={() => setCurrentPage(totalPages)}
               disabled={currentPage === totalPages}
-              className="px-4 py-2 text-sm bg-white bg-opacity-80 backdrop-blur-sm border border-white border-opacity-30 rounded-xl disabled:bg-opacity-50 disabled:text-gray-400 text-gray-700 hover:bg-opacity-90 hover:shadow-lg transition-all duration-200 shadow-md"
+              className="px-4 py-2 text-sm border border-gray-300 rounded-lg disabled:bg-gray-100 disabled:text-gray-400 text-gray-700 hover:bg-gray-50"
             >
               Dernier
             </button>
@@ -1858,16 +1628,15 @@ export default function CatalogPage() {
                   // Décocher toutes les cases
                   setSelectedProducts({});
                 }}
-                className="px-4 py-2 bg-white bg-opacity-80 backdrop-blur-sm border border-white border-opacity-30 rounded-xl text-gray-700 hover:text-gray-900 hover:bg-opacity-90 transition-all duration-200 shadow-sm"
+                className="px-4 py-2 text-gray-700 hover:text-gray-900"
               >
                 Annuler
               </button>
               <button
                 onClick={createNewOrder}
-                disabled={creatingOrder}
-                className="px-4 py-2 bg-gradient-to-r from-dbc-bright-green to-emerald-400 text-dbc-dark-green rounded-xl hover:from-emerald-300 hover:to-emerald-500 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed font-semibold shadow-lg backdrop-blur-sm transition-all duration-200"
+                className="px-4 py-2 bg-dbc-light-green text-white rounded-lg hover:bg-green-600"
               >
-                {creatingOrder ? 'Création...' : 'Créer la commande'}
+                Créer la commande
               </button>
             </div>
           </div>

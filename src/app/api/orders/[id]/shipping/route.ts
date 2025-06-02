@@ -1,8 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '../../../../../lib/supabase';
 
+// Fonction helper pour vérifier supabaseAdmin
+function getSupabaseAdmin() {
+  if (!supabaseAdmin) {
+    throw new Error('Configuration Supabase admin manquante - vérifiez SUPABASE_SERVICE_ROLE_KEY dans .env.local');
+  }
+  return supabaseAdmin;
+}
+
 export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
   try {
+    const admin = getSupabaseAdmin();
     console.log('🚚 Mise à jour livraison pour commande:', params.id);
 
     const body = await request.json();
@@ -13,7 +22,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
     }
 
     // Vérifier que la commande existe et est en statut shipping
-    const { data: order, error: orderError } = await supabaseAdmin
+    const { data: order, error: orderError } = await admin
       .from('orders')
       .select('id, name, status, total_amount')
       .eq('id', params.id)
@@ -47,7 +56,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
     }
 
     // Mettre à jour la commande
-    const { data: updatedOrder, error: updateError } = await supabaseAdmin
+    const { data: updatedOrder, error: updateError } = await admin
       .from('orders')
       .update(updateData)
       .eq('id', params.id)

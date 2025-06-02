@@ -5,6 +5,12 @@ export async function POST(request: NextRequest) {
   try {
     console.log('🧹 Début du nettoyage des données de test...');
     
+    if (!supabaseAdmin) {
+      return NextResponse.json({
+        error: 'Configuration Supabase admin manquante'
+      }, { status: 500 });
+    }
+    
     const body = await request.json();
     const { action, confirm } = body;
 

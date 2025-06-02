@@ -89,7 +89,7 @@ export default function CatalogUpdateButton({ onUpdateComplete }: { onUpdateComp
       {/* Bouton principal */}
       <button
         onClick={() => setShowUploadModal(true)}
-        className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+        className="flex items-center gap-2 px-4 py-2 bg-white bg-opacity-80 backdrop-blur-sm border border-white border-opacity-30 rounded-xl hover:bg-opacity-90 hover:shadow-lg text-gray-700 transition-all duration-200 shadow-md"
       >
         <RefreshCw className="h-4 w-4" />
         Mettre à jour le catalogue

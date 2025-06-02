@@ -1,11 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { writeFile } from 'fs/promises';
+import { writeFile, mkdir } from 'fs/promises';
 import { join } from 'path';
 import { spawn } from 'child_process';
-import { supabase } from '../../../../lib/supabase';
+import { supabaseAdmin } from '../../../../lib/supabase';
+
+// Fonction helper pour vérifier supabaseAdmin
+function getSupabaseAdmin() {
+  if (!supabaseAdmin) {
+    throw new Error('Configuration Supabase admin manquante - vérifiez SUPABASE_SERVICE_ROLE_KEY dans .env.local');
+  }
+  return supabaseAdmin;
+}
 
 export async function POST(request: NextRequest) {
   try {
+    const admin = getSupabaseAdmin();
+    
     const formData = await request.formData();
     const file = formData.get('catalog') as File;
     
@@ -19,7 +29,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Obtenir les statistiques AVANT import pour comparaison
-    const { count: oldCount } = await supabase
+    const { count: oldCount } = await admin
       .from('products')
       .select('*', { count: 'exact', head: true });
 
@@ -28,9 +38,16 @@ export async function POST(request: NextRequest) {
     const buffer = Buffer.from(bytes);
     
     const timestamp = Date.now();
-    const tempPath = join(process.cwd(), 'temp', `catalog_${timestamp}.xlsx`);
+    const tempDir = join(process.cwd(), 'temp');
+    const tempPath = join(tempDir, `catalog_${timestamp}.xlsx`);
     
     // Créer le dossier temp s'il n'existe pas
+    try {
+      await mkdir(tempDir, { recursive: true });
+    } catch (err) {
+      // Dossier existe déjà ou erreur de permissions
+    }
+    
     await writeFile(tempPath, buffer);
 
     // Exécuter le script Python
@@ -94,14 +111,14 @@ export async function POST(request: NextRequest) {
     }
 
     // Obtenir les nouvelles statistiques APRÈS import
-    const { count: newCount } = await supabase
+    const { count: newCount } = await admin
       .from('products')
       .select('*', { count: 'exact', head: true });
 
     // Récupérer les nouveaux produits ajoutés (basé sur les SKU du résultat)
     let newProducts: Array<{sku: string, product_name: string, price_dbc: number, quantity: number}> = [];
     if (resultData.new_skus && resultData.new_skus.length > 0) {
-      const { data: newProductsData } = await supabase
+      const { data: newProductsData } = await admin
         .from('products')
         .select('sku, product_name, price_dbc, quantity')
         .in('sku', resultData.new_skus)

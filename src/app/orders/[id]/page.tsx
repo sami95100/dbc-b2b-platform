@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import DBCLogo from '../../../components/DBCLogo';
+import AppHeader from '../../../components/AppHeader';
 import { supabase, Product, orderService } from '../../../lib/supabase';
 import { 
   User, 
@@ -31,6 +31,7 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
   const [orderDetail, setOrderDetail] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [editableQuantities, setEditableQuantities] = useState<{[key: string]: number}>({});
+  const [editablePrices, setEditablePrices] = useState<{[key: string]: number}>({});
   const [products, setProducts] = useState<Product[]>([]);
   const [productsLoaded, setProductsLoaded] = useState(false);
   const [validating, setValidating] = useState(false);
@@ -43,114 +44,57 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
   const [shippingCost, setShippingCost] = useState('');
   const router = useRouter();
 
-  // Charger les produits depuis Supabase
-  const loadProducts = async () => {
-    try {
-      console.log('📦 Chargement des produits pour la commande...');
-      
-      // Charger TOUS les produits par batch
-      let allProducts: Product[] = [];
-      const batchSize = 1000;
-      let hasMore = true;
-      let currentBatch = 0;
-      
-      while (hasMore) {
-        const from = currentBatch * batchSize;
-        const to = from + batchSize - 1;
-        
-        const { data, error } = await supabase
-          .from('products')
-          .select('*')
-          .eq('is_active', true)
-          .range(from, to);
-        
-        if (error) throw error;
-        
-        if (data && data.length > 0) {
-          allProducts = [...allProducts, ...data];
-          console.log(`✅ Batch ${currentBatch + 1}: ${data.length} produits (total: ${allProducts.length})`);
-          
-          if (data.length < batchSize) {
-            hasMore = false;
-          }
-        } else {
-          hasMore = false;
-        }
-        
-        currentBatch++;
-        
-        // Sécurité
-        if (currentBatch > 50) {
-          console.warn('⚠️ Arrêt sécurité après 50 batchs');
-          break;
-        }
-      }
-      
-      console.log('✅ Total produits chargés:', allProducts.length);
-      setProducts(allProducts);
-      setProductsLoaded(true);
-    } catch (err) {
-      console.error('Erreur chargement produits:', err);
-      setProducts([]);
-      setProductsLoaded(true);
-    }
-  };
+  // Fonction devenue obsolète - supprimée pour optimisation
 
-  useEffect(() => {
-    loadProducts();
-  }, []);
+  // Supprimer l'effet qui chargeait tous les produits
+  // Les produits seront chargés de manière optimisée dans loadOrderDetail
 
   const loadOrderDetail = async () => {
     try {
       setLoading(true);
-      console.log('🔍 Chargement commande Supabase avec ID:', params.id);
+      console.log('🔍 Chargement commande spécifique avec ID:', params.id);
       
-      // Charger la commande depuis Supabase avec son UUID
-      const { data: supabaseOrder, error } = await supabase
-        .from('orders')
-        .select(`
-          *,
-          order_items (*)
-        `)
-        .eq('id', params.id)
-        .single();
+      // Charger la commande spécifique via l'API optimisée
+      const response = await fetch(`/api/orders/${params.id}`);
+      const result = await response.json();
 
-      if (error) {
-        console.error('❌ Erreur chargement commande:', error);
-        throw error;
+      if (!response.ok) {
+        console.error('❌ Erreur API order:', result.error);
+        if (response.status === 404) {
+          console.log('❌ Commande non trouvée avec ID:', params.id);
+          return;
+        }
+        throw new Error(result.error || 'Erreur de chargement');
       }
 
-      if (!supabaseOrder) {
-        console.log('❌ Commande non trouvée avec ID:', params.id);
-        return;
-      }
-
-      console.log('✅ Commande Supabase trouvée:', supabaseOrder.id);
+      const supabaseOrder = result.order;
+      console.log('✅ Commande récupérée directement:', supabaseOrder.id);
       console.log('📦 Items de commande:', supabaseOrder.order_items?.length || 0);
 
-      // Si les produits ne sont pas encore chargés, attendre et recharger
-      let currentProducts = products;
-      if (!productsLoaded || products.length === 0) {
-        console.log('⏳ Produits pas encore chargés, rechargement...');
-        await loadProducts();
-        
-        // Attendre que les produits soient vraiment mis à jour
-        const { data: freshProducts, error: productsError } = await supabase
-          .from('products')
-          .select('*')
-          .eq('is_active', true);
-          
-        if (!productsError && freshProducts) {
-          currentProducts = freshProducts;
-          console.log('✅ Produits rechargés:', currentProducts.length);
-        }
+      // Charger les produits spécifiques pour cette commande (même ceux épuisés)
+      console.log('⏳ Chargement des produits pour cette commande...');
+      const skus = supabaseOrder.order_items?.map((item: any) => item.sku) || [];
+      
+      // Charger TOUS les produits de ces SKUs (même désactivés ou épuisés)
+      const { data: allOrderProducts, error: productsError } = await supabase
+        .from('products')
+        .select('*')
+        .in('sku', skus);
+      
+      if (productsError) {
+        console.error('❌ Erreur chargement produits:', productsError);
       }
+      
+      const currentProducts = allOrderProducts || [];
+      console.log(`✅ ${currentProducts.length} produits chargés pour la commande`);
+      setProducts(currentProducts);
+      setProductsLoaded(true);
 
       // Construire les détails des articles avec les informations du catalogue
       const items = supabaseOrder.order_items?.map((orderItem: any) => {
         const product = currentProducts.find(p => p.sku === orderItem.sku);
         if (product) {
-          console.log(`✅ Produit ${orderItem.sku} trouvé dans le catalogue`);
+          console.log(`✅ Produit ${orderItem.sku} trouvé dans le catalogue (qté: ${product.quantity})`);
           return {
             sku: orderItem.sku,
             name: orderItem.product_name,
@@ -161,22 +105,27 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
             additional_info: product.additional_info || '-',
             quantity: orderItem.quantity,
             unitPrice: orderItem.unit_price,
-            totalPrice: orderItem.total_price
+            totalPrice: orderItem.total_price,
+            currentStock: product.quantity // Ajouter le stock actuel
           };
         } else {
-          // Si le produit n'est pas dans le catalogue, utiliser les données de la commande
-          console.warn('⚠️ Produit non trouvé dans le catalogue:', orderItem.sku);
+          // Si le produit n'est pas dans le catalogue actuel, essayer de récupérer ses infos depuis Supabase
+          console.warn('⚠️ Produit non trouvé dans le catalogue actuel:', orderItem.sku);
+          console.log('🔍 Tentative de récupération depuis Supabase...');
+          
           return {
             sku: orderItem.sku,
             name: orderItem.product_name,
-            appearance: '-',
-            functionality: '-',
-            color: '-',
-            boxed: '-',
-            additional_info: '-',
+            appearance: 'N/A',
+            functionality: 'N/A',
+            color: 'N/A',
+            boxed: 'N/A',
+            additional_info: 'Produit épuisé ou non disponible',
             quantity: orderItem.quantity,
             unitPrice: orderItem.unit_price,
-            totalPrice: orderItem.total_price
+            totalPrice: orderItem.total_price,
+            currentStock: 0,
+            isUnavailable: true
           };
         }
       }) || [];
@@ -198,12 +147,17 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
         source: 'supabase'
       });
 
-      // Initialiser les quantités éditables avec les quantités actuelles
+      // Initialiser les quantités et prix éditables avec les valeurs actuelles
       const quantities = items.reduce((acc: any, item: any) => {
         acc[item.sku] = item.quantity;
         return acc;
       }, {});
+      const prices = items.reduce((acc: any, item: any) => {
+        acc[item.sku] = item.unitPrice;
+        return acc;
+      }, {});
       setEditableQuantities(quantities);
+      setEditablePrices(prices);
 
       // Sauvegarder les items originaux pour les éditions
       setOriginalOrderItems(items.map((item: any) => ({
@@ -221,10 +175,10 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
   };
 
   useEffect(() => {
-    if (productsLoaded) {
+    if (params.id) {
       loadOrderDetail();
     }
-  }, [params.id, productsLoaded, products]);
+  }, [params.id]);
 
   // Charger les IMEI quand on passe en mode IMEI
   useEffect(() => {
@@ -250,21 +204,47 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
       const totalItems = updatedItems.reduce((sum: number, item: any) => 
         sum + (editableQuantities[item.sku] === undefined ? item.quantity : editableQuantities[item.sku]), 0
       );
-      
-      const totalAmount = updatedItems.reduce((sum: number, item: any) => 
-        sum + (item.unitPrice * (editableQuantities[item.sku] === undefined ? item.quantity : editableQuantities[item.sku])), 0
-      );
 
-      const updatedOrder = {
-        ...orderDetail,
+      const totalAmount = updatedItems.reduce((sum: number, item: any) => {
+        const qty = editableQuantities[item.sku] === undefined ? item.quantity : editableQuantities[item.sku];
+        const price = editablePrices[item.sku] === undefined ? item.unitPrice : editablePrices[item.sku];
+        return sum + (qty * price);
+      }, 0);
+
+      setOrderDetail((prev: any) => ({
+        ...prev,
         items: updatedItems,
         totalItems,
         totalAmount
-      };
+      }));
+    }
+  };
 
-      setOrderDetail(updatedOrder);
+  const updatePrice = (sku: string, newPrice: number) => {
+    if (newPrice < 0) return;
+    
+    setEditablePrices(prev => ({
+      ...prev,
+      [sku]: newPrice
+    }));
 
-      // Note: Les changements seront sauvegardés dans Supabase lors de la revalidation
+    // Mettre à jour orderDetail directement
+    if (orderDetail) {
+      const updatedItems = orderDetail.items.map((item: any) => 
+        item.sku === sku ? { ...item, unitPrice: newPrice } : item
+      );
+      
+      const totalAmount = updatedItems.reduce((sum: number, item: any) => {
+        const qty = editableQuantities[item.sku] === undefined ? item.quantity : editableQuantities[item.sku];
+        const price = editablePrices[item.sku] === undefined ? item.unitPrice : editablePrices[item.sku];
+        return sum + (qty * price);
+      }, 0);
+
+      setOrderDetail((prev: any) => ({
+        ...prev,
+        items: updatedItems,
+        totalAmount
+      }));
     }
   };
 
@@ -289,180 +269,111 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
   };
 
   const validateOrder = async () => {
-    console.log('🚀 DÉBUT VALIDATION - validateOrder appelée');
-    console.log('📊 orderDetail:', orderDetail);
-    console.log('📦 orderDetail.items:', orderDetail?.items);
-    console.log('🔢 orderDetail.items.length:', orderDetail?.items?.length);
-
     if (!orderDetail || orderDetail.items.length === 0) {
-      console.log('❌ ARRÊT: Aucun produit dans la commande');
       alert('Aucun produit dans la commande à valider');
       return;
     }
 
-    console.log('✅ Commande valide, début du processus de validation');
     setValidating(true);
     
     try {
-      console.log('🔄 Validation de la commande:', params.id);
-      console.log('📦 Items à valider:', orderDetail.items.length);
-      console.log('📋 Détail des items:', orderDetail.items);
-      console.log('🔧 editableQuantities:', editableQuantities);
+      console.log('🔄 Validation de la commande via API:', params.id);
       
-      // Vérifier la connexion Supabase
-      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-      console.log('🌐 Supabase URL:', supabaseUrl);
+      // Préparer les données pour la validation
+      const orderItems = orderDetail.items.map((item: { sku: string; name: string; quantity: number; unitPrice: number }) => ({
+        sku: item.sku,
+        quantity: editableQuantities[item.sku] || item.quantity,
+        product_name: item.name,
+        unit_price: item.unitPrice
+      }));
+
+      console.log('📦 Items à valider:', orderItems.length);
       
-      // FORCER la validation même en mode démo pour décrémenter le stock
-      console.log('🔄 Validation en mode production - décrémentation du stock');
-      
-      console.log('🔍 ÉTAPE 1: Vérification du stock pour chaque produit...');
-      // Vérifier que tous les produits sont encore disponibles
-      for (let i = 0; i < orderDetail.items.length; i++) {
-        const item = orderDetail.items[i];
-        const quantityToOrder = editableQuantities[item.sku] || item.quantity;
-        
-        console.log(`🔍 Vérification produit ${i + 1}/${orderDetail.items.length}:`);
-        console.log(`  - SKU: ${item.sku}`);
-        console.log(`  - Nom: ${item.name}`);
-        console.log(`  - Quantité demandée: ${quantityToOrder}`);
-        
-        try {
-          const { data: product, error } = await supabase
-            .from('products')
-            .select('quantity')
-            .eq('sku', item.sku)
-            .single();
+      // Utiliser la nouvelle API optimisée pour la validation
+      const response = await fetch(`/api/orders/${params.id}/validate`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ orderItems })
+      });
 
-          console.log(`  - Résultat requête Supabase:`, { data: product, error });
+      const result = await response.json();
 
-          if (error) {
-            console.error(`❌ Erreur Supabase pour ${item.sku}:`, error);
-            throw new Error(`Erreur lors de la vérification du stock pour ${item.sku}: ${error.message}`);
-          }
-
-          console.log(`  - Stock disponible: ${product?.quantity || 'N/A'}`);
-
-          if (!product || product.quantity < quantityToOrder) {
-            console.error(`❌ Stock insuffisant pour ${item.sku}:`);
-            console.error(`  - Demandé: ${quantityToOrder}`);
-            console.error(`  - Disponible: ${product ? product.quantity : 0}`);
-            throw new Error(`Stock insuffisant pour ${item.sku} (demandé: ${quantityToOrder}, disponible: ${product ? product.quantity : 0})`);
-          }
-
-          console.log(`✅ Stock OK pour ${item.sku}`);
-        } catch (itemError) {
-          console.error(`❌ Erreur lors de la vérification du produit ${item.sku}:`, itemError);
-          throw itemError;
-        }
+      if (!response.ok) {
+        throw new Error(result.error || 'Erreur de validation');
       }
-      
-      console.log('✅ ÉTAPE 1 TERMINÉE: Tous les stocks sont OK');
-      
-      console.log('🔧 ÉTAPE 2: Préparation des données pour orderService...');
-      // Préparer les données pour Supabase
-      const orderItems = orderDetail.items.map((item: { sku: string; name: string; quantity: number; unitPrice: number }) => {
-        const finalQuantity = editableQuantities[item.sku] || item.quantity;
-        const orderItem = {
-          sku: item.sku,
-          quantity: finalQuantity,
-          product_name: item.name,
-          unit_price: item.unitPrice
-        };
-        console.log(`  - Item préparé:`, orderItem);
-        return orderItem;
-      });
 
-      console.log('📋 Items finaux pour orderService:', orderItems);
-      console.log('🎯 Paramètres orderService.validateOrder:', {
-        orderId: params.id,
-        itemsCount: orderItems.length
-      });
+      console.log('✅ Validation réussie via API');
+      console.log(`📊 Stock mis à jour pour ${result.stockUpdates?.length || 0} produits`);
 
-      console.log('🚀 ÉTAPE 3: Appel orderService.validateOrder...');
-      // Valider via le service
-      const serviceResult = await orderService.validateOrder(params.id, orderItems);
-      console.log('✅ ÉTAPE 3 TERMINÉE: orderService.validateOrder retour:', serviceResult);
-
-      console.log('🔄 ÉTAPE 4: Mise à jour du statut local...');
       // Mettre à jour le statut local
       const updatedOrder = {
         ...orderDetail,
         status: 'pending_payment',
-        status_label: 'En attente de paiement',
-        items: orderDetail.items.filter((item: any) => (editableQuantities[item.sku] || item.quantity) > 0),
-        editHistory: {
-          ...orderDetail.editHistory,
-          revalidatedAt: new Date().toISOString(),
-          changes: serviceResult
-        }
+        status_label: 'En attente de paiement'
       };
-      console.log('📝 updatedOrder:', updatedOrder);
       setOrderDetail(updatedOrder);
 
-      console.log('💾 ÉTAPE 5: Mise à jour localStorage...');
-      // Mettre à jour localStorage
+      // Mettre à jour localStorage si nécessaire
       const savedOrders = localStorage.getItem('draftOrders');
-      console.log('📁 savedOrders depuis localStorage:', savedOrders);
-      
       if (savedOrders) {
         const draftOrders = JSON.parse(savedOrders);
-        console.log('📋 draftOrders parsé:', draftOrders);
-        console.log('🔍 Commande actuelle dans draftOrders:', draftOrders[params.id]);
-        
-        draftOrders[params.id] = {
-          ...draftOrders[params.id],
-          status: 'pending_payment',
-          status_label: 'En attente de paiement'
-        };
-        console.log('📝 draftOrders mis à jour:', draftOrders[params.id]);
-        
-        localStorage.setItem('draftOrders', JSON.stringify(draftOrders));
-        console.log('💾 localStorage mis à jour');
+        if (draftOrders[params.id]) {
+          draftOrders[params.id] = {
+            ...draftOrders[params.id],
+            status: 'pending_payment',
+            status_label: 'En attente de paiement'
+          };
+          localStorage.setItem('draftOrders', JSON.stringify(draftOrders));
+        }
         
         // Supprimer de la commande active
         const currentOrder = localStorage.getItem('currentDraftOrder');
-        console.log('🎯 currentDraftOrder:', currentOrder);
         if (currentOrder === params.id) {
           localStorage.removeItem('currentDraftOrder');
-          console.log('🗑️ currentDraftOrder supprimé');
         }
       }
 
-      console.log('✅ VALIDATION TERMINÉE AVEC SUCCÈS !');
-      alert('✅ Commande validée avec succès ! Le stock a été mis à jour.');
-      router.push('/orders'); // Rediriger vers la liste des commandes
+      let successMessage = '✅ Commande validée avec succès !';
+      if (result.stockUpdates && result.stockUpdates.length > 0) {
+        successMessage += `\n📊 Stock mis à jour pour ${result.stockUpdates.length} produits.`;
+      }
+      if (result.warnings && result.warnings.length > 0) {
+        successMessage += '\n⚠️ Quelques avertissements (voir console)';
+        console.warn('Avertissements validation:', result.warnings);
+      }
+      
+      // Améliorer le message de succès avec options
+      const userChoice = window.confirm(
+        successMessage + 
+        '\n\n✅ Commande validée avec succès !\n\n' +
+        'Voulez-vous rester sur cette page pour exporter la commande ?\n\n' +
+        '• Cliquez "OK" pour rester ici (recommandé pour export)\n' +
+        '• Cliquez "Annuler" pour retourner à la liste des commandes'
+      );
+      
+      if (!userChoice) {
+        router.push('/orders');
+      }
+      // Sinon on reste sur la page pour permettre l'export
 
     } catch (error) {
-      console.error('❌ ERREUR LORS DE LA VALIDATION:', error);
-      console.error('❌ Type d\'erreur:', typeof error);
-      console.error('❌ error.name:', (error as any)?.name);
-      console.error('❌ error.message:', (error as any)?.message);
-      console.error('❌ error.stack:', (error as any)?.stack);
+      console.error('❌ Erreur validation:', error);
       
-      // Message d'erreur plus détaillé
       let errorMessage = '❌ Erreur lors de la validation de la commande';
       if (error instanceof Error) {
-        console.log('🔍 Analyse du type d\'erreur...');
-        if (error.message.includes('not authenticated')) {
-          console.log('🔐 Erreur d\'authentification détectée');
-          errorMessage += '\n\nProblème d\'authentification avec Supabase. Veuillez vous reconnecter.';
-        } else if (error.message.includes('network')) {
-          console.log('🌐 Erreur réseau détectée');
-          errorMessage += '\n\nProblème de connexion réseau. Vérifiez votre connexion internet.';
-        } else if (error.message.includes('Stock insuffisant')) {
-          console.log('📦 Erreur de stock détectée');
-          errorMessage += '\n\n' + error.message + '\nLe stock a peut-être été mis à jour par un autre utilisateur.';
+        if (error.message.includes('Stock insuffisant')) {
+          errorMessage += '\n\n' + error.message;
+        } else if (error.message.includes('not authenticated')) {
+          errorMessage += '\n\nProblème d\'authentification. Veuillez vous reconnecter.';
         } else {
-          console.log('❓ Autre type d\'erreur');
           errorMessage += '\n\n' + error.message;
         }
       }
       
-      console.log('💬 Message d\'erreur final:', errorMessage);
       alert(errorMessage);
     } finally {
-      console.log('🏁 FINALLY: Remise à zéro du state validating');
       setValidating(false);
     }
   };
@@ -470,24 +381,45 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
   const deleteOrder = async () => {
     if (window.confirm('Êtes-vous sûr de vouloir supprimer cette commande ?')) {
       try {
-        // Supprimer d'abord les items de commande
-        const { error: itemsError } = await supabase
-          .from('order_items')
-          .delete()
-          .eq('order_id', params.id);
+        console.log('🗑️ Suppression de la commande:', params.id);
+        
+        // Utiliser l'API pour supprimer la commande
+        const response = await fetch(`/api/orders/${params.id}`, {
+          method: 'DELETE'
+        });
 
-        if (itemsError) throw itemsError;
+        if (!response.ok) {
+          const result = await response.json();
+          throw new Error(result.error || 'Erreur de suppression');
+        }
 
-        // Puis supprimer la commande
-        const { error: orderError } = await supabase
-          .from('orders')
-          .delete()
-          .eq('id', params.id);
+        const result = await response.json();
+        console.log('✅ Réponse suppression:', result);
 
-        if (orderError) throw orderError;
+        // Nettoyer le localStorage si demandé
+        if (result.cleanupLocalStorage) {
+          console.log('🧹 Nettoyage localStorage pour commande:', result.orderId);
+          
+          // Supprimer la commande des draftOrders
+          const savedOrders = localStorage.getItem('draftOrders');
+          if (savedOrders) {
+            const draftOrders = JSON.parse(savedOrders);
+            delete draftOrders[result.orderId];
+            localStorage.setItem('draftOrders', JSON.stringify(draftOrders));
+            console.log('✅ Commande supprimée de draftOrders');
+          }
+
+          // Si c'était la commande active, la supprimer aussi
+          const currentOrder = localStorage.getItem('currentDraftOrder');
+          if (currentOrder === result.orderId) {
+            localStorage.removeItem('currentDraftOrder');
+            console.log('✅ currentDraftOrder supprimé');
+          }
+        }
 
         alert('✅ Commande supprimée avec succès');
         router.push('/orders');
+        
       } catch (error) {
         console.error('❌ Erreur lors de la suppression:', error);
         alert('❌ Erreur lors de la suppression de la commande');
@@ -637,95 +569,8 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
     }
   };
 
-  // Nouvelles fonctions d'édition
-  const handleEditByImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
 
-    try {
-      console.log('📁 Début d\'édition par import pour la commande:', params.id);
 
-      const formData = new FormData();
-      formData.append('file', file);
-
-      // Appeler l'API d'édition par import
-      const response = await fetch(`/api/orders/import?orderId=${params.id}`, {
-        method: 'PUT',
-        body: formData,
-      });
-
-      if (!response.ok) {
-        throw new Error(`Erreur ${response.status}: ${response.statusText}`);
-      }
-
-      const data = await response.json();
-      
-      if (data.error) {
-        throw new Error(data.error);
-      }
-
-      console.log('📋 Résultat édition:', data);
-
-      // Si des changements sont détectés, afficher la confirmation
-      if (data.hasChanges) {
-        // Rediriger vers une page de confirmation d'édition
-        // ou afficher un modal de confirmation
-        if (window.confirm(
-          `Édition détectée:\n` +
-          `- ${data.validProducts?.length || 0} produits existants\n` +
-          `- ${data.missingProducts?.length || 0} produits à créer\n` +
-          `- ${data.editData?.productsToUpdate || 0} produits à mettre à jour\n\n` +
-          `Voulez-vous confirmer l'édition ?`
-        )) {
-          // Confirmer l'édition
-          const confirmResponse = await fetch('/api/orders/import/edit', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              orderId: params.id,
-              addToGatalog: true, // Par défaut, ajouter les produits manquants
-              validProducts: data.validProducts,
-              missingProducts: data.missingProducts,
-              editData: data.editData
-            }),
-          });
-
-          const confirmData = await confirmResponse.json();
-          
-          if (confirmData.success) {
-            // Mettre à jour la commande localement
-            const updatedOrder = confirmData.order;
-            setOrderDetail(updatedOrder);
-
-            // Mettre à jour localStorage
-            const savedOrders = localStorage.getItem('draftOrders');
-            if (savedOrders) {
-              const draftOrders = JSON.parse(savedOrders);
-              draftOrders[params.id] = updatedOrder;
-              localStorage.setItem('draftOrders', JSON.stringify(draftOrders));
-            }
-
-            alert(`✅ ${confirmData.message}`);
-            // Rafraîchir la page pour afficher les changements
-            window.location.reload();
-          } else {
-            throw new Error(confirmData.error || 'Erreur lors de l\'édition');
-          }
-        }
-      } else {
-        alert('ℹ️ Aucun changement détecté dans le fichier Excel.');
-      }
-
-    } catch (error) {
-      console.error('❌ Erreur édition par import:', error);
-      alert(`❌ Erreur lors de l'édition par import: ${error instanceof Error ? error.message : 'Erreur inconnue'}`);
-    }
-
-    // Réinitialiser le champ file
-    event.target.value = '';
-  };
 
   const handleManualEdit = () => {
     try {
@@ -739,39 +584,24 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
         }));
         setOriginalOrderItems(originalItems);
         
-        // Initialiser les quantités éditables avec les quantités actuelles
+        // Initialiser les quantités et prix éditables avec les valeurs actuelles
         const currentQuantities = orderDetail.items.reduce((acc: any, item: any) => {
           acc[item.sku] = item.quantity;
           return acc;
         }, {});
+        const currentPrices = orderDetail.items.reduce((acc: any, item: any) => {
+          acc[item.sku] = item.unitPrice;
+          return acc;
+        }, {});
+        
         setEditableQuantities(currentQuantities);
+        setEditablePrices(currentPrices);
       }
 
-      // Changer le statut en "editing"
-      const updatedOrder = {
-        ...orderDetail,
-        status: 'pending_payment',
-        status_label: 'En attente de paiement',
-        editHistory: {
-          ...orderDetail.editHistory,
-          manualEditStarted: new Date().toISOString()
-        }
-      };
-
-      setOrderDetail(updatedOrder);
-
-      // Mettre à jour localStorage
-      const savedOrders = localStorage.getItem('draftOrders');
-      if (savedOrders) {
-        const draftOrders = JSON.parse(savedOrders);
-        draftOrders[params.id] = updatedOrder;
-        localStorage.setItem('draftOrders', JSON.stringify(draftOrders));
-      }
-
-      // Activer le mode édition pour les quantités
+      // Activer le mode édition pour les quantités et prix
       setIsEditing(true);
 
-      alert('📝 Mode édition manuel activé. Vous pouvez maintenant modifier les quantités.');
+      console.log('📝 Mode édition manuel activé pour les prix et quantités');
 
     } catch (error) {
       console.error('❌ Erreur édition manuelle:', error);
@@ -788,33 +618,38 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
     try {
       setValidating(true);
 
-      // Préparer les items édités
+      // Préparer les items édités avec les nouveaux prix et quantités
       const editedItems = orderDetail.items
         .filter((item: any) => (editableQuantities[item.sku] || item.quantity) > 0)
         .map((item: { sku: string; name: string; quantity: number; unitPrice: number }) => ({
           sku: item.sku,
           quantity: editableQuantities[item.sku] || item.quantity,
           product_name: item.name,
-          unit_price: item.unitPrice
+          unit_price: editablePrices[item.sku] || item.unitPrice
         }));
 
-      console.log('📊 Revalidation avec comparaison:');
+      console.log('📊 Revalidation avec prix et quantités modifiés:');
       console.log('- Items originaux:', originalOrderItems.length);
       console.log('- Items édités:', editedItems.length);
 
-      // Utiliser la nouvelle méthode de revalidation
-      const result = await orderService.revalidateEditedOrder(params.id, originalOrderItems, editedItems);
-
-      // Mettre à jour le statut local vers "pending_payment"
+      // Mettre à jour la commande directement sans affecter le catalogue
       const updatedOrder = {
         ...orderDetail,
         status: 'pending_payment',
         status_label: 'En attente de paiement',
-        items: orderDetail.items.filter((item: any) => (editableQuantities[item.sku] || item.quantity) > 0),
+        items: orderDetail.items
+          .filter((item: any) => (editableQuantities[item.sku] || item.quantity) > 0)
+          .map((item: any) => ({
+            ...item,
+            quantity: editableQuantities[item.sku] || item.quantity,
+            unitPrice: editablePrices[item.sku] || item.unitPrice,
+            totalPrice: (editableQuantities[item.sku] || item.quantity) * (editablePrices[item.sku] || item.unitPrice)
+          })),
         editHistory: {
           ...orderDetail.editHistory,
-          revalidatedAt: new Date().toISOString(),
-          changes: result
+          manualEditCompleted: new Date().toISOString(),
+          originalItems: originalOrderItems,
+          editedItems: editedItems
         }
       };
 
@@ -827,44 +662,39 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
 
       setOrderDetail(updatedOrder);
 
-      // Mettre à jour localStorage
-      const savedOrders = localStorage.getItem('draftOrders');
-      if (savedOrders) {
-        const draftOrders = JSON.parse(savedOrders);
-        draftOrders[params.id] = updatedOrder;
-        localStorage.setItem('draftOrders', JSON.stringify(draftOrders));
-      }
-
       // Désactiver le mode édition
       setIsEditing(false);
 
-      // Message de succès détaillé
-      let message = '✅ Commande revalidée avec succès !\n\n';
-      if (result.stockAdded.length > 0) {
-        message += `📈 Stock restauré pour ${result.stockAdded.length} produits\n`;
-      }
-      if (result.stockRemoved.length > 0) {
-        message += `📉 Stock décrémenté pour ${result.stockRemoved.length} produits\n`;
-      }
-      if (result.productsRemovedFromCatalog.length > 0) {
-        message += `🗑️ ${result.productsRemovedFromCatalog.length} produits désactivés du catalogue`;
-      }
+      // Sauvegarder en base de données (API call)
+      try {
+        const response = await fetch(`/api/orders/${params.id}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            items: editedItems,
+            totalItems,
+            totalAmount,
+            status: 'pending_payment'
+          }),
+        });
 
-      alert(message);
+        if (!response.ok) {
+          throw new Error('Erreur lors de la sauvegarde');
+        }
+
+        console.log('✅ Commande mise à jour avec succès');
+        alert('✅ Modifications sauvegardées avec succès !');
+
+      } catch (saveError) {
+        console.error('❌ Erreur sauvegarde:', saveError);
+        alert('⚠️ Modifications appliquées localement mais erreur de sauvegarde');
+      }
 
     } catch (error) {
       console.error('❌ Erreur revalidation:', error);
-      
-      let errorMessage = '❌ Erreur lors de la revalidation de la commande';
-      if (error instanceof Error) {
-        if (error.message.includes('Stock insuffisant')) {
-          errorMessage += '\n\n' + error.message;
-        } else {
-          errorMessage += '\n\n' + error.message;
-        }
-      }
-      
-      alert(errorMessage);
+      alert('❌ Erreur lors de la revalidation');
     } finally {
       setValidating(false);
     }
@@ -1087,7 +917,7 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
           <p className="text-gray-600 mb-4">Cette commande n'existe pas ou a été supprimée</p>
           <button
             onClick={() => router.push('/orders')}
-            className="bg-dbc-light-green text-white py-2 px-6 rounded-lg hover:bg-green-600 transition-colors"
+            className="bg-gradient-to-r from-dbc-bright-green to-emerald-400 text-dbc-dark-green py-2 px-6 rounded-xl hover:from-emerald-300 hover:to-emerald-500 hover:text-white font-semibold shadow-lg backdrop-blur-sm transition-all duration-200"
           >
             Retour aux commandes
           </button>
@@ -1097,40 +927,15 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-gray-50 to-emerald-50">
       {/* Header */}
-      <header className="bg-dbc-dark-green shadow-sm border-b">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            <div className="flex items-center space-x-4">
-              <div className="flex items-center space-x-2">
-                <DBCLogo />
-                <h1 className="text-xl font-bold text-white">DBC Electronics</h1>
-              </div>
-            </div>
-            
-            <div className="flex items-center space-x-4">
-              <button 
-                onClick={() => router.push('/orders')}
-                className="relative hover:text-dbc-bright-green transition-colors"
-              >
-                <ShoppingCart className="h-6 w-6 text-white" />
-              </button>
-              
-              <div className="flex items-center space-x-2">
-                <User className="h-5 w-5 text-white" />
-                <span className="text-sm text-white">Demo User</span>
-              </div>
-              
-              <button className="text-white hover:text-dbc-bright-green transition-colors">
-                <LogOut className="h-5 w-5" />
-              </button>
-            </div>
-          </div>
-        </div>
-      </header>
+      <AppHeader 
+        cartItemsCount={0}
+        onCartClick={() => router.push('/orders')}
+        onLogoClick={() => router.push('/catalog')}
+      />
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      <div className="max-w-[2000px] mx-auto px-8 py-6">
         {/* Navigation */}
         <div className="flex items-center space-x-4 mb-6">
           <button
@@ -1183,7 +988,7 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
                 <>
                   <button
                     onClick={deleteOrder}
-                    className="flex items-center space-x-2 px-4 py-2 border border-red-300 text-red-600 rounded-lg hover:bg-red-50 text-sm"
+                    className="flex items-center space-x-2 px-4 py-2 bg-white bg-opacity-80 backdrop-blur-sm border border-red-300 text-red-600 rounded-xl hover:bg-red-50 hover:shadow-lg text-sm transition-all duration-200"
                   >
                     <Trash2 className="h-4 w-4" />
                     <span>Supprimer</span>
@@ -1192,7 +997,7 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
                     <button
                       onClick={validateOrder}
                       disabled={validating}
-                      className="flex items-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-dbc-bright-green to-emerald-400 text-dbc-dark-green rounded-xl hover:from-emerald-300 hover:to-emerald-500 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed font-semibold shadow-lg backdrop-blur-sm transition-all duration-200"
                     >
                       {validating ? (
                         <>
@@ -1209,7 +1014,7 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
 
                     <button
                       onClick={exportToExcel}
-                      className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                      className="flex items-center space-x-2 px-4 py-2 bg-white bg-opacity-80 backdrop-blur-sm border border-white border-opacity-30 rounded-xl hover:bg-opacity-90 hover:shadow-lg text-gray-700 transition-all duration-200"
                     >
                       <FileSpreadsheet className="h-4 w-4" />
                       <span>Export Excel</span>
@@ -1223,7 +1028,7 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
                   {/* Boutons de progression du workflow */}
                   {orderDetail.status === 'pending_payment' && (
                     <div className="flex space-x-3">
-                      <label className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 cursor-pointer text-sm">
+                      <label className="flex items-center space-x-2 px-4 py-2 bg-white bg-opacity-80 backdrop-blur-sm border border-white border-opacity-30 rounded-xl hover:bg-opacity-90 hover:shadow-lg cursor-pointer text-sm text-gray-700 transition-all duration-200">
                         <input
                           type="file"
                           accept=".xlsx,.xls"
@@ -1240,7 +1045,7 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
                     <div className="flex space-x-3">
                       <button
                         onClick={markAsCompleted}
-                        className="flex items-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm"
+                        className="flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-dbc-bright-green to-emerald-400 text-dbc-dark-green rounded-xl hover:from-emerald-300 hover:to-emerald-500 hover:text-white font-semibold shadow-lg backdrop-blur-sm transition-all duration-200 text-sm"
                       >
                         <CheckCircle className="h-4 w-4" />
                         <span>Marquer comme terminée</span>
@@ -1248,30 +1053,15 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
                     </div>
                   )}
 
-                  {/* Boutons d'édition pour commandes en attente de paiement */}
-                  {orderDetail.status === 'pending_payment' && (
-                    <div className="flex space-x-3">
-                      {/* Édition par import */}
-                      <label className="flex items-center space-x-2 px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 cursor-pointer text-sm">
-                        <input
-                          type="file"
-                          accept=".xlsx,.xls"
-                          onChange={handleEditByImport}
-                          className="hidden"
-                        />
-                        <FileSpreadsheet className="h-4 w-4" />
-                        <span>Éditer par import</span>
-                      </label>
-
-                      {/* Édition manuelle */}
-                      <button
-                        onClick={handleManualEdit}
-                        className="flex items-center space-x-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 text-sm"
-                      >
-                        <Edit className="h-4 w-4" />
-                        <span>Éditer manuellement</span>
-                      </button>
-                    </div>
+                  {/* Bouton d'édition manuelle pour commandes en attente de paiement */}
+                  {orderDetail.status === 'pending_payment' && !isEditing && (
+                    <button
+                      onClick={handleManualEdit}
+                      className="flex items-center space-x-2 px-4 py-2 bg-white bg-opacity-80 backdrop-blur-sm border border-orange-300 text-orange-600 rounded-xl hover:bg-orange-50 hover:shadow-lg text-sm transition-all duration-200"
+                    >
+                      <Edit className="h-4 w-4" />
+                      <span>Éditer manuellement</span>
+                    </button>
                   )}
 
                   {/* Bouton de revalidation si en cours d'édition */}
@@ -1279,7 +1069,7 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
                     <button
                       onClick={revalidateOrder}
                       disabled={validating}
-                      className="flex items-center space-x-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                      className="flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-dbc-bright-green to-emerald-400 text-dbc-dark-green rounded-xl hover:from-emerald-300 hover:to-emerald-500 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed font-semibold shadow-lg backdrop-blur-sm transition-all duration-200 text-sm"
                     >
                       {validating ? (
                         <>
@@ -1295,14 +1085,14 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
                     </button>
                   )}
 
-                  <button className="flex items-center space-x-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 text-sm">
+                  <button className="flex items-center space-x-2 px-4 py-2 bg-white bg-opacity-80 backdrop-blur-sm border border-white border-opacity-30 rounded-xl hover:bg-opacity-90 hover:shadow-lg text-gray-700 text-sm transition-all duration-200">
                     <FileText className="h-4 w-4" />
                     <span>Facture</span>
                   </button>
                   
                   <button
                     onClick={exportToExcel}
-                    className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                    className="flex items-center space-x-2 px-4 py-2 bg-white bg-opacity-80 backdrop-blur-sm border border-white border-opacity-30 rounded-xl hover:bg-opacity-90 hover:shadow-lg text-gray-700 transition-all duration-200"
                   >
                     <FileSpreadsheet className="h-4 w-4" />
                     <span>Export Excel</span>
@@ -1449,9 +1239,21 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
                           <span className="text-sm font-medium text-gray-900">{item.quantity}</span>
                         )}
                       </td>
-                      <td className="px-4 py-3 text-sm text-right font-medium text-gray-900">{item.unitPrice.toFixed(2)}€</td>
+                      <td className="px-4 py-3 text-sm text-right font-medium text-gray-900">
+                        {isEditing ? (
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={editablePrices[item.sku]?.toFixed(2) || item.unitPrice.toFixed(2)}
+                            onChange={(e) => updatePrice(item.sku, parseFloat(e.target.value) || 0)}
+                            className="w-20 px-2 py-1 text-right border border-gray-300 rounded text-sm"
+                          />
+                        ) : (
+                          `${item.unitPrice.toFixed(2)}€`
+                        )}
+                      </td>
                       <td className="px-4 py-3 text-sm text-right font-semibold text-gray-900">
-                        {(item.unitPrice * editableQuantities[item.sku]).toFixed(2)}€
+                        {((editablePrices[item.sku] || item.unitPrice) * editableQuantities[item.sku]).toFixed(2)}€
                       </td>
                       {(orderDetail.status === 'draft' || orderDetail.status === 'pending_payment' || isEditing) && (
                         <td className="px-4 py-3 text-center">

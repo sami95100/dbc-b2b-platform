@@ -34,6 +34,10 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
   try {
     console.log('📱 Début import IMEI pour commande:', params.id);
 
+    if (!supabaseAdmin) {
+      throw new Error('Configuration Supabase admin manquante');
+    }
+
     // 1. Vérifier que la commande existe et est en statut 'pending_payment'
     const { data: order, error: orderError } = await supabaseAdmin
       .from('orders')
@@ -237,6 +241,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       .from('orders')
       .update({ 
         status: 'shipping',
+        status_label: 'En cours de livraison',
         updated_at: new Date().toISOString()
       })
       .eq('id', params.id);

@@ -1,19 +1,23 @@
 import { createClient } from '@supabase/supabase-js'
 
-// Mode développement - valeurs par défaut si pas configuré
+// Configuration Supabase - SEULEMENT les variables publiques côté client
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://fake-project.supabase.co'
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9'
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9'
 
+// Client principal avec clé publique seulement
 export const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
-// Client avec privilèges administrateur pour les opérations backend
-export const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
-  auth: {
-    autoRefreshToken: false,
-    persistSession: false
-  }
-})
+// Client admin SEULEMENT pour les API routes côté serveur
+// ⚠️ ATTENTION: Ne jamais utiliser supabaseAdmin côté client !
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+export const supabaseAdmin = supabaseServiceKey 
+  ? createClient(supabaseUrl, supabaseServiceKey, {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false
+      }
+    })
+  : null // null si pas de clé service (dev mode)
 
 // Types pour TypeScript
 export interface Product {
@@ -173,12 +177,32 @@ export const orderService = {
     if (error) throw error
   },
 
-  // NOUVEAU : Valider une commande et décrémenter le stock
+  // NOUVEAU : Valider une commande et décrémenter le stock (optimisé)
   async validateOrder(orderId: string, orderItems: {sku: string, quantity: number, product_name: string, unit_price: number}[]) {
     try {
-      console.log('🔄 Validation de la commande:', orderId);
+      // 1. Vérifier le stock pour tous les produits en une seule requête
+      const skus = orderItems.map(item => item.sku);
+      const { data: products, error: stockError } = await supabase
+        .from('products')
+        .select('sku, quantity')
+        .in('sku', skus);
+
+      if (stockError) {
+        console.error('❌ Erreur vérification stock:', stockError);
+        throw stockError;
+      }
+
+      // 2. Valider la disponibilité de tous les produits
+      const productMap = new Map(products?.map(p => [p.sku, p.quantity]) || []);
       
-      // 1. Mettre à jour le statut de la commande existante au lieu d'en créer une nouvelle
+      for (const item of orderItems) {
+        const availableStock = productMap.get(item.sku) || 0;
+        if (availableStock < item.quantity) {
+          throw new Error(`Stock insuffisant pour ${item.sku} (demandé: ${item.quantity}, disponible: ${availableStock})`);
+        }
+      }
+
+      // 3. Mettre à jour le statut de la commande
       const { data: order, error: orderError } = await supabase
         .from('orders')
         .update({
@@ -195,39 +219,34 @@ export const orderService = {
         throw orderError;
       }
 
-      console.log('✅ Statut de commande mis à jour:', order.id, '→', order.status);
+      // 4. Décrémenter le stock en batch (tous les produits à la fois)
+      const stockUpdates = orderItems.map(item => {
+        const currentStock = productMap.get(item.sku) || 0;
+        const newQuantity = Math.max(0, currentStock - item.quantity);
+        return {
+          sku: item.sku,
+          quantity: newQuantity,
+          is_active: newQuantity > 0
+        };
+      });
 
-      // 2. Décrémenter le stock des produits
-      for (const item of orderItems) {
-        const { data: product, error: getError } = await supabase
-          .from('products')
-          .select('quantity')
-          .eq('sku', item.sku)
-          .single();
-
-        if (getError) {
-          console.error(`Erreur récupération produit ${item.sku}:`, getError);
-          continue;
-        }
-
-        const newQuantity = Math.max(0, product.quantity - item.quantity);
-        
+      // Effectuer toutes les mises à jour de stock
+      for (const update of stockUpdates) {
         const { error: updateError } = await supabase
           .from('products')
           .update({ 
-            quantity: newQuantity,
-            is_active: newQuantity > 0 
+            quantity: update.quantity
+            // Ne plus désactiver les produits à 0 - les garder actifs pour recherche
           })
-          .eq('sku', item.sku);
+          .eq('sku', update.sku);
 
         if (updateError) {
-          console.error(`Erreur mise à jour stock ${item.sku}:`, updateError);
-        } else {
-          console.log(`✅ Stock mis à jour pour ${item.sku}: ${product.quantity} → ${newQuantity}`);
+          console.error(`Erreur mise à jour stock ${update.sku}:`, updateError);
+          // Ne pas arrêter le processus pour une erreur de stock
         }
       }
 
-      console.log('✅ Commande validée avec succès - statut changé sans créer de nouvelle commande');
+      console.log('✅ Validation terminée - stock mis à jour');
       return order;
 
     } catch (error) {
@@ -240,7 +259,6 @@ export const orderService = {
   async exportOrderToExcel(orderId: string, orderData: any) {
     try {
       // Cette fonction sera implémentée avec une librairie Excel
-      console.log('📊 Export Excel pour commande:', orderId);
       
       const workbook = {
         sheets: [{
@@ -268,7 +286,6 @@ export const orderService = {
   // NOUVEAU : Revalider une commande après édition
   async revalidateEditedOrder(orderId: string, originalItems: any[], editedItems: {sku: string, quantity: number, product_name: string, unit_price: number}[]) {
     try {
-      console.log('🔄 Revalidation de la commande éditée:', orderId);
       
       // 1. Calculer les différences entre original et édité
       const originalMap: {[key: string]: number} = {};
@@ -300,15 +317,12 @@ export const orderService = {
           // Produit complètement supprimé → remettre tout le stock + supprimer du catalogue
           stockToAdd.push({ sku, quantity: originalQty });
           productsToRemoveFromCatalog.push(sku);
-          console.log(`🗑️ Produit ${sku} supprimé de la commande (${originalQty} → 0) + suppression catalogue`);
         } else if (editedQty < originalQty) {
           // Quantité réduite → remettre la différence en stock
           stockToAdd.push({ sku, quantity: originalQty - editedQty });
-          console.log(`📈 Stock à ajouter pour ${sku}: +${originalQty - editedQty} (${originalQty} → ${editedQty})`);
         } else if (editedQty > originalQty) {
           // Quantité augmentée → retirer la différence du stock
           stockToRemove.push({ sku, quantity: editedQty - originalQty });
-          console.log(`📉 Stock à retirer pour ${sku}: -${editedQty - originalQty} (${originalQty} → ${editedQty})`);
         }
       }
       
@@ -317,13 +331,13 @@ export const orderService = {
         const editedQty = editedMap[sku];
         if (!originalMap[sku] && editedQty > 0) {
           stockToRemove.push({ sku, quantity: editedQty });
-          console.log(`➕ Nouveau produit ${sku}: -${editedQty} du stock`);
         }
       }
       
       // 2. Appliquer les changements de stock
       for (const { sku, quantity } of stockToAdd) {
-        const { data: product, error: getError } = await supabaseAdmin
+        // TODO: Cette opération nécessite des privilèges admin - déplacer vers API route
+        const { data: product, error: getError } = await supabase
           .from('products')
           .select('quantity, is_active')
           .eq('sku', sku)
@@ -336,7 +350,8 @@ export const orderService = {
 
         const newQuantity = product.quantity + quantity;
         
-        const { error: updateError } = await supabaseAdmin
+        // TODO: Cette opération nécessite des privilèges admin - déplacer vers API route
+        const { error: updateError } = await supabase
           .from('products')
           .update({ 
             quantity: newQuantity,
@@ -347,12 +362,12 @@ export const orderService = {
         if (updateError) {
           console.error(`Erreur ajout stock ${sku}:`, updateError);
         } else {
-          console.log(`✅ Stock augmenté pour ${sku}: ${product.quantity} → ${newQuantity}`);
         }
       }
       
       for (const { sku, quantity } of stockToRemove) {
-        const { data: product, error: getError } = await supabaseAdmin
+        // TODO: Cette opération nécessite des privilèges admin - déplacer vers API route
+        const { data: product, error: getError } = await supabase
           .from('products')
           .select('quantity')
           .eq('sku', sku)
@@ -369,7 +384,8 @@ export const orderService = {
 
         const newQuantity = Math.max(0, product.quantity - quantity);
         
-        const { error: updateError } = await supabaseAdmin
+        // TODO: Cette opération nécessite des privilèges admin - déplacer vers API route
+        const { error: updateError } = await supabase
           .from('products')
           .update({ 
             quantity: newQuantity,
@@ -380,13 +396,13 @@ export const orderService = {
         if (updateError) {
           console.error(`Erreur retrait stock ${sku}:`, updateError);
         } else {
-          console.log(`✅ Stock réduit pour ${sku}: ${product.quantity} → ${newQuantity}`);
         }
       }
       
       // 3. Supprimer les produits du catalogue si demandé
       for (const sku of productsToRemoveFromCatalog) {
-        const { error: deleteError } = await supabaseAdmin
+        // TODO: Cette opération nécessite des privilèges admin - déplacer vers API route
+        const { error: deleteError } = await supabase
           .from('products')
           .update({ is_active: false })
           .eq('sku', sku);
@@ -394,13 +410,13 @@ export const orderService = {
         if (deleteError) {
           console.error(`Erreur désactivation produit ${sku}:`, deleteError);
         } else {
-          console.log(`🗑️ Produit ${sku} désactivé du catalogue`);
         }
       }
       
       // 4. Mettre à jour la commande dans Supabase
       try {
-        const { data: existingOrder, error: fetchError } = await supabaseAdmin
+        // TODO: Cette opération nécessite des privilèges admin - déplacer vers API route
+        const { data: existingOrder, error: fetchError } = await supabase
           .from('orders')
           .select('id')
           .eq('name', orderId.replace('IMP-', 'Import '))
@@ -410,7 +426,8 @@ export const orderService = {
           const totalAmount = editedItems.reduce((sum, item) => sum + (item.unit_price * item.quantity), 0);
           const totalItems = editedItems.reduce((sum, item) => sum + item.quantity, 0);
 
-          const { error: updateError } = await supabaseAdmin
+          // TODO: Cette opération nécessite des privilèges admin - déplacer vers API route
+          const { error: updateError } = await supabase
             .from('orders')
             .update({
               status: 'pending_payment',
@@ -424,10 +441,10 @@ export const orderService = {
           if (updateError) {
             console.warn('⚠️ Erreur mise à jour commande Supabase:', updateError);
           } else {
-            console.log('✅ Commande mise à jour dans Supabase');
             
             // Supprimer et recréer les items
-            await supabaseAdmin
+            // TODO: Cette opération nécessite des privilèges admin - déplacer vers API route
+            await supabase
               .from('order_items')
               .delete()
               .eq('order_id', existingOrder.id);
@@ -442,14 +459,14 @@ export const orderService = {
                 total_price: item.unit_price * item.quantity
               }));
 
-              const { error: itemsError } = await supabaseAdmin
+              // TODO: Cette opération nécessite des privilèges admin - déplacer vers API route
+              const { error: itemsError } = await supabase
                 .from('order_items')
                 .insert(orderItemsForSupabase);
 
               if (itemsError) {
                 console.warn('⚠️ Erreur mise à jour items Supabase:', itemsError);
               } else {
-                console.log('✅ Items de commande mis à jour dans Supabase');
               }
             }
           }
@@ -458,7 +475,6 @@ export const orderService = {
         console.warn('⚠️ Erreur générale mise à jour Supabase:', supabaseError);
       }
 
-      console.log('✅ Revalidation terminée avec succès');
       return {
         stockAdded: stockToAdd,
         stockRemoved: stockToRemove,

@@ -2,8 +2,18 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '../../../../../lib/supabase';
 import * as XLSX from 'xlsx';
 
+// Fonction helper pour vérifier supabaseAdmin
+function getSupabaseAdmin() {
+  if (!supabaseAdmin) {
+    throw new Error('Configuration Supabase admin manquante - vérifiez SUPABASE_SERVICE_ROLE_KEY dans .env.local');
+  }
+  return supabaseAdmin;
+}
+
 export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
   try {
+    const admin = getSupabaseAdmin();
+    
     console.log('📊 Export données commande:', params.id);
 
     const url = new URL(request.url);
@@ -19,7 +29,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
     }
 
     // Récupérer les informations de la commande
-    const { data: order, error: orderError } = await supabaseAdmin
+    const { data: order, error: orderError } = await admin
       .from('orders')
       .select('id, name, status, created_at')
       .eq('id', params.id)
@@ -33,8 +43,8 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
     let filename = '';
 
     if (type === 'sku') {
-      // Export des SKU (order_items)
-      const { data: orderItems, error: itemsError } = await supabaseAdmin
+      // Export des SKU (order_items) avec headers compatibles import
+      const { data: orderItems, error: itemsError } = await admin
         .from('order_items')
         .select('sku, product_name, quantity, unit_price, total_price')
         .eq('order_id', params.id)
@@ -44,44 +54,57 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
         return NextResponse.json({ error: 'Erreur récupération des articles' }, { status: 500 });
       }
 
-      exportData = orderItems || [];
+      // Transformer les données avec les en-têtes d'import standard
+      exportData = (orderItems || []).map(item => ({
+        'SKU': item.sku,
+        'Product Name': item.product_name,
+        'Quantity': item.quantity,
+        'Offered Price': item.unit_price,
+        'VAT Type': 'Non marginal', // Valeur par défaut
+        'Appearance': 'Grade A',    // Valeur par défaut
+        'Functionality': '100%',    // Valeur par défaut
+        'Color': '',               // Vide par défaut
+        'Boxed': 'Unboxed',       // Valeur par défaut
+        'Additional Info': ''      // Vide par défaut
+      }));
+
       filename = `commande_${order.name}_sku_${new Date().toISOString().split('T')[0]}`;
 
-         } else if (type === 'imei') {
-       // Export des IMEI (order_item_imei)
-       // D'abord récupérer les IDs des order_items
-       const { data: orderItems, error: orderItemsError } = await supabaseAdmin
-         .from('order_items')
-         .select('id')
-         .eq('order_id', params.id);
+    } else if (type === 'imei') {
+      // Export des IMEI (order_item_imei) avec headers compatibles import
+      // D'abord récupérer les IDs des order_items
+      const { data: orderItems, error: orderItemsError } = await admin
+        .from('order_items')
+        .select('id')
+        .eq('order_id', params.id);
 
-       if (orderItemsError) {
-         return NextResponse.json({ error: 'Erreur récupération des articles' }, { status: 500 });
-       }
+      if (orderItemsError) {
+        return NextResponse.json({ error: 'Erreur récupération des articles' }, { status: 500 });
+      }
 
-       const orderItemIds = orderItems?.map(item => item.id) || [];
+      const orderItemIds = orderItems?.map(item => item.id) || [];
 
-       if (orderItemIds.length === 0) {
-         return NextResponse.json({ error: 'Aucun article trouvé pour cette commande' }, { status: 404 });
-       }
+      if (orderItemIds.length === 0) {
+        return NextResponse.json({ error: 'Aucun article trouvé pour cette commande' }, { status: 404 });
+      }
 
-       const { data: imeiData, error: imeiError } = await supabaseAdmin
-         .from('order_item_imei')
-         .select(`
-           sku,
-           imei,
-           product_name,
-           appearance,
-           functionality,
-           boxed,
-           color,
-           cloud_lock,
-           additional_info,
-           supplier_price,
-           dbc_price
-         `)
-         .in('order_item_id', orderItemIds)
-         .order('sku');
+      const { data: imeiData, error: imeiError } = await admin
+        .from('order_item_imei')
+        .select(`
+          sku,
+          imei,
+          product_name,
+          appearance,
+          functionality,
+          boxed,
+          color,
+          cloud_lock,
+          additional_info,
+          supplier_price,
+          dbc_price
+        `)
+        .in('order_item_id', orderItemIds)
+        .order('sku');
 
       if (imeiError) {
         return NextResponse.json({ error: 'Erreur récupération des IMEI' }, { status: 500 });
@@ -91,7 +114,22 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
         return NextResponse.json({ error: 'Aucun IMEI trouvé pour cette commande' }, { status: 404 });
       }
 
-      exportData = imeiData;
+      // Transformer les données avec les en-têtes d'import IMEI standard
+      exportData = imeiData.map((item, index) => ({
+        'SKU': item.sku,
+        'Id': index + 1,                        // ID séquentiel
+        'Product Name': item.product_name,
+        'Item Identifier': item.imei,           // IMEI
+        'Appearance': item.appearance,
+        'Functionality': item.functionality,
+        'Boxed': item.boxed,
+        'Color': item.color || '',
+        'Cloud Lock': item.cloud_lock || '',
+        'Additional Info': item.additional_info || '',
+        'Quantity': 1,                          // Toujours 1 pour les IMEI
+        'Price': item.supplier_price            // Prix fournisseur
+      }));
+
       filename = `commande_${order.name}_imei_${new Date().toISOString().split('T')[0]}`;
     }
 
