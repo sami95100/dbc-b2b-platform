@@ -135,7 +135,8 @@ export async function POST(request: NextRequest) {
       newSkus: resultData.new_skus_count || 0,
       stats: resultData.stats,
       processedAt: new Date().toISOString(),
-      newProducts: newProducts
+      newProducts: newProducts,
+      all_new_skus: resultData.all_new_skus || []  // Liste complète pour le filtre
     };
 
     return NextResponse.json({ 

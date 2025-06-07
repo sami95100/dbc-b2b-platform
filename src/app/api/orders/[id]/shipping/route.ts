@@ -17,7 +17,8 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
     const body = await request.json();
     const { tracking_number, shipping_cost, status } = body;
 
-    if (!tracking_number) {
+    // Si on passe directement au statut completed, le tracking number n'est pas obligatoire
+    if (!tracking_number && status !== 'completed') {
       return NextResponse.json({ error: 'Numéro de tracking requis' }, { status: 400 });
     }
 
@@ -40,9 +41,13 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
 
     // Préparer les données de mise à jour
     const updateData: any = {
-      tracking_number,
       updated_at: new Date().toISOString()
     };
+
+    // Ajouter le tracking number seulement s'il est fourni
+    if (tracking_number) {
+      updateData.tracking_number = tracking_number;
+    }
 
     // Ajouter les frais de livraison au montant total si fourni
     if (shipping_cost && shipping_cost > 0) {
@@ -72,11 +77,15 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
 
     console.log('✅ Livraison mise à jour avec succès');
 
+    const message = status === 'completed' && !tracking_number 
+      ? 'Commande marquée comme terminée avec succès'
+      : 'Informations de livraison mises à jour avec succès';
+
     return NextResponse.json({
       success: true,
-      message: 'Informations de livraison mises à jour avec succès',
+      message,
       order: updatedOrder,
-      tracking_number,
+      tracking_number: tracking_number || null,
       shipping_cost: shipping_cost || 0
     });
 

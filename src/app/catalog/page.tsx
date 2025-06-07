@@ -48,11 +48,14 @@ export default function CatalogPage() {
   const [priceMax, setPriceMax] = useState('');
   const [quantityMin, setQuantityMin] = useState('');
   const [quantityMax, setQuantityMax] = useState('');
+  const [showNewProductsOnly, setShowNewProductsOnly] = useState(false);
+  const [includeZeroStock, setIncludeZeroStock] = useState(false);
+  const [showStandardCapacityOnly, setShowStandardCapacityOnly] = useState(false);
   
   // États de tri et pagination
   const [sortField, setSortField] = useState<SortField>('product_name');
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
-  const [itemsPerPage, setItemsPerPage] = useState(250); // 250 par défaut pour de meilleures performances
+  const [itemsPerPage, setItemsPerPage] = useState(500); // 500 par défaut
   const [currentPage, setCurrentPage] = useState(1);
   
   // États des commandes - Initialisés depuis localStorage
@@ -89,6 +92,8 @@ export default function CatalogPage() {
   const [error, setError] = useState<string | null>(null);
   const [totalProductsCount, setTotalProductsCount] = useState<number | null>(null);
   const [creatingOrder, setCreatingOrder] = useState(false);
+  const [newProductsSKUs, setNewProductsSKUs] = useState<string[]>([]);
+  const [lastImportDate, setLastImportDate] = useState<Date | null>(null);
   
   const router = useRouter();
 
@@ -309,22 +314,20 @@ export default function CatalogPage() {
         setLoading(true);
         setError(null);
         
-        // D'abord, obtenir le nombre total de produits (tous les produits actifs)
+        // D'abord, obtenir le nombre total de produits (TOUS les produits)
         const { count: totalCount, error: countError } = await supabase
           .from('products')
-          .select('*', { count: 'exact', head: true })
-          .eq('is_active', true);
+          .select('*', { count: 'exact', head: true });
           
         if (countError) throw countError;
         
         setTotalProductsCount(totalCount);
         
         // Charger d'abord les premiers produits pour afficher rapidement
-        console.log('📦 Chargement initial des premiers 500 produits...');
+        console.log('📦 Chargement initial des premiers 500 produits (TOUS - actifs et inactifs)...');
         const { data: initialProducts, error: initialError } = await supabase
           .from('products')
           .select('*')
-          .eq('is_active', true)
           .order('product_name')
           .limit(500);
         
@@ -341,21 +344,19 @@ export default function CatalogPage() {
           
           let allProducts: Product[] = [...initialProducts];
           const batchSize = 1000;
-          let currentBatch = 1; // Commencer à 1 car on a déjà la première batch
+          let from = 500; // Commencer après les 500 premiers produits déjà chargés
           
           while (allProducts.length < totalCount) {
-            const from = currentBatch * batchSize;
             const to = from + batchSize - 1;
             
             const { data, error } = await supabase
               .from('products')
               .select('*')
-              .eq('is_active', true)
               .order('product_name')
               .range(from, to);
             
             if (error) {
-              console.warn('⚠️ Erreur chargement batch', currentBatch, ':', error);
+              console.warn('⚠️ Erreur chargement batch à partir de:', from, error);
               break;
             }
             
@@ -363,15 +364,16 @@ export default function CatalogPage() {
               allProducts = [...allProducts, ...data];
               // Mettre à jour progressivement
               setProducts([...allProducts]);
+              console.log(`📦 Chargé batch ${from}-${from + data.length - 1}, total: ${allProducts.length}/${totalCount}`);
             } else {
               break; // Plus de données
             }
             
-            currentBatch++;
+            from += batchSize; // Incrémenter de batchSize pour le prochain batch
             
             // Sécurité
-            if (currentBatch > 20) {
-              console.warn('⚠️ Arrêt sécurité après 20 batchs');
+            if (from > totalCount + batchSize) {
+              console.warn('⚠️ Arrêt sécurité - dépassement de limite');
               break;
             }
             
@@ -379,7 +381,7 @@ export default function CatalogPage() {
             await new Promise(resolve => setTimeout(resolve, 100));
           }
           
-          console.log('✅ Chargement complet terminé:', allProducts.length, 'produits');
+          console.log('✅ Chargement complet terminé:', allProducts.length, 'produits sur', totalCount, 'attendus');
         }
         
       } catch (err) {
@@ -401,11 +403,10 @@ export default function CatalogPage() {
       setLoading(true);
       setError(null);
       
-      // Recharger les produits depuis Supabase
+      // Recharger les produits depuis Supabase (TOUS les produits)
       const { count: totalCount, error: countError } = await supabase
         .from('products')
-        .select('*', { count: 'exact', head: true })
-        .eq('is_active', true);
+        .select('*', { count: 'exact', head: true });
         
       if (countError) throw countError;
       
@@ -423,7 +424,6 @@ export default function CatalogPage() {
         const { data, error } = await supabase
           .from('products')
           .select('*')
-          .eq('is_active', true)
           .order('product_name')
           .range(from, to);
         
@@ -471,18 +471,64 @@ export default function CatalogPage() {
     );
   };
 
+  // Fonction pour extraire le modèle de base et la capacité d'un nom de produit
+  const parseProductInfo = (productName: string): { baseModel: string; capacity: number } | null => {
+    // Pattern: (.+?) (\d+)GB(.*)
+    const match = productName.match(/(.+?)\s(\d+)GB/);
+    if (match) {
+      const baseModel = match[1].trim();
+      const capacity = parseInt(match[2]);
+      return { baseModel, capacity };
+    }
+    return null;
+  };
+
+  // Fonction pour calculer les capacités standard par modèle (Apple et Samsung uniquement)
+  const getStandardCapacities = useMemo(() => {
+    const standardCapacities: { [baseModel: string]: number } = {};
+    
+    // Filtrer seulement Apple et Samsung
+    const appleAndSamsungProducts = products.filter(product => 
+      product.product_name.toLowerCase().includes('apple') || 
+      product.product_name.toLowerCase().includes('samsung')
+    );
+    
+    // Grouper par modèle de base
+    const modelGroups: { [baseModel: string]: number[] } = {};
+    
+    appleAndSamsungProducts.forEach(product => {
+      const parsed = parseProductInfo(product.product_name);
+      if (parsed) {
+        if (!modelGroups[parsed.baseModel]) {
+          modelGroups[parsed.baseModel] = [];
+        }
+        modelGroups[parsed.baseModel].push(parsed.capacity);
+      }
+    });
+    
+    // Pour chaque modèle, la capacité standard = minimum
+    Object.keys(modelGroups).forEach(baseModel => {
+      const capacities = modelGroups[baseModel];
+      standardCapacities[baseModel] = Math.min(...capacities);
+    });
+    
+    console.log('🔍 DEBUG Capacités standard calculées:', standardCapacities);
+    return standardCapacities;
+  }, [products]);
+
   // Filtrage et tri des produits
   const filteredAndSortedProducts = useMemo(() => {
+    console.log('🔍 DEBUG Filtrage - Produits totaux:', products.length);
+    console.log('🔍 DEBUG Filtrage - Produits actifs:', products.filter(p => p.is_active).length);
+    console.log('🔍 DEBUG Filtrage - Produits inactifs:', products.filter(p => !p.is_active).length);
+    console.log('🔍 DEBUG Filtrage - Produits quantité 0:', products.filter(p => p.quantity === 0).length);
+    console.log('🔍 DEBUG Filtrage - Quantité min:', quantityMin, 'max:', quantityMax);
+    console.log('🔍 DEBUG Filtrage - Terme recherche:', `"${searchTerm}"`);
+    console.log('🔍 DEBUG Filtrage - Nouveaux produits actif:', showNewProductsOnly, 'SKUs:', newProductsSKUs.length);
+    console.log('🔍 DEBUG Filtrage - Inclure stock zéro:', includeZeroStock);
+    console.log('🔍 DEBUG Filtrage - Capacités standard actif:', showStandardCapacityOnly);
+    
     let filtered = products.filter(product => {
-      // NOUVEAU: Filtrer les produits à quantité 0 sauf si recherche active
-      const hasSearch = searchTerm.trim().length > 0;
-      const hasStock = product.quantity > 0;
-      
-      // Si pas de recherche et pas de stock, exclure le produit
-      if (!hasSearch && !hasStock) {
-        return false;
-      }
-      
       // Recherche globale
       const matchesSearch = !searchTerm || 
         product.product_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -520,10 +566,44 @@ export default function CatalogPage() {
       const matchesQuantityMin = !quantityMin || product.quantity >= parseInt(quantityMin);
       const matchesQuantityMax = !quantityMax || product.quantity <= parseInt(quantityMax);
       
+      // Filtre nouveaux produits - CORRIGÉ: ne montrer que les nouveaux produits qui ont maintenant du stock
+      const matchesNewProducts = !showNewProductsOnly || 
+        (newProductsSKUs.includes(product.sku) && product.quantity > 0);
+      
+      // Filtre capacité standard (Apple et Samsung uniquement)
+      const matchesStandardCapacity = !showStandardCapacityOnly || (() => {
+        // Vérifier si c'est Apple ou Samsung
+        const isAppleOrSamsung = product.product_name.toLowerCase().includes('apple') || 
+                                 product.product_name.toLowerCase().includes('samsung');
+        
+        if (!isAppleOrSamsung) {
+          return true; // Afficher tous les autres produits si le filtre est actif
+        }
+        
+        // Pour Apple/Samsung, vérifier si c'est la capacité standard
+        const parsed = parseProductInfo(product.product_name);
+        if (!parsed) return false;
+        
+        const standardCapacity = getStandardCapacities[parsed.baseModel];
+        return standardCapacity && parsed.capacity === standardCapacity;
+      })();
+      
+      // Filtrage par activité et stock
+      const hasSearch = searchTerm.trim().length > 0;
+      const hasStock = product.quantity > 0;
+      const allowZeroQuantity = quantityMin === '0' || (quantityMin !== '' && parseInt(quantityMin) === 0);
+      
+      // Filtrer les produits inactifs SAUF si recherche active ou filtre quantité explicite
+      const isActiveOrSearched = product.is_active || hasSearch || allowZeroQuantity || includeZeroStock;
+      
+      // Si pas de stock, n'afficher que si: recherche active OU filtre quantité OU toggle stock zéro activé
+      const matchesStock = hasStock || hasSearch || allowZeroQuantity || includeZeroStock;
+      
       return matchesSearch && matchesManufacturer && matchesAppearance && 
              matchesFunctionality && matchesColor && matchesBoxed &&
              matchesAdditionalInfo && matchesPriceMin && matchesPriceMax && 
-             matchesQuantityMin && matchesQuantityMax;
+             matchesQuantityMin && matchesQuantityMax && matchesNewProducts && 
+             matchesStandardCapacity && matchesStock && isActiveOrSearched;
     });
 
     // Tri
@@ -543,10 +623,55 @@ export default function CatalogPage() {
       }
     });
 
+    console.log('🔍 DEBUG Filtrage - Produits après filtrage:', filtered.length);
+    console.log('🔍 DEBUG Filtrage - Produits quantité 0 dans filtrés:', filtered.filter(p => p.quantity === 0).length);
+    
     return filtered;
   }, [searchTerm, selectedManufacturers, selectedAppearances, selectedFunctionalities, 
       selectedColors, selectedBoxedOptions, selectedAdditionalInfo, priceMin, priceMax, 
-      quantityMin, quantityMax, sortField, sortDirection, products]);
+      quantityMin, quantityMax, sortField, sortDirection, products, showNewProductsOnly, 
+      newProductsSKUs, includeZeroStock, showStandardCapacityOnly, getStandardCapacities]);
+
+  // Calculer les statistiques des produits filtrés mais masqués
+  const filteredZeroStockProducts = useMemo(() => {
+    return products.filter(product => {
+      // Appliquer tous les filtres sauf le filtre de stock
+      const matchesSearch = !searchTerm || 
+        product.product_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        product.sku.toLowerCase().includes(searchTerm.toLowerCase());
+      
+      const matchesManufacturer = selectedManufacturers.length === 0 || 
+        productContainsManufacturer(product.product_name, selectedManufacturers);
+      
+      const matchesAppearance = selectedAppearances.length === 0 || 
+        selectedAppearances.includes(product.appearance);
+      
+      const matchesFunctionality = selectedFunctionalities.length === 0 || 
+        selectedFunctionalities.includes(product.functionality);
+      
+      const matchesColor = selectedColors.length === 0 || 
+        selectedColors.includes(product.color);
+      
+      const matchesBoxed = selectedBoxedOptions.length === 0 || 
+        selectedBoxedOptions.includes(product.boxed);
+      
+      const matchesAdditionalInfo = selectedAdditionalInfo.length === 0 || 
+        (product.additional_info && selectedAdditionalInfo.includes(product.additional_info));
+      
+      const matchesPriceMin = !priceMin || product.price_dbc >= parseFloat(priceMin);
+      const matchesPriceMax = !priceMax || product.price_dbc <= parseFloat(priceMax);
+      
+      // Inclure seulement les produits à quantité 0 qui matchent les autres filtres
+      const isZeroStock = product.quantity === 0;
+      const matchesQuantityMax = !quantityMax || product.quantity <= parseInt(quantityMax);
+      
+      return isZeroStock && matchesSearch && matchesManufacturer && matchesAppearance && 
+             matchesFunctionality && matchesColor && matchesBoxed &&
+             matchesAdditionalInfo && matchesPriceMin && matchesPriceMax && matchesQuantityMax;
+    });
+  }, [searchTerm, selectedManufacturers, selectedAppearances, selectedFunctionalities, 
+      selectedColors, selectedBoxedOptions, selectedAdditionalInfo, priceMin, priceMax, 
+      quantityMax, products]);
 
   // Pagination
   const totalPages = Math.ceil(filteredAndSortedProducts.length / itemsPerPage);
@@ -946,9 +1071,53 @@ export default function CatalogPage() {
     setPriceMax('');
     setQuantityMin('');
     setQuantityMax('');
+    setShowNewProductsOnly(false);
+    setIncludeZeroStock(false);
+    setShowStandardCapacityOnly(false);
     setCurrentPage(1);
-    
   };
+
+  const toggleZeroStockProducts = () => {
+    setIncludeZeroStock(!includeZeroStock);
+    setCurrentPage(1);
+    console.log('Toggle produits en rupture:', !includeZeroStock);
+  };
+
+  const toggleNewProductsFilter = () => {
+    setShowNewProductsOnly(!showNewProductsOnly);
+    setCurrentPage(1);
+    console.log('Toggle nouveaux produits:', !showNewProductsOnly);
+  };
+
+  const toggleStandardCapacityFilter = () => {
+    setShowStandardCapacityOnly(!showStandardCapacityOnly);
+    setCurrentPage(1);
+    console.log('Toggle capacités standard:', !showStandardCapacityOnly);
+  };
+
+  // Charger les SKU des nouveaux produits depuis localStorage
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const savedNewSKUs = localStorage.getItem('lastImportNewSKUs');
+      const savedImportDate = localStorage.getItem('lastImportDate');
+      
+      if (savedNewSKUs) {
+        try {
+          setNewProductsSKUs(JSON.parse(savedNewSKUs));
+        } catch (e) {
+          console.error('Erreur parsing nouveaux SKU:', e);
+        }
+      }
+      
+      if (savedImportDate) {
+        try {
+          setLastImportDate(new Date(savedImportDate));
+        } catch (e) {
+          console.error('Erreur parsing date import:', e);
+        }
+      }
+    }
+  }, []);
 
   // Fonction d'export
   const exportCatalog = (format: 'xlsx' | 'csv') => {
@@ -1327,11 +1496,57 @@ export default function CatalogPage() {
                     {' '}(filtrés sur <span className="font-medium">{totalProductsCount.toLocaleString('fr-FR')}</span> total)
                   </span>
                 )}
-                {(selectedManufacturers.length > 0 || selectedAppearances.length > 0 || searchTerm) && (
-                  <div className="text-xs text-amber-600 mt-1">
-                    ⚠️ Filtres actifs - {products.length - filteredAndSortedProducts.length} produits masqués
+                {/* Boutons de toggle toujours visibles */}
+                <div className="text-xs mt-1 space-y-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {/* Toggle pour les produits en rupture de stock */}
+                    <button
+                      onClick={toggleZeroStockProducts}
+                      className={`text-xs px-2 py-1 rounded-md border transition-colors ${
+                        includeZeroStock 
+                          ? 'bg-orange-100 text-orange-800 border-orange-300 hover:bg-orange-200' 
+                          : 'bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200'
+                      }`}
+                    >
+                      {includeZeroStock ? '✓ ' : ''}📦 Afficher produits à quantité 0
+                      {!includeZeroStock && filteredZeroStockProducts.length > 0 && ` (${filteredZeroStockProducts.length} masqués)`}
+                    </button>
+                    
+                    {/* Toggle pour les nouveaux produits */}
+                    {newProductsSKUs.length > 0 && (
+                      <button
+                        onClick={toggleNewProductsFilter}
+                        className={`text-xs px-2 py-1 rounded-md border transition-colors ${
+                          showNewProductsOnly 
+                            ? 'bg-green-100 text-green-800 border-green-300 hover:bg-green-200' 
+                            : 'bg-blue-100 text-blue-800 border-blue-300 hover:bg-blue-200'
+                        }`}
+                      >
+                        {showNewProductsOnly ? '✓ ' : ''}✨ {newProductsSKUs.length} nouveaux produits
+                        {lastImportDate && ` (${lastImportDate.toLocaleDateString('fr-FR')})`}
+                      </button>
+                    )}
+                    
+                    {/* Toggle pour les capacités standard Apple/Samsung */}
+                    <button
+                      onClick={toggleStandardCapacityFilter}
+                      className={`text-xs px-2 py-1 rounded-md border transition-colors ${
+                        showStandardCapacityOnly 
+                          ? 'bg-purple-100 text-purple-800 border-purple-300 hover:bg-purple-200' 
+                          : 'bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200'
+                      }`}
+                    >
+                      {showStandardCapacityOnly ? '✓ ' : ''}📱 Capacités standard (Apple/Samsung)
+                    </button>
                   </div>
-                )}
+                  
+                  {/* Informations sur les filtres actifs */}
+                  {(selectedManufacturers.length > 0 || selectedAppearances.length > 0 || searchTerm || priceMin || priceMax || quantityMin || quantityMax || showNewProductsOnly) && (
+                    <div className="text-amber-600">
+                      ⚠️ Filtres actifs - {products.length - filteredAndSortedProducts.length} produits masqués
+                    </div>
+                  )}
+                </div>
               </div>
               <select
                 value={itemsPerPage}

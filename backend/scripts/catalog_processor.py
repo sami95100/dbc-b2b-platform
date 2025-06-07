@@ -265,7 +265,10 @@ def import_to_supabase(products):
             total_imported += len(batch)
             print(f"📤 Importé: {total_imported}/{len(updated_products)} produits...")
         
-        return total_imported, new_skus
+        # Calculer les vraies statistiques finales
+        total_out_of_stock = len(out_of_stock_skus)  # Inclut les SKU du catalogue + les SKU manquants
+        
+        return total_imported, new_skus, total_out_of_stock
         
     except Exception as e:
         raise Exception(f"Erreur import Supabase: {str(e)}")
@@ -292,9 +295,13 @@ def main():
         
         # Importer dans Supabase
         print(f"\n=== IMPORT SUPABASE ===")
-        imported_count, new_skus = import_to_supabase(products)
+        imported_count, new_skus, actual_out_of_stock = import_to_supabase(products)
         print(f"✅ {imported_count} produits importés/mis à jour dans Supabase")
         print(f"✅ {len(new_skus)} nouveaux SKU ajoutés")
+        print(f"✅ {actual_out_of_stock} produits passés en rupture")
+        
+        # Mettre à jour les stats avec les vraies valeurs calculées après import
+        stats['out_of_stock'] = actual_out_of_stock
         
         # Retourner le résultat en JSON pour l'API
         result = {
@@ -302,7 +309,8 @@ def main():
             'stats': stats,
             'imported_count': imported_count,
             'new_skus_count': len(new_skus),  # Nombre total réel
-            'new_skus': new_skus[:50]  # Liste limitée pour l'aperçu seulement
+            'new_skus': new_skus[:50],  # Liste limitée pour l'aperçu seulement
+            'all_new_skus': new_skus  # Liste complète pour le filtre
         }
         print("\n" + json.dumps(result))
         

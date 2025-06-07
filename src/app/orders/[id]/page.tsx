@@ -705,26 +705,26 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
     if (!orderDetail) return;
 
     try {
-      console.log('📱 Chargement des IMEI pour commande:', orderDetail.id);
+      console.log('📱 Chargement des IMEI pour commande via API:', orderDetail.id);
       
-      const { data: imei, error } = await supabase
-        .from('order_item_imei')
-        .select(`
-          *,
-          order_items!inner(order_id)
-        `)
-        .eq('order_items.order_id', orderDetail.id)
-        .order('sku');
-
-      if (error) {
-        console.error('❌ Erreur chargement IMEI:', error);
-        return;
+      // Utiliser l'API route avec permissions admin pour contourner les problèmes RLS
+      const response = await fetch(`/api/orders/${orderDetail.id}/imei/list`);
+      
+      if (!response.ok) {
+        throw new Error(`Erreur ${response.status}: ${response.statusText}`);
       }
 
-      console.log(`✅ ${imei?.length || 0} IMEI trouvés`);
-      setImeiData(imei || []);
+      const data = await response.json();
+
+      if (data.error) {
+        throw new Error(data.error);
+      }
+
+      console.log(`✅ ${data.imeiData?.length || 0} IMEI trouvés via API`);
+      setImeiData(data.imeiData || []);
     } catch (error) {
-      console.error('❌ Erreur chargement IMEI:', error);
+      console.error('❌ Erreur chargement IMEI via API:', error);
+      setImeiData([]);
     }
   };
 
@@ -1282,8 +1282,8 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fonctionnalité</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Couleur</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Emballage</th>
-                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Prix fourn.</th>
-                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Prix DBC</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Informations</th>
+                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Prix unitaire</th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
@@ -1314,8 +1314,8 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
                           </div>
                         </td>
                         <td className="px-4 py-3 text-sm text-gray-900">{imei.boxed}</td>
-                        <td className="px-4 py-3 text-sm text-right font-medium text-gray-900">{imei.supplier_price.toFixed(2)}€</td>
-                        <td className="px-4 py-3 text-sm text-right font-semibold text-gray-900">{imei.dbc_price.toFixed(2)}€</td>
+                        <td className="px-4 py-3 text-sm text-gray-900">{imei.additional_info || '-'}</td>
+                        <td className="px-4 py-3 text-sm text-right font-medium text-gray-900">{imei.dbc_price.toFixed(2)}€</td>
                       </tr>
                     ))
                   ) : (

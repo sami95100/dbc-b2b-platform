@@ -127,7 +127,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
         'Cloud Lock': item.cloud_lock || '',
         'Additional Info': item.additional_info || '',
         'Quantity': 1,                          // Toujours 1 pour les IMEI
-        'Price': item.supplier_price            // Prix fournisseur
+        'Price': item.dbc_price                 // Prix DBC (prix de vente, pas prix fournisseur)
       }));
 
       filename = `commande_${order.name}_imei_${new Date().toISOString().split('T')[0]}`;
