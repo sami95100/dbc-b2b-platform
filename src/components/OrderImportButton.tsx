@@ -1,7 +1,10 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Upload, Check, AlertTriangle, X, TrendingUp, Edit3, FileSpreadsheet, Info } from 'lucide-react';
+import ClientSelector from './ClientSelector';
+import { supabase } from '../lib/supabase';
+import { OrdersUtils } from '../lib/orders-utils';
 
 interface OrderImportButtonProps {
   onImportComplete?: (result: { success: boolean; error?: string; order?: any }) => void;
@@ -57,6 +60,48 @@ export default function OrderImportButton({ onImportComplete }: OrderImportButto
   
   const [pendingOrderData, setPendingOrderData] = useState<any>(null);
   const [editablePrices, setEditablePrices] = useState<{ [sku: string]: number }>({});
+  const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+
+  // Récupérer le statut admin au chargement
+  useEffect(() => {
+    const checkUserRole = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        
+        if (!session) {
+          return;
+        }
+        
+        setCurrentUserId(session.user.id);
+        
+        // Récupérer le profil utilisateur
+        const { data: profile, error } = await supabase
+          .from('users')
+          .select('id, role, is_active')
+          .eq('id', session.user.id)
+          .single();
+
+        if (error) {
+          console.error('Erreur récupération profil:', error);
+          return;
+        }
+
+        console.log('👤 Profil utilisateur:', profile);
+        setIsAdmin(profile.role === 'admin');
+        
+        // Si pas admin, définir le client comme l'utilisateur connecté
+        if (profile.role !== 'admin') {
+          setSelectedClientId(session.user.id);
+        }
+      } catch (error) {
+        console.error('Erreur vérification rôle:', error);
+      }
+    };
+
+    checkUserRole();
+  }, []);
 
   const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -157,7 +202,8 @@ export default function OrderImportButton({ onImportComplete }: OrderImportButto
         productsExistingWithGoodStock: finalProductsExisting,
         productsToUpdateStock: finalProductsToUpdate,
         productsToCreate: finalProductsToCreate,
-        addToCatalog
+        addToCatalog,
+        userId: selectedClientId // Ajouter l'ID du client sélectionné
       };
 
       const response = await fetch('/api/orders/import/confirm', {
@@ -172,6 +218,8 @@ export default function OrderImportButton({ onImportComplete }: OrderImportButto
         throw new Error(result.error || 'Erreur lors de la confirmation');
       }
 
+      // Marquer les commandes comme obsolètes dès qu'une nouvelle commande est créée
+      OrdersUtils.markOrdersAsStale();
       
       setShowConfirmDialog(false);
       onImportComplete?.({ 
@@ -185,6 +233,7 @@ export default function OrderImportButton({ onImportComplete }: OrderImportButto
       setProductsToCreate([]);
       setPendingOrderData(null);
       setEditablePrices({});
+      setSelectedClientId(null);
 
     } catch (error) {
       console.error('❌ Erreur confirmation:', error);
@@ -440,6 +489,16 @@ export default function OrderImportButton({ onImportComplete }: OrderImportButto
                 </div>
               </div>
 
+              {/* Sélecteur de client */}
+              <div className="mb-6">
+                <ClientSelector
+                  selectedClientId={selectedClientId}
+                  onChange={setSelectedClientId}
+                  isAdmin={isAdmin}
+                  currentUserId={currentUserId || undefined}
+                />
+              </div>
+
               {/* Tableau 1: Produits existants avec stock suffisant */}
               <ProductTable 
                 title="Produits existants avec stock suffisant"
@@ -497,6 +556,11 @@ export default function OrderImportButton({ onImportComplete }: OrderImportButto
             <div className="flex justify-between items-center p-6 border-t border-gray-200 bg-gray-50">
               <div className="text-sm text-gray-600">
                 <strong>Total final :</strong> {getTotalAmount().toFixed(2)}€ • {getTotalItems()} articles
+                {isAdmin && !selectedClientId && (
+                  <div className="text-red-600 text-xs mt-1 font-medium">
+                    ⚠️ Veuillez sélectionner un client avant de confirmer
+                  </div>
+                )}
               </div>
               <div className="flex space-x-3">
                 <button
@@ -509,7 +573,7 @@ export default function OrderImportButton({ onImportComplete }: OrderImportButto
                 </button>
                 <button
                   onClick={() => handleConfirmImport(true)}
-                  disabled={importing}
+                  disabled={importing || (isAdmin && !selectedClientId)}
                   className="flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-dbc-bright-green to-emerald-400 text-dbc-dark-green rounded-xl hover:from-emerald-300 hover:to-emerald-500 hover:text-white disabled:opacity-50 font-semibold shadow-lg backdrop-blur-sm transition-all duration-200"
                 >
                   {importing ? (

@@ -44,14 +44,29 @@ export interface Product {
 export interface Order {
   id: string
   name: string
-  status: 'draft' | 'pending_payment' | 'shipping' | 'completed' | 'cancelled'
+  status: 'draft' | 'validated' | 'shipping' | 'completed'
   status_label: string
   customer_ref?: string
+  user_id?: string  // Liaison vers la table users
   created_at: string
   updated_at: string
   total_amount: number
   total_items: number
   vat_type?: string
+}
+
+// Interface pour les utilisateurs/clients
+export interface User {
+  id: string
+  email: string
+  company_name?: string
+  contact_name?: string
+  phone?: string
+  address?: string
+  role: 'client' | 'admin'
+  is_active: boolean
+  created_at: string
+  updated_at: string
 }
 
 export interface OrderItem {
@@ -206,8 +221,8 @@ export const orderService = {
       const { data: order, error: orderError } = await supabase
         .from('orders')
         .update({
-          status: 'pending_payment' as const,
-          status_label: 'En attente de paiement',
+                  status: 'validated' as const,
+        status_label: 'Validée',
           updated_at: new Date().toISOString()
         })
         .eq('id', orderId)

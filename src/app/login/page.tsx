@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import DBCLogo from '../../components/DBCLogo';
+import { supabase } from '../../lib/supabase';
 import { Eye, EyeOff, Mail, Lock, ArrowRight, Shield, TrendingDown, Award, MapPin, Package, Zap } from 'lucide-react';
 
 export default function LoginPage() {
@@ -10,17 +11,57 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
   const router = useRouter();
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
+    setError('');
     
     try {
-      // TODO: Intégrer l'authentification Supabase
+      // Vérifier que les champs sont remplis
+      if (!email || !password) {
+        throw new Error('Veuillez remplir tous les champs');
+      }
+
+      // Authentification avec Supabase
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password: password
+      });
+
+      if (authError) {
+        throw new Error(authError.message);
+      }
+
+      if (!authData.user) {
+        throw new Error('Erreur lors de la connexion');
+      }
+
+      // Vérifier que l'utilisateur a un profil et qu'il est actif
+      const { data: profile, error: profileError } = await supabase
+        .from('users')
+        .select('id, role, is_active, company_name, contact_name, email')
+        .eq('id', authData.user.id)
+        .single();
+
+      if (profileError) {
+        console.error('Erreur profil:', profileError);
+        throw new Error('Profil utilisateur non trouvé');
+      }
+
+      if (!profile.is_active) {
+        throw new Error('Votre compte est désactivé. Contactez le support.');
+      }
+
+      // Connexion réussie - redirection
+      console.log('✅ Connexion réussie:', profile);
       router.push('/catalog');
-    } catch (error) {
-      console.error('Erreur de connexion:', error);
+      
+    } catch (error: any) {
+      console.error('❌ Erreur de connexion:', error);
+      setError(error.message || 'Erreur lors de la connexion');
     } finally {
       setIsLoading(false);
     }
@@ -134,6 +175,13 @@ export default function LoginPage() {
                 <h3 className="text-2xl font-bold text-white mb-2">Connexion</h3>
                 <p className="text-emerald-100">Accédez à votre espace professionnel</p>
               </div>
+
+              {/* Affichage des erreurs */}
+              {error && (
+                <div className="mb-6 p-4 bg-red-500 bg-opacity-20 border border-red-400 rounded-xl text-red-300 text-sm">
+                  {error}
+                </div>
+              )}
 
               <form onSubmit={handleLogin} className="space-y-6">
                 <div>

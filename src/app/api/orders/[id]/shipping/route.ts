@@ -22,7 +22,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
       return NextResponse.json({ error: 'Numéro de tracking requis' }, { status: 400 });
     }
 
-    // Vérifier que la commande existe et est en statut shipping
+    // Vérifier que la commande existe
     const { data: order, error: orderError } = await admin
       .from('orders')
       .select('id, name, status, total_amount')
@@ -33,9 +33,11 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
       return NextResponse.json({ error: 'Commande non trouvée' }, { status: 404 });
     }
 
-    if (order.status !== 'shipping') {
+    // Vérifier que la commande est dans un statut permettant la mise à jour
+    const allowedStatuses = ['pending', 'shipping'];
+    if (!allowedStatuses.includes(order.status)) {
       return NextResponse.json({ 
-        error: `Impossible de mettre à jour la livraison. La commande doit être en statut "shipping", statut actuel: ${order.status}` 
+        error: `Impossible de mettre à jour la livraison. Statut actuel: ${order.status}. Statuts autorisés: ${allowedStatuses.join(', ')}` 
       }, { status: 400 });
     }
 
@@ -44,20 +46,26 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
       updated_at: new Date().toISOString()
     };
 
-    // Ajouter le tracking number seulement s'il est fourni
+    // Stocker le tracking_number dans customer_ref comme solution temporaire
     if (tracking_number) {
-      updateData.tracking_number = tracking_number;
+      updateData.customer_ref = `TRACKING:${tracking_number}`;
     }
 
-    // Ajouter les frais de livraison au montant total si fourni
-    if (shipping_cost && shipping_cost > 0) {
-      updateData.total_amount = order.total_amount + shipping_cost;
-      updateData.shipping_cost = shipping_cost;
-    }
-
-    // Si un nouveau statut est fourni, l'utiliser
-    if (status === 'completed') {
-      updateData.status = 'completed';
+    // Gérer les transitions de statut
+    if (status) {
+      if (status === 'shipping' && order.status === 'pending') {
+        // Transition pending -> shipping (avec tracking)
+        updateData.status = 'shipping';
+        updateData.status_label = 'En cours de livraison';
+      } else if (status === 'completed') {
+        // Transition vers completed (depuis pending ou shipping)
+        updateData.status = 'completed';
+        updateData.status_label = 'Terminée';
+      }
+    } else if (tracking_number && order.status === 'pending') {
+      // Si on ajoute un tracking à une commande pending, passer en shipping
+      updateData.status = 'shipping';
+      updateData.status_label = 'En cours de livraison';
     }
 
     // Mettre à jour la commande
@@ -85,8 +93,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
       success: true,
       message,
       order: updatedOrder,
-      tracking_number: tracking_number || null,
-      shipping_cost: shipping_cost || 0
+      tracking_number: tracking_number || null
     });
 
   } catch (error) {

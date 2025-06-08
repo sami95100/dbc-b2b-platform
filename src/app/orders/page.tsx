@@ -1,13 +1,15 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect, useCallback } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import AppHeader from '../../components/AppHeader';
 import OrderImportButton from '../../components/OrderImportButton';
+import OrderFilters from '../../components/OrderFilters';
 import { supabase, Product } from '../../lib/supabase';
-import { 
-  User, 
-  LogOut, 
+import { OrdersUtils } from '../../lib/orders-utils';
+import {
+  User,
+  LogOut,
   ShoppingCart,
   Package,
   Calendar,
@@ -23,21 +25,108 @@ import {
 // Page des commandes - Gestion des commandes client
 
 export default function OrdersPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
+  // Vérification de l'authentification
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [userId, setUserId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const checkAuth = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+
+        if (!session) {
+          router.push('/login');
+          return;
+        }
+
+        // Vérifier le profil utilisateur
+        const { data: profile, error } = await supabase
+          .from('users')
+          .select('id, role, is_active')
+          .eq('id', session.user.id)
+          .single();
+
+        if (error || !profile || !profile.is_active) {
+          console.error('Erreur profil ou compte inactif:', error);
+          await supabase.auth.signOut();
+          router.push('/login');
+          return;
+        }
+
+        setIsAuthenticated(true);
+        setUserId(session.user.id);
+      } catch (error) {
+        console.error('Erreur vérification auth:', error);
+        router.push('/login');
+      } finally {
+        setAuthLoading(false);
+      }
+    };
+
+    checkAuth();
+  }, [router]);
+
   const [statusFilter, setStatusFilter] = useState('all');
   const [orders, setOrders] = useState<any[]>([]);
+  const [totalOrdersCount, setTotalOrdersCount] = useState(0); // Comptage total des commandes
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true); // Démarrer avec loading=true
-  const router = useRouter();
+  const [advancedFilters, setAdvancedFilters] = useState({
+    client: '',
+    dateFrom: '',
+    dateTo: '',
+    quantityMin: '',
+    quantityMax: '',
+    amountMin: '',
+    amountMax: ''
+  });
 
-  // Fonction pour charger les commandes via l'API
-  const loadOrders = async () => {
+  // Fonction pour charger les commandes via l'API  
+  const loadOrders = async (forceRefresh = false) => {
     setLoading(true);
     try {
-      console.log('📦 Chargement des commandes via API...');
+      // Attendre que l'userId soit disponible
+      if (!userId) {
+        console.log('⏳ Attente de l\'userId...');
+        return;
+      }
+
+      console.log('📦 Chargement des commandes via API...', forceRefresh ? '(cache désactivé)' : '');
       
-      // Charger les commandes via l'API qui utilise supabaseAdmin
-      const response = await fetch('/api/orders');
+      // Désactiver le cache si demandé
+      const fetchOptions: RequestInit = forceRefresh ? {
+        cache: 'no-cache',
+        headers: {
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache'
+        }
+      } : {};
+      
+      // Construire l'URL avec les filtres
+      const urlParams = new URLSearchParams({
+        userId: userId,
+        ...(statusFilter !== 'all' && { status: statusFilter }),
+        ...(advancedFilters.client && { client: advancedFilters.client }),
+        ...(advancedFilters.dateFrom && { dateFrom: advancedFilters.dateFrom }),
+        ...(advancedFilters.dateTo && { dateTo: advancedFilters.dateTo }),
+        ...(advancedFilters.quantityMin && { quantityMin: advancedFilters.quantityMin }),
+        ...(advancedFilters.quantityMax && { quantityMax: advancedFilters.quantityMax }),
+        ...(advancedFilters.amountMin && { amountMin: advancedFilters.amountMin }),
+        ...(advancedFilters.amountMax && { amountMax: advancedFilters.amountMax }),
+        ...(forceRefresh && { nocache: Date.now().toString() })
+      });
+      
+      const apiUrl = `/api/orders?${urlParams.toString()}`;
+      
+      const response = await fetch(apiUrl, fetchOptions);
       const result = await response.json();
+
+      console.log('🔍 URL de l\'API appelée:', apiUrl);
+      console.log('�� Réponse brute de l\'API:', result);
 
       if (!response.ok) {
         console.error('❌ Erreur API orders:', result.error);
@@ -51,6 +140,7 @@ export default function OrdersPage() {
         switch (status) {
           case 'draft': return 'Brouillon';
           case 'pending_payment': return 'En attente de paiement';
+          case 'validated': return 'Validée';
           case 'shipping': return 'En cours de livraison';
           case 'completed': return 'Terminée';
           case 'cancelled': return 'Annulée';
@@ -70,11 +160,29 @@ export default function OrdersPage() {
         customerRef: order.customer_ref,
         vatType: order.vat_type,
         items: order.order_items || [],
-        source: 'api'
+        source: 'api',
+        // Ajouter les informations du client
+        client: order.users ? {
+          id: order.users.id,
+          company_name: order.users.company_name,
+          contact_name: order.users.contact_name,
+          email: order.users.email
+        } : null,
+        tracking_number: order.tracking_number
       })) || [];
 
       console.log('📋 Commandes formatées:', allOrders.length);
+      console.log('📋 IDs des commandes:', allOrders.map((o: any) => o.id));
+      
+      // Nettoyer le localStorage des commandes fantômes en utilisant l'utilitaire
+      const validOrderIds = allOrders.map((order: any) => order.id);
+      OrdersUtils.cleanupOrphanedOrders(validOrderIds);
+      
+      // Marquer les commandes comme fraîches
+      OrdersUtils.markOrdersAsFresh();
+      
       setOrders(allOrders);
+      console.log('✅ State mis à jour avec', allOrders.length, 'commandes');
 
     } catch (error) {
       console.error('❌ Erreur chargement commandes:', error);
@@ -82,6 +190,23 @@ export default function OrdersPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  // Fonction pour forcer un rechargement complet (en cas de problème de cache)
+  const forceCompleteRefresh = async () => {
+    console.log('🔄 FORCE COMPLETE REFRESH - Vidage de tous les caches...');
+    
+    // Vider le state immédiatement
+    setOrders([]);
+    setLoading(true);
+    
+    // Attendre un court délai pour que l'interface se vide
+    await new Promise(resolve => setTimeout(resolve, 100));
+    
+    // Recharger avec cache désactivé
+    await loadOrders(true);
+    
+    console.log('✅ Rechargement complet terminé');
   };
 
   // Charger les produits depuis Supabase
@@ -92,7 +217,7 @@ export default function OrdersPage() {
           .from('products')
           .select('*')
           .eq('is_active', true);
-        
+
         if (error) throw error;
         setProducts(data || []);
       } catch (err) {
@@ -101,7 +226,7 @@ export default function OrdersPage() {
         setProducts([]);
       }
     }
-    
+
     loadProducts();
   }, []);
 
@@ -109,98 +234,279 @@ export default function OrdersPage() {
     loadOrders();
   }, []);
 
-  const deleteOrder = async (orderId: string) => {
-    if (window.confirm('Êtes-vous sûr de vouloir supprimer cette commande brouillon ?')) {
+  // Fonction pour charger le compte total des commandes
+  const loadTotalOrdersCount = async () => {
+    if (!userId) return;
+    
+    try {
+      const response = await fetch(`/api/orders?userId=${userId}`);
+      const result = await response.json();
+      if (result.success) {
+        setTotalOrdersCount(result.count || 0);
+      }
+    } catch (error) {
+      console.error('❌ Erreur chargement compte total:', error);
+    }
+  };
+
+  // Fonction pour gérer les changements de filtres avancés
+  const handleAdvancedFiltersChange = useCallback((filters: typeof advancedFilters) => {
+    setAdvancedFilters(filters);
+  }, []);
+
+  // Fonction pour effacer tous les filtres
+  const handleClearFilters = useCallback(() => {
+    setAdvancedFilters({
+      client: '',
+      dateFrom: '',
+      dateTo: '',
+      quantityMin: '',
+      quantityMax: '',
+      amountMin: '',
+      amountMax: ''
+    });
+  }, []);
+
+  // Charger les commandes et le compte total quand userId est disponible
+  useEffect(() => {
+    if (userId) {
+      loadOrders();
+      loadTotalOrdersCount();
+    }
+  }, [userId]);
+
+  // Recharger quand les filtres changent
+  useEffect(() => {
+    if (userId) {
+      loadOrders();
+    }
+  }, [statusFilter, advancedFilters]);
+
+  // Écouter les changements du localStorage pour détecter les nouvelles commandes
+  useEffect(() => {
+    const handleStorageChange = (e: StorageEvent) => {
+      // Recharger les commandes quand le localStorage change
+      if (e.key === 'draftOrders' || e.key === 'currentDraftOrder') {
+        console.log('📱 Changement détecté dans le localStorage - rechargement FORCÉ des commandes');
+        loadOrders(true); // Forcer sans cache car changement détecté
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+    };
+  }, []);
+
+  // Écouter les changements de paramètres URL pour recharger
+  useEffect(() => {
+    const refreshParam = searchParams.get('refresh');
+    if (refreshParam) {
+      console.log('🔄 Paramètre refresh détecté, rechargement FORCÉ des commandes...');
+      loadOrders(true); // Forcer le refresh sans cache
+      
+      // Nettoyer l'URL en supprimant le paramètre refresh
+      const newUrl = window.location.pathname;
+      window.history.replaceState({}, '', newUrl);
+    }
+  }, [searchParams]);
+
+  // Rafraîchir automatiquement quand on revient sur la page
+  useEffect(() => {
+    const handleFocus = () => {
+      // Vérifier si on doit forcer le refresh
+      const shouldRefresh = OrdersUtils.shouldRefreshOrders();
+      if (shouldRefresh) {
+        console.log('👀 Page des commandes refocalisée - REFRESH FORCÉ détecté');
+        loadOrders(true);
+      } else {
+        console.log('👀 Page des commandes refocalisée - rechargement normal');
+        loadOrders();
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        // Vérifier si on doit forcer le refresh
+        const shouldRefresh = OrdersUtils.shouldRefreshOrders();
+        if (shouldRefresh) {
+          console.log('👀 Page des commandes redevenue visible - REFRESH FORCÉ détecté');
+          loadOrders(true);
+        } else {
+          console.log('👀 Page des commandes redevenue visible - rechargement normal');
+          loadOrders();
+        }
+      }
+    };
+
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, []);
+
+  // Polling automatique pour détecter les nouvelles commandes (toutes les 30 secondes)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (!document.hidden) {
+        // Vérifier si on doit forcer le refresh
+        const shouldRefresh = OrdersUtils.shouldRefreshOrders();
+        if (shouldRefresh) {
+          console.log('🔄 Polling automatique - REFRESH FORCÉ détecté');
+          loadOrders(true);
+        } else {
+          console.log('🔄 Polling automatique - vérification normale');
+          loadOrders();
+        }
+      }
+    }, 30000); // 30 secondes
+
+    return () => clearInterval(interval);
+  }, []);
+
+  const deleteOrder = async (orderId: string, orderName?: string) => {
+    // Trouver la commande dans la liste pour avoir plus d'infos
+    const orderToDelete = orders.find(order => order.id === orderId);
+    
+    if (!orderToDelete) {
+      alert('❌ Commande non trouvée');
+      return;
+    }
+
+    if (orderToDelete.status !== 'draft') {
+      alert('❌ Seules les commandes en brouillon peuvent être supprimées');
+      return;
+    }
+
+    const displayName = orderName || orderToDelete.name || 'Commande sans nom';
+    const confirmMessage = `Êtes-vous sûr de vouloir supprimer définitivement la commande "${displayName}" ?\n\nCette action est irréversible.`;
+    
+    if (window.confirm(confirmMessage)) {
       try {
-        console.log('🗑️ Suppression de la commande:', orderId);
-        
+        console.log('🗑️ Début suppression commande:', orderId);
+        console.log('📋 Détails:', orderToDelete);
+
         const response = await fetch(`/api/orders/${orderId}`, {
-          method: 'DELETE'
+          method: 'DELETE',
+          headers: {
+            'Content-Type': 'application/json'
+          }
         });
 
+        console.log('📡 Réponse HTTP:', response.status, response.statusText);
+
         if (!response.ok) {
-          const result = await response.json();
-          throw new Error(result.error || 'Erreur de suppression');
+          let errorMessage = 'Erreur de suppression';
+          try {
+            const result = await response.json();
+            errorMessage = result.error || errorMessage;
+            console.error('❌ Erreur API:', result);
+          } catch (parseError) {
+            console.error('❌ Erreur parsing réponse:', parseError);
+          }
+          throw new Error(errorMessage);
         }
 
         const result = await response.json();
         console.log('✅ Réponse suppression:', result);
 
-        // Nettoyer le localStorage si demandé
-        if (result.cleanupLocalStorage) {
-          console.log('🧹 Nettoyage localStorage pour commande:', result.orderId);
-          
-          // Supprimer la commande des draftOrders
-          const savedOrders = localStorage.getItem('draftOrders');
-          if (savedOrders) {
+        // Nettoyer immédiatement le localStorage
+        console.log('🧹 Nettoyage localStorage...');
+        const savedOrders = localStorage.getItem('draftOrders');
+        if (savedOrders) {
+          try {
             const draftOrders = JSON.parse(savedOrders);
-            delete draftOrders[result.orderId];
-            localStorage.setItem('draftOrders', JSON.stringify(draftOrders));
-            console.log('✅ Commande supprimée de draftOrders');
-          }
-
-          // Si c'était la commande active, la supprimer aussi
-          const currentOrder = localStorage.getItem('currentDraftOrder');
-          if (currentOrder === result.orderId) {
-            localStorage.removeItem('currentDraftOrder');
-            console.log('✅ currentDraftOrder supprimé');
+            if (draftOrders[orderId]) {
+              delete draftOrders[orderId];
+              localStorage.setItem('draftOrders', JSON.stringify(draftOrders));
+              console.log('✅ Commande supprimée de draftOrders');
+            }
+          } catch (error) {
+            console.warn('⚠️ Erreur nettoyage draftOrders:', error);
           }
         }
 
-        alert('✅ Commande supprimée avec succès');
-        
-        // Recharger les commandes
-        loadOrders();
-        
+        const currentOrder = localStorage.getItem('currentDraftOrder');
+        if (currentOrder === orderId) {
+          localStorage.removeItem('currentDraftOrder');
+          console.log('✅ currentDraftOrder supprimé');
+        }
+
+        // Supprimer immédiatement de la liste affichée (feedback instantané)
+        console.log('🗑️ Suppression immédiate de la liste affichée...');
+        setOrders(prevOrders => {
+          const newOrders = prevOrders.filter(order => order.id !== orderId);
+          console.log('📋 Liste mise à jour:', prevOrders.length, '->', newOrders.length, 'commandes');
+          return newOrders;
+        });
+
+        // Marquer les commandes comme obsolètes
+        OrdersUtils.markOrdersAsStale();
+
+        // Forcer un rechargement complet pour confirmation
+        await forceCompleteRefresh();
+
+        alert(`✅ Commande "${displayName}" supprimée avec succès`);
+
       } catch (error) {
-        console.error('❌ Erreur lors de la suppression:', error);
-        alert('❌ Erreur lors de la suppression de la commande');
+        console.error('❌ Erreur suppression:', error);
+        const errorMessage = error instanceof Error ? error.message : 'Erreur inconnue';
+        alert(`❌ Erreur lors de la suppression de la commande:\n\n${errorMessage}`);
+        
+        // En cas d'erreur, forcer un rechargement complet pour avoir l'état réel
+        await forceCompleteRefresh();
       }
     }
   };
 
-  const handleImportComplete = (result: any) => {
+  const handleImportComplete = async (result: any) => {
     if (result.success && result.order) {
       console.log('✅ Import terminé:', result);
-      
-      // Recharger les commandes depuis Supabase
-      loadOrders();
-      
+
+      // Marquer les commandes comme obsolètes
+      OrdersUtils.markOrdersAsStale();
+
+      // Forcer un rechargement complet pour voir la nouvelle commande
+      await forceCompleteRefresh();
+
       // Message de succès avec détails
       const message = [
         `${result.message}`,
         `Commande "${result.orderName}" créée avec ${result.totalItems} articles.`,
         `Total: ${result.totalAmount?.toFixed(2)}€`
       ];
-      
+
       if (result.productsCreated > 0) {
         message.push(`${result.productsCreated} nouveaux produits ajoutés au catalogue.`);
       }
-      
+
       if (result.productsUpdated > 0) {
         message.push(`${result.productsUpdated} produits mis à jour (stock initialisé).`);
       }
-      
+
       alert(message.join('\n\n'));
-      
+
       // Rediriger vers les détails de la commande (utiliser l'UUID Supabase)
       router.push(`/orders/${result.order.id}`);
-      
+
     } else if (result.error) {
       console.error('❌ Erreur import:', result.error);
       // L'erreur est déjà gérée dans le composant
     }
   };
 
-  const filteredOrders = statusFilter === 'all' 
-    ? orders 
-    : orders.filter(order => order.status === statusFilter);
+  // Les commandes sont déjà filtrées côté serveur
+  const filteredOrders = orders;
 
   const getStatusIcon = (status: string) => {
     switch (status) {
       case 'completed': return <CheckCircle className="h-4 w-4" />;
       case 'shipping': return <Truck className="h-4 w-4" />;
-      case 'pending_payment': return <AlertCircle className="h-4 w-4" />;
+      case 'validated': return <AlertCircle className="h-4 w-4" />;
       case 'draft': return <Package className="h-4 w-4" />;
       default: return <Package className="h-4 w-4" />;
     }
@@ -210,16 +516,35 @@ export default function OrdersPage() {
     switch (status) {
       case 'completed': return 'bg-green-100 text-green-800';
       case 'shipping': return 'bg-blue-100 text-blue-800';
+      case 'pending': return 'bg-yellow-100 text-yellow-800';
       case 'pending_payment': return 'bg-yellow-100 text-yellow-800';
       case 'draft': return 'bg-gray-100 text-gray-800';
+      case 'validated': return 'bg-yellow-100 text-yellow-800'; // Support ancien statut
       default: return 'bg-gray-100 text-gray-800';
     }
   };
 
+  // Afficher un loader pendant la vérification d'authentification
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-gray-50 to-emerald-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-dbc-light-green mx-auto mb-4"></div>
+          <p className="text-gray-600">Vérification de l'authentification...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Ne pas afficher la page si pas authentifié
+  if (!isAuthenticated) {
+    return null;
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-gray-50 to-emerald-50">
       {/* Header */}
-      <AppHeader 
+      <AppHeader
         cartItemsCount={0}
         onCartClick={() => router.push('/orders')}
         onLogoClick={() => router.push('/catalog')}
@@ -238,34 +563,19 @@ export default function OrdersPage() {
           <span className="text-gray-900 font-medium">Mes commandes</span>
         </div>
 
-        {/* Titre et filtres */}
-        <div className="bg-white rounded-lg shadow-sm border p-6 mb-6">
-          <div className="flex items-center justify-between mb-4">
-            <h1 className="text-2xl font-bold text-gray-900">Mes commandes</h1>
-            
-            <div className="flex items-center space-x-4">
-              <OrderImportButton onImportComplete={handleImportComplete} />
-              
-              <div className="flex items-center space-x-2">
-                <span className="text-sm text-gray-600">Filtrer par statut:</span>
-                <select
-                  value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value)}
-                  className="text-sm border border-gray-300 rounded px-3 py-1 focus:ring-1 focus:ring-dbc-light-green focus:border-transparent"
-                >
-                  <option value="all">Toutes</option>
-                  <option value="draft">Brouillons</option>
-                  <option value="pending_payment">En attente de paiement</option>
-                  <option value="shipping">En cours de livraison</option>
-                  <option value="completed">Terminées</option>
-                </select>
-              </div>
-            </div>
-          </div>
+        {/* Composant de filtres avancés */}
+        <OrderFilters
+          statusFilter={statusFilter}
+          onStatusFilterChange={setStatusFilter}
+          onFiltersChange={handleAdvancedFiltersChange}
+          onClearFilters={handleClearFilters}
+          totalOrders={totalOrdersCount}
+          filteredCount={filteredOrders.length}
+        />
 
-          <p className="text-sm text-gray-600">
-            {filteredOrders.length} commande{filteredOrders.length > 1 ? 's' : ''} trouvée{filteredOrders.length > 1 ? 's' : ''}
-          </p>
+        {/* Bouton d'import */}
+        <div className="mb-6 flex justify-end">
+          <OrderImportButton onImportComplete={handleImportComplete} />
         </div>
 
         {/* Tableau des commandes */}
@@ -279,86 +589,107 @@ export default function OrdersPage() {
             </div>
           ) : (
             <table className="w-full">
-            <thead className="bg-gray-50 border-b">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Numéro de commande
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Statut
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Date de création
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Nombre de produits
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Montant total
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Actions
-                </th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {filteredOrders.map((order) => (
-                <tr key={order.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div>
-                      <span className="text-sm font-medium text-gray-900">{order.id}</span>
-                      {order.name && (
-                        <div className="text-xs text-gray-500">{order.name}</div>
-                      )}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span className={`inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(order.status)}`}>
-                      {getStatusIcon(order.status)}
-                      <span>{order.status_label}</span>
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="flex items-center text-sm text-gray-900">
-                      <Calendar className="h-4 w-4 mr-1 text-gray-400" />
-                      {new Date(order.createdAt).toLocaleDateString('fr-FR')}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="flex items-center text-sm text-gray-900">
-                      <Package className="h-4 w-4 mr-1 text-gray-400" />
-                      {order.totalItems} article{order.totalItems > 1 ? 's' : ''}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="flex items-center text-sm font-semibold text-gray-900">
-                      <Euro className="h-4 w-4 mr-1 text-gray-400" />
-                      {order.totalAmount.toFixed(2)}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="flex items-center space-x-2">
-                      <button
-                        onClick={() => router.push(`/orders/${order.id}`)}
-                        className="px-3 py-1 bg-gradient-to-r from-dbc-bright-green to-emerald-400 text-dbc-dark-green hover:from-emerald-300 hover:to-emerald-500 hover:text-white rounded-lg text-sm font-semibold transition-all duration-200 shadow-sm backdrop-blur-sm"
-                      >
-                        Voir détails →
-                      </button>
-                      {order.status === 'draft' && (
-                        <button
-                          onClick={() => deleteOrder(order.id)}
-                          className="text-red-600 hover:text-red-800 p-1"
-                          title="Supprimer cette commande brouillon"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      )}
-                    </div>
-                  </td>
+              <thead className="bg-gray-50 border-b">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Numéro de commande
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Client
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Statut
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Date de création
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Nombre de produits
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Montant total
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Actions
+                  </th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {filteredOrders.map((order) => (
+                  <tr key={order.id} className="hover:bg-gray-50">
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div>
+                        <span className="text-sm font-medium text-gray-900">{order.id}</span>
+                        {order.name && (
+                          <div className="text-xs text-gray-500">{order.name}</div>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      {order.client ? (
+                        <div>
+                          <div className="text-sm font-medium text-gray-900">{order.client.company_name}</div>
+                          <div className="text-xs text-gray-500">{order.client.contact_name}</div>
+                        </div>
+                      ) : (
+                        <span className="text-sm text-gray-400 italic">Non assigné</span>
+                      )}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="flex flex-col space-y-1">
+                        <span className={`inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(order.status)} w-fit`}>
+                          {getStatusIcon(order.status)}
+                          <span>{order.status_label}</span>
+                        </span>
+                        {order.tracking_number && (
+                          <div className="flex items-center space-x-1 text-xs text-blue-600">
+                            <Truck className="h-3 w-3" />
+                            <span>Tracking: {order.tracking_number}</span>
+                          </div>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="flex items-center text-sm text-gray-900">
+                        <Calendar className="h-4 w-4 mr-1 text-gray-400" />
+                        {new Date(order.createdAt).toLocaleDateString('fr-FR')}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="flex items-center text-sm text-gray-900">
+                        <Package className="h-4 w-4 mr-1 text-gray-400" />
+                        {order.totalItems} article{order.totalItems > 1 ? 's' : ''}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="flex items-center text-sm font-semibold text-gray-900">
+                        <Euro className="h-4 w-4 mr-1 text-gray-400" />
+                        {order.totalAmount.toFixed(2)}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="flex items-center space-x-2">
+                        <button
+                          onClick={() => router.push(`/orders/${order.id}`)}
+                          className="px-3 py-1 bg-gradient-to-r from-dbc-bright-green to-emerald-400 text-dbc-dark-green hover:from-emerald-300 hover:to-emerald-500 hover:text-white rounded-lg text-sm font-semibold transition-all duration-200 shadow-sm backdrop-blur-sm"
+                        >
+                          Voir détails →
+                        </button>
+                        {order.status === 'draft' && (
+                          <button
+                            onClick={() => deleteOrder(order.id, order.name)}
+                            className="text-red-600 hover:text-red-800 p-1"
+                            title="Supprimer cette commande brouillon"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           )}
         </div>
 

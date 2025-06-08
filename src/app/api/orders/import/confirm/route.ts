@@ -5,18 +5,23 @@ export async function POST(request: NextRequest) {
   try {
     console.log('🔄 Début de la confirmation d\'import...');
     
+    if (!supabaseAdmin) {
+      throw new Error('Configuration Supabase admin manquante');
+    }
+    
     const body = await request.json();
     const { 
       orderData,
       productsExistingWithGoodStock,
       productsToUpdateStock,
       productsToCreate,
-      addToCatalog 
+      addToCatalog,
+      userId 
     } = body;
 
     console.log('📋 Données reçues:');
     console.log('- Produits existants OK:', productsExistingWithGoodStock?.length || 0);
-    console.log('- Produits à mettre à jour:', productsToUpdateStock?.length || 0);
+
     console.log('- Produits à créer:', productsToCreate?.length || 0);
     console.log('- Ajouter au catalogue:', addToCatalog);
 
@@ -177,7 +182,7 @@ export async function POST(request: NextRequest) {
     // 4. CRÉER LA COMMANDE EN BROUILLON
     console.log('📋 Création de la commande en base...');
     
-    const orderForSupabase = {
+    const orderForSupabase: any = {
       name: orderName,
       status: 'draft' as const,
       status_label: 'Brouillon',
@@ -186,6 +191,11 @@ export async function POST(request: NextRequest) {
       customer_ref: 'IMPORT-AUTO',
       vat_type: 'Bien d\'occasion - TVA calculée sur la marge'
     };
+
+    // Ajouter le user_id si fourni
+    if (userId) {
+      orderForSupabase.user_id = userId;
+    }
 
     const { data: insertedOrder, error: orderError } = await supabaseAdmin
       .from('orders')

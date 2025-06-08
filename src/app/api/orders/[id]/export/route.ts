@@ -39,6 +39,14 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
       return NextResponse.json({ error: 'Commande non trouvée' }, { status: 404 });
     }
 
+    // Vérifier que la commande existe et a un statut approprié pour l'export
+    const allowedStatuses = ['shipping', 'completed'];
+    if (!allowedStatuses.includes(order.status)) {
+      return NextResponse.json({ 
+        error: `Export non autorisé pour le statut ${order.status}. Statuts autorisés: ${allowedStatuses.join(', ')}` 
+      }, { status: 400 });
+    }
+
     let exportData: any[] = [];
     let filename = '';
 

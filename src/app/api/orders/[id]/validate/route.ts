@@ -18,9 +18,6 @@ export async function POST(
     const orderId = params.id;
     const { orderItems } = await request.json();
     
-    console.log('🚀 Validation commande via API:', orderId);
-    console.log('📦 Items à valider:', orderItems.length);
-    
     if (!orderItems || !Array.isArray(orderItems) || orderItems.length === 0) {
       return NextResponse.json({ 
         error: 'Items de commande manquants ou invalides',
@@ -59,7 +56,7 @@ export async function POST(
       }, { status: 400 });
     }
 
-    // 3. Mettre à jour le statut de la commande
+    // 3. Mettre à jour le statut de la commande vers 'pending_payment'
     const { data: order, error: orderError } = await admin
       .from('orders')
       .update({
@@ -88,7 +85,6 @@ export async function POST(
         .from('products')
         .update({ 
           quantity: newQuantity
-          // Ne plus désactiver les produits à 0 - les garder actifs pour recherche
         })
         .eq('sku', item.sku);
 
@@ -105,9 +101,6 @@ export async function POST(
       }
     }
 
-    console.log('✅ Validation terminée');
-    console.log(`📊 Stock mis à jour pour ${stockUpdates.length} produits`);
-    
     if (updateErrors.length > 0) {
       console.warn('⚠️ Erreurs mineures:', updateErrors);
     }

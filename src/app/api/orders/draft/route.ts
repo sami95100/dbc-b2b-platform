@@ -105,7 +105,7 @@ export async function POST(request: NextRequest) {
     }
     
     const body = await request.json();
-    const { name, items, totalAmount, totalItems } = body;
+    const { name, items, totalAmount, totalItems, userId } = body;
 
     console.log('📋 Paramètres reçus:');
     console.log('- Nom:', name);
@@ -153,7 +153,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Créer la commande dans Supabase
-    const orderData = {
+    const orderData: any = {
       name,
       status: 'draft' as const,
       status_label: 'Brouillon',
@@ -162,6 +162,11 @@ export async function POST(request: NextRequest) {
       customer_ref: 'DBC-CLIENT-001',
       vat_type: 'Bien d\'occasion - TVA calculée sur la marge'
     };
+
+    // Ajouter le user_id si fourni
+    if (userId) {
+      orderData.user_id = userId;
+    }
 
     const { data: order, error: orderError } = await admin
       .from('orders')

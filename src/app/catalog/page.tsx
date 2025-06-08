@@ -4,7 +4,9 @@ import { useState, useMemo, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import AppHeader from '../../components/AppHeader';
 import CatalogUpdateButton from '../../components/CatalogUpdateButton';
+import ClientSelector from '../../components/ClientSelector';
 import { supabase, Product } from '../../lib/supabase';
+import { OrdersUtils } from '../../lib/orders-utils';
 import { 
   Search, 
   Filter, 
@@ -36,6 +38,57 @@ type SortField = 'sku' | 'product_name' | 'price_dbc' | 'quantity';
 type SortDirection = 'asc' | 'desc';
 
 export default function CatalogPage() {
+  const router = useRouter();
+  
+  // Vérification de l'authentification
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [authLoading, setAuthLoading] = useState(true);
+
+  useEffect(() => {
+    const checkAuth = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        
+        if (!session) {
+          router.push('/login');
+          return;
+        }
+        
+        // Vérifier le profil utilisateur
+        const { data: profile, error } = await supabase
+          .from('users')
+          .select('id, role, is_active')
+          .eq('id', session.user.id)
+          .single();
+
+        if (error || !profile || !profile.is_active) {
+          console.error('Erreur profil ou compte inactif:', error);
+          await supabase.auth.signOut();
+          router.push('/login');
+          return;
+        }
+
+        setIsAuthenticated(true);
+        setCurrentUserId(session.user.id);
+        
+        // Définir le statut admin
+        setIsAdmin(profile.role === 'admin');
+        
+        // Si pas admin, définir le client comme l'utilisateur connecté
+        if (profile.role !== 'admin') {
+          setSelectedClientId(session.user.id);
+        }
+      } catch (error) {
+        console.error('Erreur vérification auth:', error);
+        router.push('/login');
+      } finally {
+        setAuthLoading(false);
+      }
+    };
+
+    checkAuth();
+  }, [router]);
+
   // États des filtres avec valeurs par défaut
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedManufacturers, setSelectedManufacturers] = useState<string[]>(['Apple']); // Apple par défaut
@@ -94,8 +147,9 @@ export default function CatalogPage() {
   const [creatingOrder, setCreatingOrder] = useState(false);
   const [newProductsSKUs, setNewProductsSKUs] = useState<string[]>([]);
   const [lastImportDate, setLastImportDate] = useState<Date | null>(null);
-  
-  const router = useRouter();
+  const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   // États de dropdowns avec timer pour fermeture
   const [dropdownOpen, setDropdownOpen] = useState<{[key: string]: boolean}>({
@@ -471,6 +525,32 @@ export default function CatalogPage() {
     );
   };
 
+  // Fonction pour formater l'affichage des éléments sélectionnés
+  const formatSelectedItems = (selectedItems: string[], maxLength: number = 30) => {
+    if (selectedItems.length === 0) return 'Tous';
+    if (selectedItems.length === 1) return selectedItems[0];
+    
+    const joined = selectedItems.join(', ');
+    if (joined.length <= maxLength) {
+      return joined;
+    }
+    
+    // Sinon, afficher les premiers éléments + "et X autres"
+    let display = '';
+    let count = 0;
+    for (const item of selectedItems) {
+      const newDisplay = display ? `${display}, ${item}` : item;
+      if (newDisplay.length > maxLength - 10) { // -10 pour laisser place à "et X autres"
+        const remaining = selectedItems.length - count;
+        return `${display} et ${remaining} autre${remaining > 1 ? 's' : ''}`;
+      }
+      display = newDisplay;
+      count++;
+    }
+    
+    return display;
+  };
+
   // Fonction pour extraire le modèle de base et la capacité d'un nom de produit
   const parseProductInfo = (productName: string): { baseModel: string; capacity: number } | null => {
     // Pattern: (.+?) (\d+)GB(.*)
@@ -512,22 +592,11 @@ export default function CatalogPage() {
       standardCapacities[baseModel] = Math.min(...capacities);
     });
     
-    console.log('🔍 DEBUG Capacités standard calculées:', standardCapacities);
     return standardCapacities;
   }, [products]);
 
   // Filtrage et tri des produits
   const filteredAndSortedProducts = useMemo(() => {
-    console.log('🔍 DEBUG Filtrage - Produits totaux:', products.length);
-    console.log('🔍 DEBUG Filtrage - Produits actifs:', products.filter(p => p.is_active).length);
-    console.log('🔍 DEBUG Filtrage - Produits inactifs:', products.filter(p => !p.is_active).length);
-    console.log('🔍 DEBUG Filtrage - Produits quantité 0:', products.filter(p => p.quantity === 0).length);
-    console.log('🔍 DEBUG Filtrage - Quantité min:', quantityMin, 'max:', quantityMax);
-    console.log('🔍 DEBUG Filtrage - Terme recherche:', `"${searchTerm}"`);
-    console.log('🔍 DEBUG Filtrage - Nouveaux produits actif:', showNewProductsOnly, 'SKUs:', newProductsSKUs.length);
-    console.log('🔍 DEBUG Filtrage - Inclure stock zéro:', includeZeroStock);
-    console.log('🔍 DEBUG Filtrage - Capacités standard actif:', showStandardCapacityOnly);
-    
     let filtered = products.filter(product => {
       // Recherche globale
       const matchesSearch = !searchTerm || 
@@ -622,9 +691,6 @@ export default function CatalogPage() {
         return aValue > bValue ? -1 : aValue < bValue ? 1 : 0;
       }
     });
-
-    console.log('🔍 DEBUG Filtrage - Produits après filtrage:', filtered.length);
-    console.log('🔍 DEBUG Filtrage - Produits quantité 0 dans filtrés:', filtered.filter(p => p.quantity === 0).length);
     
     return filtered;
   }, [searchTerm, selectedManufacturers, selectedAppearances, selectedFunctionalities, 
@@ -941,7 +1007,8 @@ export default function CatalogPage() {
         body: JSON.stringify({
           name: finalOrderName,
           items: initialItems,
-          totalItems: totalItems
+          totalItems: totalItems,
+          userId: selectedClientId // Ajouter l'ID du client sélectionné
         })
       });
 
@@ -984,10 +1051,14 @@ export default function CatalogPage() {
       setCurrentDraftOrder(supabaseOrder.id);
       setShowOrderNamePopup(false);
       setOrderName('');
+      setSelectedClientId(null);
       
       // Sauvegarder dans localStorage avec l'UUID Supabase
       saveDraftOrdersToLocalStorage(newDraftOrders);
       saveCurrentOrderToLocalStorage(supabaseOrder.id);
+
+      // Marquer les commandes comme obsolètes pour forcer le rechargement
+      OrdersUtils.markOrdersAsStale();
 
       // Traiter le produit en attente
       if (pendingProduct) {
@@ -1349,6 +1420,23 @@ export default function CatalogPage() {
     };
   }, []);
 
+  // Afficher un loader pendant la vérification d'authentification
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-gray-50 to-emerald-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-dbc-light-green mx-auto mb-4"></div>
+          <p className="text-gray-600">Vérification de l'authentification...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Ne pas afficher la page si pas authentifié
+  if (!isAuthenticated) {
+    return null;
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-gray-50 to-emerald-50">
       {/* Header */}
@@ -1359,7 +1447,7 @@ export default function CatalogPage() {
           totalItems: getTotalCartItems(),
           totalAmount: getTotalCartAmount()
         } : undefined}
-        onCartClick={() => router.push('/orders')}
+        onCartClick={() => router.push('/orders?refresh=' + Date.now())}
         onLogoClick={() => router.push('/catalog')}
       />
 
@@ -1619,8 +1707,8 @@ export default function CatalogPage() {
                   }}
                   className="text-sm border border-gray-300 rounded-lg px-3 py-2 cursor-pointer hover:border-gray-400 bg-white text-gray-900 flex items-center justify-between"
                 >
-                  <span>
-                    {selectedManufacturers.length === 0 ? 'Tous' : `${selectedManufacturers.length} sélectionné(s)`}
+                  <span className="truncate">
+                    {formatSelectedItems(selectedManufacturers)}
                   </span>
                   <ChevronDown className="h-4 w-4 text-gray-500" />
                 </div>
@@ -1663,8 +1751,8 @@ export default function CatalogPage() {
                   }}
                   className="text-sm border border-gray-300 rounded-lg px-3 py-2 cursor-pointer hover:border-gray-400 bg-white text-gray-900 flex items-center justify-between"
                 >
-                  <span>
-                    {selectedAppearances.length === 0 ? 'Tous' : `${selectedAppearances.length} sélectionné(s)`}
+                  <span className="truncate">
+                    {formatSelectedItems(selectedAppearances)}
                   </span>
                   <ChevronDown className="h-4 w-4 text-gray-500" />
                 </div>
@@ -1707,8 +1795,8 @@ export default function CatalogPage() {
                   }}
                   className="text-sm border border-gray-300 rounded-lg px-3 py-2 cursor-pointer hover:border-gray-400 bg-white text-gray-900 flex items-center justify-between"
                 >
-                  <span>
-                    {selectedFunctionalities.length === 0 ? 'Tous' : `${selectedFunctionalities.length} sélectionné(s)`}
+                  <span className="truncate">
+                    {formatSelectedItems(selectedFunctionalities)}
                   </span>
                   <ChevronDown className="h-4 w-4 text-gray-500" />
                 </div>
@@ -1749,8 +1837,8 @@ export default function CatalogPage() {
                   }}
                   className="text-sm border border-gray-300 rounded-lg px-3 py-2 cursor-pointer hover:border-gray-400 bg-white text-gray-900 flex items-center justify-between"
                 >
-                  <span>
-                    {selectedBoxedOptions.length === 0 ? 'Tous' : `${selectedBoxedOptions.length} sélectionné(s)`}
+                  <span className="truncate">
+                    {formatSelectedItems(selectedBoxedOptions)}
                   </span>
                   <ChevronDown className="h-4 w-4 text-gray-500" />
                 </div>
@@ -2064,11 +2152,28 @@ export default function CatalogPage() {
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-dbc-light-green focus:border-transparent mb-4 text-black"
               autoFocus
             />
+            
+            {/* Sélecteur de client */}
+            <div className="mb-4">
+              <ClientSelector
+                selectedClientId={selectedClientId}
+                onChange={setSelectedClientId}
+                isAdmin={isAdmin}
+                currentUserId={currentUserId || undefined}
+              />
+            </div>
+            {isAdmin && !selectedClientId && (
+              <div className="text-red-600 text-sm mb-3 font-medium">
+                ⚠️ Veuillez sélectionner un client avant de créer la commande
+              </div>
+            )}
+            
             <div className="flex justify-end space-x-3">
               <button
                 onClick={() => {
                   setShowOrderNamePopup(false);
                   setOrderName('');
+                  setSelectedClientId(null);
                   sessionStorage.removeItem('pendingProduct');
                   // Décocher toutes les cases
                   setSelectedProducts({});
@@ -2079,7 +2184,7 @@ export default function CatalogPage() {
               </button>
               <button
                 onClick={createNewOrder}
-                disabled={creatingOrder}
+                disabled={creatingOrder || (isAdmin && !selectedClientId)}
                 className="px-4 py-2 bg-gradient-to-r from-dbc-bright-green to-emerald-400 text-dbc-dark-green rounded-xl hover:from-emerald-300 hover:to-emerald-500 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed font-semibold shadow-lg backdrop-blur-sm transition-all duration-200"
               >
                 {creatingOrder ? 'Création...' : 'Créer la commande'}

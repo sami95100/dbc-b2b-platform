@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import AppHeader from '../../../components/AppHeader';
+import { OrdersUtils } from '../../../lib/orders-utils';
 import { supabase, Product, orderService } from '../../../lib/supabase';
 import { 
   User, 
@@ -41,7 +42,6 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
   const [imeiData, setImeiData] = useState<any[]>([]);
   const [showShippingModal, setShowShippingModal] = useState(false);
   const [trackingNumber, setTrackingNumber] = useState('');
-  const [shippingCost, setShippingCost] = useState('');
   const router = useRouter();
 
   // Fonction devenue obsolète - supprimée pour optimisation
@@ -144,6 +144,9 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
         totalAmount: supabaseOrder.total_amount,
         customerRef: supabaseOrder.customer_ref,
         vatType: supabaseOrder.vat_type,
+        tracking_number: supabaseOrder.customer_ref?.startsWith('TRACKING:') 
+          ? supabaseOrder.customer_ref.replace('TRACKING:', '') 
+          : null,
         source: 'supabase'
       });
 
@@ -166,6 +169,12 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
         product_name: item.name,
         unit_price: item.unitPrice
       })));
+
+      // Charger les IMEI si la commande est en shipping ou terminée
+      if (supabaseOrder.status === 'shipping' || supabaseOrder.status === 'completed') {
+        console.log('🔍 Chargement des IMEI pour commande en shipping/completed...');
+        await loadImeiData(supabaseOrder.id);
+      }
 
     } catch (error) {
       console.error('❌ Erreur lors du chargement de la commande:', error);
@@ -307,13 +316,19 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
       console.log('✅ Validation réussie via API');
       console.log(`📊 Stock mis à jour pour ${result.stockUpdates?.length || 0} produits`);
 
-      // Mettre à jour le statut local
+      // Mettre à jour le statut local avec le nouveau statut "shipping"
       const updatedOrder = {
         ...orderDetail,
-        status: 'pending_payment',
-        status_label: 'En attente de paiement'
+        status: 'shipping',
+        status_label: 'En cours de livraison'
       };
       setOrderDetail(updatedOrder);
+
+      // Recharger les données IMEI pour s'assurer qu'elles sont à jour
+      await loadImeiData();
+
+      // Notifier immédiatement les autres pages du changement
+      OrdersUtils.markOrdersAsStale();
 
       // Mettre à jour localStorage si nécessaire
       const savedOrders = localStorage.getItem('draftOrders');
@@ -322,8 +337,8 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
         if (draftOrders[params.id]) {
           draftOrders[params.id] = {
             ...draftOrders[params.id],
-            status: 'pending_payment',
-            status_label: 'En attente de paiement'
+            status: 'shipping',
+            status_label: 'En cours de livraison'
           };
           localStorage.setItem('draftOrders', JSON.stringify(draftOrders));
         }
@@ -348,13 +363,14 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
       const userChoice = window.confirm(
         successMessage + 
         '\n\n✅ Commande validée avec succès !\n\n' +
-        'Voulez-vous rester sur cette page pour exporter la commande ?\n\n' +
-        '• Cliquez "OK" pour rester ici (recommandé pour export)\n' +
+        'Voulez-vous rester sur cette page pour importer les IMEI et exporter ?\n\n' +
+        '• Cliquez "OK" pour rester ici (recommandé pour IMEI/export)\n' +
         '• Cliquez "Annuler" pour retourner à la liste des commandes'
       );
       
       if (!userChoice) {
-        router.push('/orders');
+        // Utiliser l'utilitaire pour rediriger avec refresh
+        OrdersUtils.redirectToOrdersWithRefresh(router);
       }
       // Sinon on reste sur la page pour permettre l'export
 
@@ -379,50 +395,92 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
   };
 
   const deleteOrder = async () => {
-    if (window.confirm('Êtes-vous sûr de vouloir supprimer cette commande ?')) {
+    if (!orderDetail) {
+      alert('❌ Aucune commande à supprimer');
+      return;
+    }
+
+    // Vérifier que c'est bien un brouillon
+    if (orderDetail.status !== 'draft') {
+      alert('❌ Seules les commandes en brouillon peuvent être supprimées');
+      return;
+    }
+
+    const confirmMessage = `Êtes-vous sûr de vouloir supprimer définitivement la commande "${orderDetail.name}" ?\n\nCette action est irréversible.`;
+    
+    if (window.confirm(confirmMessage)) {
       try {
-        console.log('🗑️ Suppression de la commande:', params.id);
+        console.log('🗑️ Début suppression de la commande:', params.id);
+        console.log('📋 Détails commande:', {
+          id: params.id,
+          name: orderDetail.name,
+          status: orderDetail.status,
+          totalItems: orderDetail.totalItems
+        });
         
         // Utiliser l'API pour supprimer la commande
         const response = await fetch(`/api/orders/${params.id}`, {
-          method: 'DELETE'
+          method: 'DELETE',
+          headers: {
+            'Content-Type': 'application/json'
+          }
         });
 
+        console.log('📡 Réponse HTTP:', response.status, response.statusText);
+
         if (!response.ok) {
-          const result = await response.json();
-          throw new Error(result.error || 'Erreur de suppression');
+          let errorMessage = 'Erreur de suppression';
+          try {
+            const result = await response.json();
+            errorMessage = result.error || errorMessage;
+            console.error('❌ Erreur API:', result);
+          } catch (parseError) {
+            console.error('❌ Erreur parsing réponse:', parseError);
+          }
+          throw new Error(errorMessage);
         }
 
         const result = await response.json();
         console.log('✅ Réponse suppression:', result);
 
-        // Nettoyer le localStorage si demandé
-        if (result.cleanupLocalStorage) {
-          console.log('🧹 Nettoyage localStorage pour commande:', result.orderId);
-          
-          // Supprimer la commande des draftOrders
-          const savedOrders = localStorage.getItem('draftOrders');
-          if (savedOrders) {
+        // Nettoyer immédiatement le localStorage
+        console.log('🧹 Nettoyage localStorage...');
+        
+        // Supprimer la commande des draftOrders
+        const savedOrders = localStorage.getItem('draftOrders');
+        if (savedOrders) {
+          try {
             const draftOrders = JSON.parse(savedOrders);
-            delete draftOrders[result.orderId];
-            localStorage.setItem('draftOrders', JSON.stringify(draftOrders));
-            console.log('✅ Commande supprimée de draftOrders');
-          }
-
-          // Si c'était la commande active, la supprimer aussi
-          const currentOrder = localStorage.getItem('currentDraftOrder');
-          if (currentOrder === result.orderId) {
-            localStorage.removeItem('currentDraftOrder');
-            console.log('✅ currentDraftOrder supprimé');
+            if (draftOrders[params.id]) {
+              delete draftOrders[params.id];
+              localStorage.setItem('draftOrders', JSON.stringify(draftOrders));
+              console.log('✅ Commande supprimée de draftOrders');
+            }
+          } catch (error) {
+            console.warn('⚠️ Erreur nettoyage draftOrders:', error);
           }
         }
 
-        alert('✅ Commande supprimée avec succès');
-        router.push('/orders');
+        // Si c'était la commande active, la supprimer aussi
+        const currentOrder = localStorage.getItem('currentDraftOrder');
+        if (currentOrder === params.id) {
+          localStorage.removeItem('currentDraftOrder');
+          console.log('✅ currentDraftOrder supprimé');
+        }
+
+        // Marquer les commandes comme obsolètes
+        OrdersUtils.markOrdersAsStale();
+
+        alert(`✅ Commande "${orderDetail.name}" supprimée avec succès`);
+        
+        // Rediriger avec refresh forcé
+        console.log('🔄 Redirection vers liste des commandes...');
+        OrdersUtils.redirectToOrdersWithRefresh(router);
         
       } catch (error) {
         console.error('❌ Erreur lors de la suppression:', error);
-        alert('❌ Erreur lors de la suppression de la commande');
+        const errorMessage = error instanceof Error ? error.message : 'Erreur inconnue';
+        alert(`❌ Erreur lors de la suppression de la commande:\n\n${errorMessage}`);
       }
     }
   };
@@ -431,7 +489,7 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
     switch (status) {
       case 'completed': return <CheckCircle className="h-5 w-5" />;
       case 'shipping': return <Truck className="h-5 w-5" />;
-      case 'pending_payment': return <AlertCircle className="h-5 w-5" />;
+      case 'validated': return <AlertCircle className="h-5 w-5" />;
       case 'draft': return <Package className="h-5 w-5" />;
       default: return <Package className="h-5 w-5" />;
     }
@@ -441,8 +499,10 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
     switch (status) {
       case 'completed': return 'bg-green-100 text-green-800';
       case 'shipping': return 'bg-blue-100 text-blue-800';
+      case 'pending': return 'bg-yellow-100 text-yellow-800';
       case 'pending_payment': return 'bg-yellow-100 text-yellow-800';
       case 'draft': return 'bg-gray-100 text-gray-800';
+      case 'validated': return 'bg-yellow-100 text-yellow-800';
       default: return 'bg-gray-100 text-gray-800';
     }
   };
@@ -635,8 +695,8 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
       // Mettre à jour la commande directement sans affecter le catalogue
       const updatedOrder = {
         ...orderDetail,
-        status: 'pending_payment',
-        status_label: 'En attente de paiement',
+        status: 'validated',
+        status_label: 'Validée',
         items: orderDetail.items
           .filter((item: any) => (editableQuantities[item.sku] || item.quantity) > 0)
           .map((item: any) => ({
@@ -676,7 +736,7 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
             items: editedItems,
             totalItems,
             totalAmount,
-            status: 'pending_payment'
+            status: 'validated'
           }),
         });
 
@@ -685,6 +745,10 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
         }
 
         console.log('✅ Commande mise à jour avec succès');
+        
+        // Notifier les autres pages du changement
+        OrdersUtils.markOrdersAsStale();
+        
         alert('✅ Modifications sauvegardées avec succès !');
 
       } catch (saveError) {
@@ -701,14 +765,15 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
   };
 
   // Charger les données IMEI pour une commande
-  const loadImeiData = async () => {
-    if (!orderDetail) return;
+  const loadImeiData = async (orderId?: string) => {
+    const targetOrderId = orderId || orderDetail?.id;
+    if (!targetOrderId) return;
 
     try {
-      console.log('📱 Chargement des IMEI pour commande via API:', orderDetail.id);
+      console.log('📱 Chargement des IMEI pour commande via API:', targetOrderId);
       
       // Utiliser l'API route avec permissions admin pour contourner les problèmes RLS
-      const response = await fetch(`/api/orders/${orderDetail.id}/imei/list`);
+      const response = await fetch(`/api/orders/${targetOrderId}/imei/list`);
       
       if (!response.ok) {
         throw new Error(`Erreur ${response.status}: ${response.statusText}`);
@@ -760,6 +825,9 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
       await loadOrderDetail();
       await loadImeiData();
       
+      // Notifier les autres pages du changement
+      OrdersUtils.markOrdersAsStale();
+      
       // Afficher la modal de tracking après import réussi
       setShowShippingModal(true);
       
@@ -782,7 +850,7 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
     }
 
     try {
-      console.log('🚚 Mise à jour tracking:', trackingNumber, shippingCost);
+      console.log('🚚 Mise à jour tracking:', trackingNumber);
 
       const response = await fetch(`/api/orders/${orderDetail.id}/shipping`, {
         method: 'PUT',
@@ -791,7 +859,6 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
         },
         body: JSON.stringify({
           tracking_number: trackingNumber,
-          shipping_cost: parseFloat(shippingCost) || 0,
           status: 'shipping'
         }),
       });
@@ -808,18 +875,19 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
 
       console.log('✅ Tracking mis à jour:', data);
       
-      // Mettre à jour l'état local
+      // Mettre à jour l'état local avec le statut reçu de l'API
       setOrderDetail({
         ...orderDetail,
-        status: 'shipping',
-        status_label: 'En cours de livraison',
-        tracking_number: trackingNumber,
-        shipping_cost: parseFloat(shippingCost) || 0
+        status: data.order?.status || 'shipping',
+        status_label: data.order?.status_label || 'En cours de livraison',
+        tracking_number: trackingNumber
       });
+
+      // Notifier les autres pages du changement
+      OrdersUtils.markOrdersAsStale();
 
       setShowShippingModal(false);
       setTrackingNumber('');
-      setShippingCost('');
       
       alert('✅ Informations de livraison mises à jour');
 
@@ -857,9 +925,12 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
 
       setOrderDetail({
         ...orderDetail,
-        status: 'completed',
-        status_label: 'Terminée'
+        status: data.order?.status || 'completed',
+        status_label: data.order?.status_label || 'Terminée'
       });
+
+      // Notifier les autres pages du changement
+      OrdersUtils.markOrdersAsStale();
 
       alert('✅ Commande marquée comme terminée !');
     } catch (error) {
@@ -894,6 +965,41 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
     } catch (error) {
       console.error('❌ Erreur export:', error);
       alert(`❌ ${error instanceof Error ? error.message : 'Erreur export'}`);
+    }
+  };
+
+  // Générer une facture PDF
+  const generateInvoicePDF = async () => {
+    if (!orderDetail) return;
+
+    try {
+      console.log('📄 Génération de la facture pour commande:', orderDetail.id);
+      
+      const response = await fetch(`/api/orders/${orderDetail.id}/invoice`, {
+        method: 'GET',
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Erreur ${response.status}: ${response.statusText}`);
+      }
+
+      // Récupérer le HTML de la facture
+      const invoiceHtml = await response.text();
+      
+      // Ouvrir dans une nouvelle fenêtre pour impression
+      const printWindow = window.open('', '_blank');
+      if (printWindow) {
+        printWindow.document.write(invoiceHtml);
+        printWindow.document.close();
+        printWindow.focus();
+      } else {
+        alert('Impossible d\'ouvrir la fenêtre de facture. Veuillez autoriser les pop-ups.');
+      }
+      
+      console.log('✅ Facture générée');
+    } catch (error) {
+      console.error('❌ Erreur génération facture:', error);
+      alert(`❌ ${error instanceof Error ? error.message : 'Erreur génération facture'}`);
     }
   };
 
@@ -971,11 +1077,17 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
               <h1 className="text-2xl font-bold text-gray-900 mb-2">
                 {orderDetail.name || `Commande ${orderDetail.id}`}
               </h1>
-              <div className="flex items-center space-x-4">
-                <span className={`inline-flex items-center space-x-1 px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(orderDetail.status)}`}>
+              <div className="flex items-center space-x-3">
+                <span className={`inline-flex items-center space-x-2 px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(orderDetail.status)}`}>
                   {getStatusIcon(orderDetail.status)}
                   <span>{orderDetail.status_label}</span>
                 </span>
+                {orderDetail.tracking_number && (
+                  <div className="flex items-center space-x-2 px-3 py-1 bg-blue-50 border border-blue-200 rounded-full text-sm">
+                    <Truck className="h-4 w-4 text-blue-600" />
+                    <span className="text-blue-700 font-medium">Tracking: {orderDetail.tracking_number}</span>
+                  </div>
+                )}
                 <div className="flex items-center text-sm text-gray-600">
                   <Calendar className="h-4 w-4 mr-1" />
                   Créée le {new Date(orderDetail.createdAt).toLocaleDateString('fr-FR')}
@@ -1026,42 +1138,53 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
               {orderDetail.status !== 'draft' && (
                 <>
                   {/* Boutons de progression du workflow */}
-                  {orderDetail.status === 'pending_payment' && (
+                  {/* Après validation, la commande est en pending_payment et peut recevoir les IMEI */}
+                  {(orderDetail.status === 'pending_payment' || orderDetail.status === 'shipping') && (
                     <div className="flex space-x-3">
-                      <label className="flex items-center space-x-2 px-4 py-2 bg-white bg-opacity-80 backdrop-blur-sm border border-white border-opacity-30 rounded-xl hover:bg-opacity-90 hover:shadow-lg cursor-pointer text-sm text-gray-700 transition-all duration-200">
-                        <input
-                          type="file"
-                          accept=".xlsx,.xls"
-                          onChange={handleImeiImport}
-                          className="hidden"
-                        />
-                        <Truck className="h-4 w-4" />
-                        <span>Importer IMEI</span>
-                      </label>
-                    </div>
-                  )}
+                      {!imeiData.length && (
+                        <label className="flex items-center space-x-2 px-4 py-2 bg-white bg-opacity-80 backdrop-blur-sm border border-white border-opacity-30 rounded-xl hover:bg-opacity-90 hover:shadow-lg cursor-pointer text-sm text-gray-700 transition-all duration-200">
+                          <input
+                            type="file"
+                            accept=".xlsx,.xls"
+                            onChange={handleImeiImport}
+                            className="hidden"
+                          />
+                          <Truck className="h-4 w-4" />
+                          <span>Importer IMEI</span>
+                        </label>
+                      )}
 
-                  {orderDetail.status === 'shipping' && (
-                    <div className="flex space-x-3">
-                      <button
-                        onClick={markAsCompleted}
-                        className="flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-dbc-bright-green to-emerald-400 text-dbc-dark-green rounded-xl hover:from-emerald-300 hover:to-emerald-500 hover:text-white font-semibold shadow-lg backdrop-blur-sm transition-all duration-200 text-sm"
-                      >
-                        <CheckCircle className="h-4 w-4" />
-                        <span>Marquer comme terminée</span>
-                      </button>
-                    </div>
-                  )}
+                      {/* Les boutons suivants ne s'affichent qu'après import IMEI (statut shipping) */}
+                      {orderDetail.status === 'shipping' && imeiData.length > 0 && !orderDetail.tracking_number && (
+                        <button
+                          onClick={() => setShowShippingModal(true)}
+                          className="flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-xl hover:from-blue-600 hover:to-blue-700 font-semibold shadow-lg backdrop-blur-sm transition-all duration-200 text-sm"
+                        >
+                          <Truck className="h-4 w-4" />
+                          <span>Configurer livraison</span>
+                        </button>
+                      )}
 
-                  {/* Bouton d'édition manuelle pour commandes en attente de paiement */}
-                  {orderDetail.status === 'pending_payment' && !isEditing && (
-                    <button
-                      onClick={handleManualEdit}
-                      className="flex items-center space-x-2 px-4 py-2 bg-white bg-opacity-80 backdrop-blur-sm border border-orange-300 text-orange-600 rounded-xl hover:bg-orange-50 hover:shadow-lg text-sm transition-all duration-200"
-                    >
-                      <Edit className="h-4 w-4" />
-                      <span>Éditer manuellement</span>
-                    </button>
+                      {orderDetail.status === 'shipping' && imeiData.length > 0 && (
+                        <button
+                          onClick={markAsCompleted}
+                          className="flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-dbc-bright-green to-emerald-400 text-dbc-dark-green rounded-xl hover:from-emerald-300 hover:to-emerald-500 hover:text-white font-semibold shadow-lg backdrop-blur-sm transition-all duration-200 text-sm"
+                        >
+                          <CheckCircle className="h-4 w-4" />
+                          <span>Marquer comme terminée</span>
+                        </button>
+                      )}
+
+                      {!imeiData.length && !isEditing && orderDetail.status === 'shipping' && (
+                        <button
+                          onClick={handleManualEdit}
+                          className="flex items-center space-x-2 px-4 py-2 bg-white bg-opacity-80 backdrop-blur-sm border border-orange-300 text-orange-600 rounded-xl hover:bg-orange-50 hover:shadow-lg text-sm transition-all duration-200"
+                        >
+                          <Edit className="h-4 w-4" />
+                          <span>Éditer manuellement</span>
+                        </button>
+                      )}
+                    </div>
                   )}
 
                   {/* Bouton de revalidation si en cours d'édition */}
@@ -1085,7 +1208,9 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
                     </button>
                   )}
 
-                  <button className="flex items-center space-x-2 px-4 py-2 bg-white bg-opacity-80 backdrop-blur-sm border border-white border-opacity-30 rounded-xl hover:bg-opacity-90 hover:shadow-lg text-gray-700 text-sm transition-all duration-200">
+                  <button 
+                    onClick={generateInvoicePDF}
+                    className="flex items-center space-x-2 px-4 py-2 bg-white bg-opacity-80 backdrop-blur-sm border border-white border-opacity-30 rounded-xl hover:bg-opacity-90 hover:shadow-lg text-gray-700 text-sm transition-all duration-200">
                     <FileText className="h-4 w-4" />
                     <span>Facture</span>
                   </button>
@@ -1373,20 +1498,6 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
                   onChange={(e) => setTrackingNumber(e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="Ex: 1Z999AA1234567890"
-                />
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Frais de livraison (optionnel)
-                </label>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={shippingCost}
-                  onChange={(e) => setShippingCost(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="0.00"
                 />
               </div>
             </div>

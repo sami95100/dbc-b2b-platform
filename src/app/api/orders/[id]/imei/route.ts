@@ -38,7 +38,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       throw new Error('Configuration Supabase admin manquante');
     }
 
-    // 1. Vérifier que la commande existe et est en statut 'pending_payment'
+    // 1. Vérifier que la commande existe et est en statut 'pending_payment' (après validation)
     const { data: order, error: orderError } = await supabaseAdmin
       .from('orders')
       .select('id, name, status, total_amount')
@@ -236,7 +236,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
 
     console.log(`✅ ${insertedImei?.length || 0} IMEI insérés avec succès`);
 
-    // 10. Mettre à jour le statut de la commande vers 'shipping'
+    // 10. Mettre à jour le statut vers 'shipping' après ajout des IMEI
     const { error: statusUpdateError } = await supabaseAdmin
       .from('orders')
       .update({ 
@@ -249,7 +249,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     if (statusUpdateError) {
       console.warn('⚠️ Erreur mise à jour statut commande:', statusUpdateError);
     } else {
-      console.log('✅ Commande passée en statut "shipping"');
+      console.log('✅ Commande passée en shipping après ajout des IMEI');
     }
 
     return NextResponse.json({
@@ -257,7 +257,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       message: `Import IMEI réussi: ${insertedImei?.length || 0} IMEI ajoutés`,
       summary: {
         totalImei: insertedImei?.length || 0,
-        orderStatus: 'shipping',
+        orderStatus: 'shipping', // Le statut passe en shipping après import IMEI
         skuCount: imeiCountBySku.size
       },
       imeiData: insertedImei

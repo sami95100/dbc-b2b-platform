@@ -12,10 +12,9 @@ function getSupabaseAdmin() {
 export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
   try {
     const admin = getSupabaseAdmin();
-    
-    console.log('📱 Récupération des IMEI pour commande:', params.id);
+    console.log('📱 Récupération IMEI pour commande:', params.id);
 
-    // 1. Vérifier que la commande existe
+    // Vérifier que la commande existe
     const { data: order, error: orderError } = await admin
       .from('orders')
       .select('id, name, status')
@@ -26,25 +25,27 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
       return NextResponse.json({ error: 'Commande non trouvée' }, { status: 404 });
     }
 
-    // 2. Récupérer les IDs des order_items pour cette commande
-    const { data: orderItems, error: orderItemsError } = await admin
+    // Récupérer les order_items de la commande
+    const { data: orderItems, error: itemsError } = await admin
       .from('order_items')
-      .select('id')
+      .select('id, sku, product_name, quantity')
       .eq('order_id', params.id);
 
-    if (orderItemsError) {
-      console.error('❌ Erreur récupération order_items:', orderItemsError);
+    if (itemsError) {
       return NextResponse.json({ error: 'Erreur récupération des articles' }, { status: 500 });
     }
 
     if (!orderItems || orderItems.length === 0) {
-      console.log('⚠️ Aucun order_item trouvé pour cette commande');
-      return NextResponse.json({ imeiData: [] });
+      return NextResponse.json({
+        success: true,
+        imeiData: [],
+        message: 'Aucun article dans cette commande'
+      });
     }
 
+    // Récupérer les IMEI pour ces order_items
     const orderItemIds = orderItems.map(item => item.id);
-
-    // 3. Récupérer les IMEI correspondants
+    
     const { data: imeiData, error: imeiError } = await admin
       .from('order_item_imei')
       .select(`
@@ -60,26 +61,34 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
         cloud_lock,
         additional_info,
         supplier_price,
-        dbc_price,
-        created_at
+        dbc_price
       `)
       .in('order_item_id', orderItemIds)
       .order('sku');
 
     if (imeiError) {
       console.error('❌ Erreur récupération IMEI:', imeiError);
-      return NextResponse.json({ error: 'Erreur récupération des IMEI' }, { status: 500 });
+      return NextResponse.json({ error: 'Erreur récupération IMEI' }, { status: 500 });
     }
 
-    console.log(`✅ ${imeiData?.length || 0} IMEI trouvés`);
+    console.log(`✅ ${imeiData?.length || 0} IMEI trouvés pour la commande ${order.name}`);
 
-    return NextResponse.json({ 
+    return NextResponse.json({
+      success: true,
       imeiData: imeiData || [],
-      orderStatus: order.status 
+      orderInfo: {
+        id: order.id,
+        name: order.name,
+        status: order.status
+      },
+      summary: {
+        totalImei: imeiData?.length || 0,
+        totalItems: orderItems.length
+      }
     });
 
   } catch (error) {
-    console.error('❌ Erreur récupération IMEI:', error);
+    console.error('❌ Erreur API liste IMEI:', error);
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Erreur interne' },
       { status: 500 }
