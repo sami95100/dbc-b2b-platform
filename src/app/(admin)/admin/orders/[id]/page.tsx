@@ -1,10 +1,9 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import AppHeader from '../../../components/AppHeader';
-import { OrdersUtils } from '../../../lib/orders-utils';
-import { supabase, Product, orderService } from '../../../lib/supabase';
+import { useRouter, useParams } from 'next/navigation';
+import { useAuth, withAuth } from '../../../../../lib/auth-context';
+import { supabase, Product, orderService } from '../../../../../lib/supabase';
 import { 
   User, 
   LogOut, 
@@ -25,10 +24,16 @@ import {
   Trash2,
   Check,
   FileSpreadsheet,
-  Edit
+  Edit,
+  Eye
 } from 'lucide-react';
 
-export default function OrderDetailPage({ params }: { params: { id: string } }) {
+function AdminOrderDetailPage() {
+  const router = useRouter();
+  const params = useParams();
+  const { user } = useAuth();
+  const orderId = params.id as string;
+
   const [orderDetail, setOrderDetail] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [editableQuantities, setEditableQuantities] = useState<{[key: string]: number}>({});
@@ -42,26 +47,21 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
   const [imeiData, setImeiData] = useState<any[]>([]);
   const [showShippingModal, setShowShippingModal] = useState(false);
   const [trackingNumber, setTrackingNumber] = useState('');
-  const router = useRouter();
-
-  // Fonction devenue obsolète - supprimée pour optimisation
-
-  // Supprimer l'effet qui chargeait tous les produits
-  // Les produits seront chargés de manière optimisée dans loadOrderDetail
+  const [shippingCost, setShippingCost] = useState('');
 
   const loadOrderDetail = async () => {
     try {
       setLoading(true);
-      console.log('🔍 Chargement commande spécifique avec ID:', params.id);
+      console.log('🔍 Chargement commande spécifique avec ID:', orderId);
       
       // Charger la commande spécifique via l'API optimisée
-      const response = await fetch(`/api/orders/${params.id}`);
+      const response = await fetch(`/api/orders/${orderId}`);
       const result = await response.json();
 
       if (!response.ok) {
         console.error('❌ Erreur API order:', result.error);
         if (response.status === 404) {
-          console.log('❌ Commande non trouvée avec ID:', params.id);
+          console.log('❌ Commande non trouvée avec ID:', orderId);
           return;
         }
         throw new Error(result.error || 'Erreur de chargement');
@@ -144,9 +144,6 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
         totalAmount: supabaseOrder.total_amount,
         customerRef: supabaseOrder.customer_ref,
         vatType: supabaseOrder.vat_type,
-        tracking_number: supabaseOrder.customer_ref?.startsWith('TRACKING:') 
-          ? supabaseOrder.customer_ref.replace('TRACKING:', '') 
-          : null,
         source: 'supabase'
       });
 
@@ -170,12 +167,6 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
         unit_price: item.unitPrice
       })));
 
-      // Charger les IMEI si la commande est en shipping ou terminée
-      if (supabaseOrder.status === 'shipping' || supabaseOrder.status === 'completed') {
-        console.log('🔍 Chargement des IMEI pour commande en shipping/completed...');
-        await loadImeiData(supabaseOrder.id);
-      }
-
     } catch (error) {
       console.error('❌ Erreur lors du chargement de la commande:', error);
     } finally {
@@ -184,10 +175,10 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
   };
 
   useEffect(() => {
-    if (params.id) {
+    if (orderId) {
       loadOrderDetail();
     }
-  }, [params.id]);
+  }, [orderId]);
 
   // Charger les IMEI quand on passe en mode IMEI
   useEffect(() => {
@@ -259,537 +250,132 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
 
   const removeItem = (sku: string) => {
     if (!orderDetail) return;
+    
+    const updatedItems = orderDetail.items.filter((item: any) => item.sku !== sku);
+    
+    // Recalculer totaux
+    const totalItems = updatedItems.length;
+    const totalAmount = updatedItems.reduce((sum: number, item: any) => sum + item.totalPrice, 0);
+    
+    setOrderDetail((prev: any) => ({
+      ...prev,
+      items: updatedItems,
+      totalItems,
+      totalAmount
+    }));
+    
+    // Nettoyer les états
+    setEditableQuantities(prev => {
+      const newQuantities = { ...prev };
+      delete newQuantities[sku];
+      return newQuantities;
+    });
+    
+    setEditablePrices(prev => {
+      const newPrices = { ...prev };
+      delete newPrices[sku];
+      return newPrices;
+    });
+  };
 
-    const newItems = orderDetail.items.filter((item: any) => item.sku !== sku);
-    const newEditableQuantities = { ...editableQuantities };
-    delete newEditableQuantities[sku];
+  // Charger les données IMEI pour une commande
+  const loadImeiData = async () => {
+    if (!orderDetail) return;
 
-    const updatedOrder = {
-      ...orderDetail,
-      items: newItems,
-      totalItems: newItems.reduce((sum: number, item: any) => sum + editableQuantities[item.sku], 0),
-      totalAmount: newItems.reduce((sum: number, item: any) => sum + (item.unitPrice * editableQuantities[item.sku]), 0)
-    };
+    try {
+      console.log('📱 Chargement des IMEI pour commande:', orderDetail.id);
+      
+      const { data: imei, error } = await supabase
+        .from('order_item_imei')
+        .select(`
+          *,
+          order_items!inner(order_id)
+        `)
+        .eq('order_items.order_id', orderDetail.id)
+        .order('sku');
 
-    setOrderDetail(updatedOrder);
-    setEditableQuantities(newEditableQuantities);
+      if (error) {
+        console.error('❌ Erreur chargement IMEI:', error);
+        return;
+      }
 
-    // Note: Les changements seront sauvegardés dans Supabase lors de la revalidation
+      console.log(`✅ ${imei?.length || 0} IMEI trouvés`);
+      setImeiData(imei || []);
+    } catch (error) {
+      console.error('❌ Erreur chargement IMEI:', error);
+    }
   };
 
   const validateOrder = async () => {
-    if (!orderDetail || orderDetail.items.length === 0) {
-      alert('Aucun produit dans la commande à valider');
-      return;
-    }
+    if (!orderDetail) return;
 
-    setValidating(true);
-    
     try {
-      console.log('🔄 Validation de la commande via API:', params.id);
+      setValidating(true);
+      console.log('✅ Validation commande:', orderDetail.id);
       
-      // Préparer les données pour la validation
-      const orderItems = orderDetail.items.map((item: { sku: string; name: string; quantity: number; unitPrice: number }) => ({
+      const editedItems = orderDetail.items.map((item: any) => ({
         sku: item.sku,
         quantity: editableQuantities[item.sku] || item.quantity,
         product_name: item.name,
-        unit_price: item.unitPrice
+        unit_price: editablePrices[item.sku] || item.unitPrice
       }));
 
-      console.log('📦 Items à valider:', orderItems.length);
-      
-      // Utiliser la nouvelle API optimisée pour la validation
-      const response = await fetch(`/api/orders/${params.id}/validate`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ orderItems })
+      const totalItems = editedItems.reduce((sum, item) => sum + item.quantity, 0);
+      const totalAmount = editedItems.reduce((sum, item) => sum + (item.quantity * item.unit_price), 0);
+
+      const response = await fetch(`/api/orders/${orderDetail.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          items: editedItems,
+          totalItems,
+          totalAmount,
+          status: 'pending_payment'
+        })
       });
 
-      const result = await response.json();
-
       if (!response.ok) {
-        throw new Error(result.error || 'Erreur de validation');
+        throw new Error('Erreur lors de la validation');
       }
 
-      console.log('✅ Validation réussie via API');
-      console.log(`📊 Stock mis à jour pour ${result.stockUpdates?.length || 0} produits`);
+      setOrderDetail(prev => ({
+        ...prev,
+        status: 'pending_payment',
+        status_label: 'En attente de paiement',
+        totalItems,
+        totalAmount
+      }));
 
-      // Mettre à jour le statut local avec le nouveau statut "shipping"
-      const updatedOrder = {
-        ...orderDetail,
-        status: 'shipping',
-        status_label: 'En cours de livraison'
-      };
-      setOrderDetail(updatedOrder);
-
-      // Recharger les données IMEI pour s'assurer qu'elles sont à jour
-      await loadImeiData();
-
-      // Notifier immédiatement les autres pages du changement
-      OrdersUtils.markOrdersAsStale();
-
-      // Mettre à jour localStorage si nécessaire
-      const savedOrders = localStorage.getItem('draftOrders');
-      if (savedOrders) {
-        const draftOrders = JSON.parse(savedOrders);
-        if (draftOrders[params.id]) {
-          draftOrders[params.id] = {
-            ...draftOrders[params.id],
-            status: 'shipping',
-            status_label: 'En cours de livraison'
-          };
-          localStorage.setItem('draftOrders', JSON.stringify(draftOrders));
-        }
-        
-        // Supprimer de la commande active
-        const currentOrder = localStorage.getItem('currentDraftOrder');
-        if (currentOrder === params.id) {
-          localStorage.removeItem('currentDraftOrder');
-        }
-      }
-
-      let successMessage = '✅ Commande validée avec succès !';
-      if (result.stockUpdates && result.stockUpdates.length > 0) {
-        successMessage += `\n📊 Stock mis à jour pour ${result.stockUpdates.length} produits.`;
-      }
-      if (result.warnings && result.warnings.length > 0) {
-        successMessage += '\n⚠️ Quelques avertissements (voir console)';
-        console.warn('Avertissements validation:', result.warnings);
-      }
-      
-      // Améliorer le message de succès avec options
-      const userChoice = window.confirm(
-        successMessage + 
-        '\n\n✅ Commande validée avec succès !\n\n' +
-        'Voulez-vous rester sur cette page pour importer les IMEI et exporter ?\n\n' +
-        '• Cliquez "OK" pour rester ici (recommandé pour IMEI/export)\n' +
-        '• Cliquez "Annuler" pour retourner à la liste des commandes'
-      );
-      
-      if (!userChoice) {
-        // Utiliser l'utilitaire pour rediriger avec refresh
-        OrdersUtils.redirectToOrdersWithRefresh(router);
-      }
-      // Sinon on reste sur la page pour permettre l'export
-
+      alert('✅ Commande validée avec succès !');
     } catch (error) {
       console.error('❌ Erreur validation:', error);
-      
-      let errorMessage = '❌ Erreur lors de la validation de la commande';
-      if (error instanceof Error) {
-        if (error.message.includes('Stock insuffisant')) {
-          errorMessage += '\n\n' + error.message;
-        } else if (error.message.includes('not authenticated')) {
-          errorMessage += '\n\nProblème d\'authentification. Veuillez vous reconnecter.';
-        } else {
-          errorMessage += '\n\n' + error.message;
-        }
-      }
-      
-      alert(errorMessage);
+      alert('❌ Erreur lors de la validation');
     } finally {
       setValidating(false);
     }
   };
 
   const deleteOrder = async () => {
-    if (!orderDetail) {
-      alert('❌ Aucune commande à supprimer');
-      return;
-    }
-
-    // Vérifier que c'est bien un brouillon
-    if (orderDetail.status !== 'draft') {
-      alert('❌ Seules les commandes en brouillon peuvent être supprimées');
-      return;
-    }
-
-    const confirmMessage = `Êtes-vous sûr de vouloir supprimer définitivement la commande "${orderDetail.name}" ?\n\nCette action est irréversible.`;
-    
-    if (window.confirm(confirmMessage)) {
-      try {
-        console.log('🗑️ Début suppression de la commande:', params.id);
-        console.log('📋 Détails commande:', {
-          id: params.id,
-          name: orderDetail.name,
-          status: orderDetail.status,
-          totalItems: orderDetail.totalItems
-        });
-        
-        // Utiliser l'API pour supprimer la commande
-        const response = await fetch(`/api/orders/${params.id}`, {
-          method: 'DELETE',
-          headers: {
-            'Content-Type': 'application/json'
-          }
-        });
-
-        console.log('📡 Réponse HTTP:', response.status, response.statusText);
-
-        if (!response.ok) {
-          let errorMessage = 'Erreur de suppression';
-          try {
-            const result = await response.json();
-            errorMessage = result.error || errorMessage;
-            console.error('❌ Erreur API:', result);
-          } catch (parseError) {
-            console.error('❌ Erreur parsing réponse:', parseError);
-          }
-          throw new Error(errorMessage);
-        }
-
-        const result = await response.json();
-        console.log('✅ Réponse suppression:', result);
-
-        // Nettoyer immédiatement le localStorage
-        console.log('🧹 Nettoyage localStorage...');
-        
-        // Supprimer la commande des draftOrders
-        const savedOrders = localStorage.getItem('draftOrders');
-        if (savedOrders) {
-          try {
-            const draftOrders = JSON.parse(savedOrders);
-            if (draftOrders[params.id]) {
-              delete draftOrders[params.id];
-              localStorage.setItem('draftOrders', JSON.stringify(draftOrders));
-              console.log('✅ Commande supprimée de draftOrders');
-            }
-          } catch (error) {
-            console.warn('⚠️ Erreur nettoyage draftOrders:', error);
-          }
-        }
-
-        // Si c'était la commande active, la supprimer aussi
-        const currentOrder = localStorage.getItem('currentDraftOrder');
-        if (currentOrder === params.id) {
-          localStorage.removeItem('currentDraftOrder');
-          console.log('✅ currentDraftOrder supprimé');
-        }
-
-        // Marquer les commandes comme obsolètes
-        OrdersUtils.markOrdersAsStale();
-
-        alert(`✅ Commande "${orderDetail.name}" supprimée avec succès`);
-        
-        // Rediriger avec refresh forcé
-        console.log('🔄 Redirection vers liste des commandes...');
-        OrdersUtils.redirectToOrdersWithRefresh(router);
-        
-      } catch (error) {
-        console.error('❌ Erreur lors de la suppression:', error);
-        const errorMessage = error instanceof Error ? error.message : 'Erreur inconnue';
-        alert(`❌ Erreur lors de la suppression de la commande:\n\n${errorMessage}`);
-      }
-    }
-  };
-
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case 'completed': return <CheckCircle className="h-5 w-5" />;
-      case 'shipping': return <Truck className="h-5 w-5" />;
-      case 'validated': return <AlertCircle className="h-5 w-5" />;
-      case 'draft': return <Package className="h-5 w-5" />;
-      default: return <Package className="h-5 w-5" />;
-    }
-  };
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'completed': return 'bg-green-100 text-green-800';
-      case 'shipping': return 'bg-blue-100 text-blue-800';
-      case 'pending': return 'bg-yellow-100 text-yellow-800';
-      case 'pending_payment': return 'bg-yellow-100 text-yellow-800';
-      case 'draft': return 'bg-gray-100 text-gray-800';
-      case 'validated': return 'bg-yellow-100 text-yellow-800';
-      default: return 'bg-gray-100 text-gray-800';
-    }
-  };
-
-  const exportToExcel = () => {
     if (!orderDetail) return;
-
-    try {
-      // Import dynamique de xlsx
-      import('xlsx').then((XLSX) => {
-        // Créer les données pour Excel
-        const worksheetData = [
-          // Headers
-          ['SKU', 'Nom du produit', 'Apparence', 'Fonctionnalité', 'Informations', 'Couleur', 'Emballage', 'Quantité', 'Prix unitaire', 'Total'],
-          // Données
-          ...orderDetail.items.map((item: any) => [
-            item.sku,
-            item.name,
-            item.appearance,
-            item.functionality,
-            item.additional_info,
-            item.color,
-            item.boxed,
-            editableQuantities[item.sku] || item.quantity,
-            item.unitPrice,
-            (item.unitPrice * (editableQuantities[item.sku] || item.quantity))
-          ])
-        ];
-
-        // Ajouter une ligne de total
-        const totalQty = orderDetail.items.reduce((sum: number, item: any) => sum + (editableQuantities[item.sku] || item.quantity), 0);
-        const totalAmount = orderDetail.items.reduce((sum: number, item: any) => sum + (item.unitPrice * (editableQuantities[item.sku] || item.quantity)), 0);
-        
-        worksheetData.push(['', '', '', '', '', '', '', 'TOTAL:', totalQty, '', totalAmount.toFixed(2)]);
-
-        // Créer le workbook et worksheet
-        const workbook = XLSX.utils.book_new();
-        const worksheet = XLSX.utils.aoa_to_sheet(worksheetData);
-
-        // Styling des headers (optionnel - certaines versions le supportent)
-        const range = XLSX.utils.decode_range(worksheet['!ref'] || 'A1:K1');
-        for (let col = range.s.c; col <= range.e.c; col++) {
-          const cellAddress = XLSX.utils.encode_cell({ r: 0, c: col });
-          if (!worksheet[cellAddress]) continue;
-          worksheet[cellAddress].s = {
-            font: { bold: true },
-            fill: { fgColor: { rgb: 'CCCCCC' } }
-          };
-        }
-
-        // Ajuster la largeur des colonnes
-        worksheet['!cols'] = [
-          { width: 15 }, // SKU
-          { width: 30 }, // Nom du produit
-          { width: 10 }, // Apparence
-          { width: 10 }, // Fonctionnalité
-          { width: 20 }, // Informations
-          { width: 10 }, // Couleur
-          { width: 15 }, // Emballage
-          { width: 8 },  // Quantité
-          { width: 12 }, // Prix unitaire
-          { width: 12 }  // Total
-        ];
-
-        // Ajouter le worksheet au workbook
-        XLSX.utils.book_append_sheet(workbook, worksheet, 'Commande');
-
-        // Créer le nom de fichier
-        const fileName = `commande_${params.id}_${new Date().toISOString().split('T')[0]}.xlsx`;
-
-        // Télécharger le fichier
-        XLSX.writeFile(workbook, fileName);
-
-        console.log('📊 Export Excel XLSX terminé');
-      });
-    } catch (error) {
-      console.error('❌ Erreur export Excel:', error);
-      alert('❌ Erreur lors de l\'export Excel');
-    }
-  };
-
-  // Fonction pour obtenir la classe CSS de la couleur
-  const getColorClass = (color: string | null) => {
-    if (!color) return 'bg-gray-100 text-gray-800';
     
-    const colorLower = color.toLowerCase();
-    
-    switch (colorLower) {
-      case 'black':
-        return 'bg-gray-900 text-white';
-      case 'white':
-        return 'bg-gray-100 text-gray-900 border border-gray-300';
-      case 'red':
-        return 'bg-red-500 text-white';
-      case 'blue':
-        return 'bg-blue-500 text-white';
-      case 'green':
-        return 'bg-green-500 text-white';
-      case 'yellow':
-        return 'bg-yellow-400 text-gray-900';
-      case 'purple':
-        return 'bg-purple-500 text-white';
-      case 'pink':
-        return 'bg-pink-500 text-white';
-      case 'orange':
-        return 'bg-orange-500 text-white';
-      case 'gray':
-      case 'grey':
-        return 'bg-gray-500 text-white';
-      case 'silver':
-        return 'bg-gray-300 text-gray-900';
-      case 'gold':
-        return 'bg-yellow-600 text-white';
-      case 'rose':
-        return 'bg-rose-500 text-white';
-      case 'coral':
-        return 'bg-coral-500 text-white';
-      case 'midnight':
-        return 'bg-slate-900 text-white';
-      case 'graphite':
-        return 'bg-slate-700 text-white';
-      default:
-        return 'bg-gray-100 text-gray-800';
-    }
-  };
-
-
-
-
-  const handleManualEdit = () => {
-    try {
-      // Sauvegarder l'état original des items avant édition
-      if (orderDetail && orderDetail.items) {
-        const originalItems = orderDetail.items.map((item: any) => ({
-          sku: item.sku,
-          quantity: item.quantity,
-          product_name: item.name,
-          unit_price: item.unitPrice
-        }));
-        setOriginalOrderItems(originalItems);
-        
-        // Initialiser les quantités et prix éditables avec les valeurs actuelles
-        const currentQuantities = orderDetail.items.reduce((acc: any, item: any) => {
-          acc[item.sku] = item.quantity;
-          return acc;
-        }, {});
-        const currentPrices = orderDetail.items.reduce((acc: any, item: any) => {
-          acc[item.sku] = item.unitPrice;
-          return acc;
-        }, {});
-        
-        setEditableQuantities(currentQuantities);
-        setEditablePrices(currentPrices);
-      }
-
-      // Activer le mode édition pour les quantités et prix
-      setIsEditing(true);
-
-      console.log('📝 Mode édition manuel activé pour les prix et quantités');
-
-    } catch (error) {
-      console.error('❌ Erreur édition manuelle:', error);
-      alert('❌ Erreur lors de l\'activation du mode édition');
-    }
-  };
-
-  const revalidateOrder = async () => {
-    if (!orderDetail || !originalOrderItems || originalOrderItems.length === 0) {
-      alert('❌ Impossible de revalider : données originales manquantes');
+    if (!confirm(`Êtes-vous sûr de vouloir supprimer la commande "${orderDetail.name}" ?`)) {
       return;
     }
 
     try {
-      setValidating(true);
+      const response = await fetch(`/api/orders/${orderDetail.id}`, {
+        method: 'DELETE'
+      });
 
-      // Préparer les items édités avec les nouveaux prix et quantités
-      const editedItems = orderDetail.items
-        .filter((item: any) => (editableQuantities[item.sku] || item.quantity) > 0)
-        .map((item: { sku: string; name: string; quantity: number; unitPrice: number }) => ({
-          sku: item.sku,
-          quantity: editableQuantities[item.sku] || item.quantity,
-          product_name: item.name,
-          unit_price: editablePrices[item.sku] || item.unitPrice
-        }));
-
-      console.log('📊 Revalidation avec prix et quantités modifiés:');
-      console.log('- Items originaux:', originalOrderItems.length);
-      console.log('- Items édités:', editedItems.length);
-
-      // Mettre à jour la commande directement sans affecter le catalogue
-      const updatedOrder = {
-        ...orderDetail,
-        status: 'validated',
-        status_label: 'Validée',
-        items: orderDetail.items
-          .filter((item: any) => (editableQuantities[item.sku] || item.quantity) > 0)
-          .map((item: any) => ({
-            ...item,
-            quantity: editableQuantities[item.sku] || item.quantity,
-            unitPrice: editablePrices[item.sku] || item.unitPrice,
-            totalPrice: (editableQuantities[item.sku] || item.quantity) * (editablePrices[item.sku] || item.unitPrice)
-          })),
-        editHistory: {
-          ...orderDetail.editHistory,
-          manualEditCompleted: new Date().toISOString(),
-          originalItems: originalOrderItems,
-          editedItems: editedItems
-        }
-      };
-
-      // Recalculer les totaux
-      const totalItems = editedItems.reduce((sum: number, item: any) => sum + item.quantity, 0);
-      const totalAmount = editedItems.reduce((sum: number, item: any) => sum + (item.unit_price * item.quantity), 0);
-      
-      updatedOrder.totalItems = totalItems;
-      updatedOrder.totalAmount = totalAmount;
-
-      setOrderDetail(updatedOrder);
-
-      // Désactiver le mode édition
-      setIsEditing(false);
-
-      // Sauvegarder en base de données (API call)
-      try {
-        const response = await fetch(`/api/orders/${params.id}`, {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            items: editedItems,
-            totalItems,
-            totalAmount,
-            status: 'validated'
-          }),
-        });
-
-        if (!response.ok) {
-          throw new Error('Erreur lors de la sauvegarde');
-        }
-
-        console.log('✅ Commande mise à jour avec succès');
-        
-        // Notifier les autres pages du changement
-        OrdersUtils.markOrdersAsStale();
-        
-        alert('✅ Modifications sauvegardées avec succès !');
-
-      } catch (saveError) {
-        console.error('❌ Erreur sauvegarde:', saveError);
-        alert('⚠️ Modifications appliquées localement mais erreur de sauvegarde');
-      }
-
-    } catch (error) {
-      console.error('❌ Erreur revalidation:', error);
-      alert('❌ Erreur lors de la revalidation');
-    } finally {
-      setValidating(false);
-    }
-  };
-
-  // Charger les données IMEI pour une commande
-  const loadImeiData = async (orderId?: string) => {
-    const targetOrderId = orderId || orderDetail?.id;
-    if (!targetOrderId) return;
-
-    try {
-      console.log('📱 Chargement des IMEI pour commande via API:', targetOrderId);
-      
-      // Utiliser l'API route avec permissions admin pour contourner les problèmes RLS
-      const response = await fetch(`/api/orders/${targetOrderId}/imei/list`);
-      
       if (!response.ok) {
-        throw new Error(`Erreur ${response.status}: ${response.statusText}`);
+        throw new Error('Erreur lors de la suppression');
       }
 
-      const data = await response.json();
-
-      if (data.error) {
-        throw new Error(data.error);
-      }
-
-      console.log(`✅ ${data.imeiData?.length || 0} IMEI trouvés via API`);
-      setImeiData(data.imeiData || []);
+      alert('✅ Commande supprimée avec succès !');
+      router.push('/admin/orders');
     } catch (error) {
-      console.error('❌ Erreur chargement IMEI via API:', error);
-      setImeiData([]);
+      console.error('❌ Erreur suppression:', error);
+      alert('❌ Erreur lors de la suppression');
     }
   };
 
@@ -825,13 +411,10 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
       await loadOrderDetail();
       await loadImeiData();
       
-      // Notifier les autres pages du changement
-      OrdersUtils.markOrdersAsStale();
-      
       // Afficher la modal de tracking après import réussi
       setShowShippingModal(true);
       
-      alert(`✅ Import IMEI réussi: ${data.summary.totalImei} IMEI ajoutés`);
+      alert(`✅ Import IMEI réussi: ${data.summary?.totalImei || 0} IMEI ajoutés`);
 
     } catch (error) {
       console.error('❌ Erreur import IMEI:', error);
@@ -850,7 +433,7 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
     }
 
     try {
-      console.log('🚚 Mise à jour tracking:', trackingNumber);
+      console.log('🚚 Mise à jour tracking:', trackingNumber, shippingCost);
 
       const response = await fetch(`/api/orders/${orderDetail.id}/shipping`, {
         method: 'PUT',
@@ -859,6 +442,7 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
         },
         body: JSON.stringify({
           tracking_number: trackingNumber,
+          shipping_cost: parseFloat(shippingCost) || 0,
           status: 'shipping'
         }),
       });
@@ -875,19 +459,18 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
 
       console.log('✅ Tracking mis à jour:', data);
       
-      // Mettre à jour l'état local avec le statut reçu de l'API
+      // Mettre à jour l'état local
       setOrderDetail({
         ...orderDetail,
-        status: data.order?.status || 'shipping',
-        status_label: data.order?.status_label || 'En cours de livraison',
-        tracking_number: trackingNumber
+        status: 'shipping',
+        status_label: 'En cours de livraison',
+        tracking_number: trackingNumber,
+        shipping_cost: parseFloat(shippingCost) || 0
       });
-
-      // Notifier les autres pages du changement
-      OrdersUtils.markOrdersAsStale();
 
       setShowShippingModal(false);
       setTrackingNumber('');
+      setShippingCost('');
       
       alert('✅ Informations de livraison mises à jour');
 
@@ -925,12 +508,9 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
 
       setOrderDetail({
         ...orderDetail,
-        status: data.order?.status || 'completed',
-        status_label: data.order?.status_label || 'Terminée'
+        status: 'completed',
+        status_label: 'Terminée'
       });
-
-      // Notifier les autres pages du changement
-      OrdersUtils.markOrdersAsStale();
 
       alert('✅ Commande marquée comme terminée !');
     } catch (error) {
@@ -968,39 +548,55 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
     }
   };
 
-  // Générer une facture PDF
-  const generateInvoicePDF = async () => {
-    if (!orderDetail) return;
-
-    try {
-      console.log('📄 Génération de la facture pour commande:', orderDetail.id);
-      
-      const response = await fetch(`/api/orders/${orderDetail.id}/invoice`, {
-        method: 'GET',
-      });
-      
-      if (!response.ok) {
-        throw new Error(`Erreur ${response.status}: ${response.statusText}`);
-      }
-
-      // Récupérer le HTML de la facture
-      const invoiceHtml = await response.text();
-      
-      // Ouvrir dans une nouvelle fenêtre pour impression
-      const printWindow = window.open('', '_blank');
-      if (printWindow) {
-        printWindow.document.write(invoiceHtml);
-        printWindow.document.close();
-        printWindow.focus();
-      } else {
-        alert('Impossible d\'ouvrir la fenêtre de facture. Veuillez autoriser les pop-ups.');
-      }
-      
-      console.log('✅ Facture générée');
-    } catch (error) {
-      console.error('❌ Erreur génération facture:', error);
-      alert(`❌ ${error instanceof Error ? error.message : 'Erreur génération facture'}`);
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case 'draft': return <Edit className="h-4 w-4" />;
+      case 'pending_payment': return <Clock className="h-4 w-4" />;
+      case 'shipping': return <Truck className="h-4 w-4" />;
+      case 'completed': return <Check className="h-4 w-4" />;
+      case 'cancelled': return <AlertCircle className="h-4 w-4" />;
+      default: return <Clock className="h-4 w-4" />;
     }
+  };
+
+  const getColorClass = (color: string | null) => {
+    if (!color) return 'bg-gray-200 border-gray-300';
+    
+    switch (color.toLowerCase()) {
+      case 'black': return 'bg-gray-800 border-gray-300';
+      case 'white': return 'bg-white border-gray-300';
+      case 'gold': return 'bg-yellow-300 border-yellow-400';
+      case 'silver': return 'bg-gray-300 border-gray-400';
+      case 'blue': return 'bg-blue-500 border-blue-600';
+      case 'red': return 'bg-red-500 border-red-600';
+      case 'green': return 'bg-green-500 border-green-600';
+      case 'purple': return 'bg-purple-500 border-purple-600';
+      case 'pink': return 'bg-pink-500 border-pink-600';
+      case 'grey': case 'gray': return 'bg-gray-400 border-gray-500';
+      default: return 'bg-gray-200 border-gray-300';
+    }
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'draft': return 'bg-gray-100 text-gray-800';
+      case 'pending_payment': return 'bg-yellow-100 text-yellow-800';
+      case 'validated': return 'bg-blue-100 text-blue-800';
+      case 'shipping': return 'bg-purple-100 text-purple-800';
+      case 'completed': return 'bg-green-100 text-green-800';
+      case 'cancelled': return 'bg-red-100 text-red-800';
+      default: return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString('fr-FR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
   };
 
   if (loading) {
@@ -1022,7 +618,7 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
           <h3 className="text-lg font-medium text-gray-900 mb-2">Commande introuvable</h3>
           <p className="text-gray-600 mb-4">Cette commande n'existe pas ou a été supprimée</p>
           <button
-            onClick={() => router.push('/orders')}
+            onClick={() => router.push('/admin/orders')}
             className="bg-gradient-to-r from-dbc-bright-green to-emerald-400 text-dbc-dark-green py-2 px-6 rounded-xl hover:from-emerald-300 hover:to-emerald-500 hover:text-white font-semibold shadow-lg backdrop-blur-sm transition-all duration-200"
           >
             Retour aux commandes
@@ -1032,30 +628,86 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
     );
   }
 
+  const handleManualEdit = () => {
+    setIsEditing(true);
+  };
+
+  const revalidateOrder = async () => {
+    if (!orderDetail) return;
+
+    try {
+      setValidating(true);
+      console.log('🔄 Revalidation commande:', orderDetail.id);
+      
+      const editedItems = orderDetail.items.map((item: any) => ({
+        sku: item.sku,
+        quantity: editableQuantities[item.sku] || item.quantity,
+        product_name: item.name,
+        unit_price: editablePrices[item.sku] || item.unitPrice
+      }));
+
+      const totalItems = editedItems.reduce((sum: number, item: any) => sum + item.quantity, 0);
+      const totalAmount = editedItems.reduce((sum: number, item: any) => sum + (item.quantity * item.unit_price), 0);
+
+      const response = await fetch(`/api/orders/${orderDetail.id}/validate`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          items: editedItems,
+          totalItems,
+          totalAmount,
+          revalidation: true
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('Erreur lors de la revalidation');
+      }
+
+      setOrderDetail((prev: any) => ({
+        ...prev,
+        items: editedItems.map((editedItem, index) => ({
+          ...prev.items[index],
+          quantity: editedItem.quantity,
+          unitPrice: editedItem.unit_price,
+          totalPrice: editedItem.quantity * editedItem.unit_price
+        })),
+        totalItems,
+        totalAmount
+      }));
+
+      setIsEditing(false);
+      alert('✅ Commande revalidée avec succès !');
+    } catch (error) {
+      console.error('❌ Erreur revalidation:', error);
+      alert('❌ Erreur lors de la revalidation');
+    } finally {
+      setValidating(false);
+    }
+  };
+
+  const exportToExcel = () => {
+    // Implementation manquante, ajoutée plus tard
+    console.log('Export Excel');
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-gray-50 to-emerald-50">
-      {/* Header */}
-      <AppHeader 
-        cartItemsCount={0}
-        onCartClick={() => router.push('/orders')}
-        onLogoClick={() => router.push('/catalog')}
-      />
-
       <div className="max-w-[2000px] mx-auto px-8 py-6">
         {/* Navigation */}
         <div className="flex items-center space-x-4 mb-6">
           <button
-            onClick={() => router.push('/catalog')}
+            onClick={() => router.push('/admin/catalog')}
             className="text-dbc-light-green hover:text-dbc-dark-green"
           >
             Catalogue
           </button>
           <ChevronRight className="h-4 w-4 text-gray-400" />
           <button
-            onClick={() => router.push('/orders')}
+            onClick={() => router.push('/admin/orders')}
             className="text-dbc-light-green hover:text-dbc-dark-green"
           >
-            Mes commandes
+            Commandes
           </button>
           <ChevronRight className="h-4 w-4 text-gray-400" />
           <span className="text-gray-900 font-medium">{orderDetail.id}</span>
@@ -1063,7 +715,7 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
 
         {/* Retour */}
         <button
-          onClick={() => router.push('/orders')}
+          onClick={() => router.push('/admin/orders')}
           className="flex items-center space-x-2 text-dbc-light-green hover:text-dbc-dark-green mb-6"
         >
           <ArrowLeft className="h-4 w-4" />
@@ -1077,17 +729,11 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
               <h1 className="text-2xl font-bold text-gray-900 mb-2">
                 {orderDetail.name || `Commande ${orderDetail.id}`}
               </h1>
-              <div className="flex items-center space-x-3">
-                <span className={`inline-flex items-center space-x-2 px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(orderDetail.status)}`}>
+              <div className="flex items-center space-x-4">
+                <span className={`inline-flex items-center space-x-1 px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(orderDetail.status)}`}>
                   {getStatusIcon(orderDetail.status)}
                   <span>{orderDetail.status_label}</span>
                 </span>
-                {orderDetail.tracking_number && (
-                  <div className="flex items-center space-x-2 px-3 py-1 bg-blue-50 border border-blue-200 rounded-full text-sm">
-                    <Truck className="h-4 w-4 text-blue-600" />
-                    <span className="text-blue-700 font-medium">Tracking: {orderDetail.tracking_number}</span>
-                  </div>
-                )}
                 <div className="flex items-center text-sm text-gray-600">
                   <Calendar className="h-4 w-4 mr-1" />
                   Créée le {new Date(orderDetail.createdAt).toLocaleDateString('fr-FR')}
@@ -1138,53 +784,42 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
               {orderDetail.status !== 'draft' && (
                 <>
                   {/* Boutons de progression du workflow */}
-                  {/* Après validation, la commande est en pending_payment et peut recevoir les IMEI */}
-                  {(orderDetail.status === 'pending_payment' || orderDetail.status === 'shipping') && (
+                  {orderDetail.status === 'pending_payment' && (
                     <div className="flex space-x-3">
-                      {!imeiData.length && (
-                        <label className="flex items-center space-x-2 px-4 py-2 bg-white bg-opacity-80 backdrop-blur-sm border border-white border-opacity-30 rounded-xl hover:bg-opacity-90 hover:shadow-lg cursor-pointer text-sm text-gray-700 transition-all duration-200">
-                          <input
-                            type="file"
-                            accept=".xlsx,.xls"
-                            onChange={handleImeiImport}
-                            className="hidden"
-                          />
-                          <Truck className="h-4 w-4" />
-                          <span>Importer IMEI</span>
-                        </label>
-                      )}
-
-                      {/* Les boutons suivants ne s'affichent qu'après import IMEI (statut shipping) */}
-                      {orderDetail.status === 'shipping' && imeiData.length > 0 && !orderDetail.tracking_number && (
-                        <button
-                          onClick={() => setShowShippingModal(true)}
-                          className="flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-xl hover:from-blue-600 hover:to-blue-700 font-semibold shadow-lg backdrop-blur-sm transition-all duration-200 text-sm"
-                        >
-                          <Truck className="h-4 w-4" />
-                          <span>Configurer livraison</span>
-                        </button>
-                      )}
-
-                      {orderDetail.status === 'shipping' && imeiData.length > 0 && (
-                        <button
-                          onClick={markAsCompleted}
-                          className="flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-dbc-bright-green to-emerald-400 text-dbc-dark-green rounded-xl hover:from-emerald-300 hover:to-emerald-500 hover:text-white font-semibold shadow-lg backdrop-blur-sm transition-all duration-200 text-sm"
-                        >
-                          <CheckCircle className="h-4 w-4" />
-                          <span>Marquer comme terminée</span>
-                        </button>
-                      )}
-
-                      {!imeiData.length && !isEditing && orderDetail.status === 'shipping' && (
-                        <button
-                          onClick={handleManualEdit}
-                          className="flex items-center space-x-2 px-4 py-2 bg-white bg-opacity-80 backdrop-blur-sm border border-orange-300 text-orange-600 rounded-xl hover:bg-orange-50 hover:shadow-lg text-sm transition-all duration-200"
-                        >
-                          <Edit className="h-4 w-4" />
-                          <span>Éditer manuellement</span>
-                        </button>
-                      )}
+                      <label className="flex items-center space-x-2 px-4 py-2 bg-white bg-opacity-80 backdrop-blur-sm border border-white border-opacity-30 rounded-xl hover:bg-opacity-90 hover:shadow-lg cursor-pointer text-sm text-gray-700 transition-all duration-200">
+                        <input
+                          type="file"
+                          accept=".xlsx,.xls"
+                          onChange={handleImeiImport}
+                          className="hidden"
+                        />
+                        <Truck className="h-4 w-4" />
+                        <span>Importer IMEI</span>
+                      </label>
                     </div>
+                  )}
+
+                  {orderDetail.status === 'shipping' && (
+                    <div className="flex space-x-3">
+                      <button
+                        onClick={markAsCompleted}
+                        className="flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-dbc-bright-green to-emerald-400 text-dbc-dark-green rounded-xl hover:from-emerald-300 hover:to-emerald-500 hover:text-white font-semibold shadow-lg backdrop-blur-sm transition-all duration-200 text-sm"
+                      >
+                        <CheckCircle className="h-4 w-4" />
+                        <span>Marquer comme terminée</span>
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Bouton d'édition manuelle pour commandes en attente de paiement */}
+                  {orderDetail.status === 'pending_payment' && !isEditing && (
+                    <button
+                      onClick={handleManualEdit}
+                      className="flex items-center space-x-2 px-4 py-2 bg-white bg-opacity-80 backdrop-blur-sm border border-orange-300 text-orange-600 rounded-xl hover:bg-orange-50 hover:shadow-lg text-sm transition-all duration-200"
+                    >
+                      <Edit className="h-4 w-4" />
+                      <span>Éditer manuellement</span>
+                    </button>
                   )}
 
                   {/* Bouton de revalidation si en cours d'édition */}
@@ -1208,9 +843,7 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
                     </button>
                   )}
 
-                  <button 
-                    onClick={generateInvoicePDF}
-                    className="flex items-center space-x-2 px-4 py-2 bg-white bg-opacity-80 backdrop-blur-sm border border-white border-opacity-30 rounded-xl hover:bg-opacity-90 hover:shadow-lg text-gray-700 text-sm transition-all duration-200">
+                  <button className="flex items-center space-x-2 px-4 py-2 bg-white bg-opacity-80 backdrop-blur-sm border border-white border-opacity-30 rounded-xl hover:bg-opacity-90 hover:shadow-lg text-gray-700 text-sm transition-all duration-200">
                     <FileText className="h-4 w-4" />
                     <span>Facture</span>
                   </button>
@@ -1324,22 +957,22 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
                           item.appearance === 'Grade A' ? 'bg-blue-100 text-blue-800' :
                           'bg-yellow-100 text-yellow-800'
                         }`}>
-                          {item.appearance.replace('Grade ', '')}
+                          {item.appearance?.replace('Grade ', '') || 'N/A'}
                         </span>
                       </td>
                       <td className="px-4 py-3">
                         <span className="inline-flex px-2 py-1 text-xs font-medium rounded bg-green-100 text-green-800">
-                          {item.functionality}
+                          {item.functionality || 'N/A'}
                         </span>
                       </td>
                       <td className="px-4 py-3 text-sm text-gray-800">{item.additional_info}</td>
                       <td className="px-4 py-3 text-sm text-gray-900">
                         <div className="flex items-center space-x-2">
                           <div className={`w-3 h-3 rounded-full border ${getColorClass(item.color)}`}></div>
-                          <span>{item.color}</span>
+                          <span>{item.color || 'N/A'}</span>
                         </div>
                       </td>
-                      <td className="px-4 py-3 text-sm text-gray-900">{item.boxed}</td>
+                      <td className="px-4 py-3 text-sm text-gray-900">{item.boxed || 'N/A'}</td>
                       <td className="px-4 py-3 text-center">
                         {(orderDetail.status === 'draft' || orderDetail.status === 'pending_payment' || isEditing) ? (
                           <div className="flex items-center justify-center space-x-1">
@@ -1407,8 +1040,8 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fonctionnalité</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Couleur</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Emballage</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Informations</th>
-                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Prix unitaire</th>
+                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Prix fourn.</th>
+                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Prix DBC</th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
@@ -1439,8 +1072,8 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
                           </div>
                         </td>
                         <td className="px-4 py-3 text-sm text-gray-900">{imei.boxed}</td>
-                        <td className="px-4 py-3 text-sm text-gray-900">{imei.additional_info || '-'}</td>
-                        <td className="px-4 py-3 text-sm text-right font-medium text-gray-900">{imei.dbc_price.toFixed(2)}€</td>
+                        <td className="px-4 py-3 text-sm text-right font-medium text-gray-900">{imei.supplier_price.toFixed(2)}€</td>
+                        <td className="px-4 py-3 text-sm text-right font-semibold text-gray-900">{imei.dbc_price.toFixed(2)}€</td>
                       </tr>
                     ))
                   ) : (
@@ -1500,6 +1133,20 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
                   placeholder="Ex: 1Z999AA1234567890"
                 />
               </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Frais de livraison (optionnel)
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={shippingCost}
+                  onChange={(e) => setShippingCost(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="0.00"
+                />
+              </div>
             </div>
             
             <div className="flex space-x-3 mt-6">
@@ -1521,4 +1168,6 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
       )}
     </div>
   );
-} 
+}
+
+export default withAuth(AdminOrderDetailPage, 'admin'); 

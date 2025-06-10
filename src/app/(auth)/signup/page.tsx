@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import DBCLogo from '../../components/DBCLogo';
+import DBCLogo from '../../../components/DBCLogo';
 import { Eye, EyeOff, Mail, Lock, ArrowRight, Shield, Award, Package, User, Building, Phone, MapPin } from 'lucide-react';
 
 export default function SignupPage() {
@@ -93,7 +93,7 @@ export default function SignupPage() {
       // Afficher le message de succès
       setSuccess(true);
       
-      // Redirection après 2 secondes
+      // Redirection après 2 secondes - les nouveaux comptes sont des clients
       setTimeout(() => {
         router.push('/catalog');
       }, 2000);

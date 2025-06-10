@@ -1,6 +1,8 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
+import { useAuth } from '../lib/auth-context';
+import { DEFAULT_ROUTES } from '../lib/routes-config';
 import DBCLogo from './DBCLogo';
 import { 
   ShoppingCart, 
@@ -28,12 +30,20 @@ export default function AppHeader({
   onLogout 
 }: AppHeaderProps) {
   const router = useRouter();
+  const { user, isAdmin, isClient, signOut } = useAuth();
 
   const handleLogoClick = () => {
     if (onLogoClick) {
       onLogoClick();
     } else {
-      router.push('/catalog');
+      // Rediriger vers la page d'accueil selon le rôle
+      if (isAdmin) {
+        router.push(DEFAULT_ROUTES.admin);
+      } else if (isClient) {
+        router.push(DEFAULT_ROUTES.client);
+      } else {
+        router.push('/');
+      }
     }
   };
 
@@ -41,25 +51,32 @@ export default function AppHeader({
     if (onCartClick) {
       onCartClick();
     } else {
-      router.push('/orders');
+      // Rediriger vers les commandes selon le rôle
+      if (isAdmin) {
+        router.push('/admin/orders');
+      } else if (isClient) {
+        router.push('/orders');
+      }
     }
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     if (onLogout) {
       onLogout();
     } else {
-      // Fonctionnalité de déconnexion par défaut
       if (window.confirm('Êtes-vous sûr de vouloir vous déconnecter ?')) {
         // Nettoyer le localStorage
         localStorage.removeItem('currentDraftOrder');
         localStorage.removeItem('draftOrders');
         
-        // Rediriger vers la page de connexion (à adapter selon votre système d'auth)
-        router.push('/login');
+        // Utiliser la fonction signOut du contexte
+        await signOut();
       }
     }
   };
+
+  // Afficher le nom/rôle de l'utilisateur
+  const displayName = user?.company_name || user?.contact_name || (isAdmin ? 'Admin' : 'Client');
 
   return (
     <header className="bg-dbc-dark-green shadow-sm">
@@ -99,7 +116,8 @@ export default function AppHeader({
             
             <div className="flex items-center space-x-2">
               <User className="h-5 w-5 text-white" />
-              <span className="text-sm text-white">Admin</span>
+              <span className="text-sm text-white">{displayName}</span>
+              {isAdmin && <span className="text-xs text-dbc-bright-green">(Admin)</span>}
             </div>
             
             <button 

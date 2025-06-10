@@ -2,11 +2,12 @@
 
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import AppHeader from '../../components/AppHeader';
-import CatalogUpdateButton from '../../components/CatalogUpdateButton';
-import ClientSelector from '../../components/ClientSelector';
-import { supabase, Product } from '../../lib/supabase';
-import { OrdersUtils } from '../../lib/orders-utils';
+import { useAuth, withAuth } from '../../../../lib/auth-context';
+import AppHeader from '../../../../components/AppHeader';
+import CatalogUpdateButton from '../../../../components/CatalogUpdateButton';
+import ClientSelector from '../../../../components/ClientSelector';
+import { supabase, Product } from '../../../../lib/supabase';
+import { OrdersUtils } from '../../../../lib/orders-utils';
 import { 
   Search, 
   Filter, 
@@ -24,8 +25,6 @@ import {
   Package
 } from 'lucide-react';
 
-// TODO: Supprimer cette ligne une fois l'authentification en place - données temporaires si aucun accès Supabase
-
 // Valeurs de filtres basées sur l'analyse du vrai catalogue
 const MANUFACTURERS = ['Apple', 'Samsung', 'Xiaomi', 'Google', 'Huawei', 'OnePlus', 'Motorola', 'Honor', 'Oppo', 'Realme', 'Sony', 'LG', 'TCL', 'Nokia', 'Vivo', 'Asus', 'ZTE', 'Nothing', 'Gigaset', 'HTC'];
 const APPEARANCES = ['Brand New', 'Grade A+', 'Grade A', 'Grade AB', 'Grade B', 'Grade BC', 'Grade C', 'Grade C+'];
@@ -37,58 +36,10 @@ const ADDITIONAL_INFO_OPTIONS = ['AS-IS', 'Brand New Battery', 'Chip/Crack', 'Di
 type SortField = 'sku' | 'product_name' | 'price_dbc' | 'quantity';
 type SortDirection = 'asc' | 'desc';
 
-export default function CatalogPage() {
+function AdminCatalogPage() {
   const router = useRouter();
+  const { user, signOut } = useAuth();
   
-  // Vérification de l'authentification
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [authLoading, setAuthLoading] = useState(true);
-
-  useEffect(() => {
-    const checkAuth = async () => {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        
-        if (!session) {
-          router.push('/login');
-          return;
-        }
-        
-        // Vérifier le profil utilisateur
-        const { data: profile, error } = await supabase
-          .from('users')
-          .select('id, role, is_active')
-          .eq('id', session.user.id)
-          .single();
-
-        if (error || !profile || !profile.is_active) {
-          console.error('Erreur profil ou compte inactif:', error);
-          await supabase.auth.signOut();
-          router.push('/login');
-          return;
-        }
-
-        setIsAuthenticated(true);
-        setCurrentUserId(session.user.id);
-        
-        // Définir le statut admin
-        setIsAdmin(profile.role === 'admin');
-        
-        // Si pas admin, définir le client comme l'utilisateur connecté
-        if (profile.role !== 'admin') {
-          setSelectedClientId(session.user.id);
-        }
-      } catch (error) {
-        console.error('Erreur vérification auth:', error);
-        router.push('/login');
-      } finally {
-        setAuthLoading(false);
-      }
-    };
-
-    checkAuth();
-  }, [router]);
-
   // États des filtres avec valeurs par défaut
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedManufacturers, setSelectedManufacturers] = useState<string[]>(['Apple']); // Apple par défaut
@@ -148,8 +99,6 @@ export default function CatalogPage() {
   const [newProductsSKUs, setNewProductsSKUs] = useState<string[]>([]);
   const [lastImportDate, setLastImportDate] = useState<Date | null>(null);
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   // États de dropdowns avec timer pour fermeture
   const [dropdownOpen, setDropdownOpen] = useState<{[key: string]: boolean}>({
@@ -1420,22 +1369,7 @@ export default function CatalogPage() {
     };
   }, []);
 
-  // Afficher un loader pendant la vérification d'authentification
-  if (authLoading) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-gray-50 to-emerald-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-dbc-light-green mx-auto mb-4"></div>
-          <p className="text-gray-600">Vérification de l'authentification...</p>
-        </div>
-      </div>
-    );
-  }
-
-  // Ne pas afficher la page si pas authentifié
-  if (!isAuthenticated) {
-    return null;
-  }
+  // Plus besoin de vérifications d'auth car protégé par withAuth
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-gray-50 to-emerald-50">
@@ -1447,8 +1381,8 @@ export default function CatalogPage() {
           totalItems: getTotalCartItems(),
           totalAmount: getTotalCartAmount()
         } : undefined}
-        onCartClick={() => router.push('/orders?refresh=' + Date.now())}
-        onLogoClick={() => router.push('/catalog')}
+        onCartClick={() => router.push('/admin/orders?refresh=' + Date.now())}
+        onLogoClick={() => router.push('/admin')}
       />
 
       {/* Zone d'information pour les commandes en brouillon */}
@@ -2158,11 +2092,11 @@ export default function CatalogPage() {
               <ClientSelector
                 selectedClientId={selectedClientId}
                 onChange={setSelectedClientId}
-                isAdmin={isAdmin}
-                currentUserId={currentUserId || undefined}
+                isAdmin={true}
+                currentUserId={user?.id}
               />
             </div>
-            {isAdmin && !selectedClientId && (
+            {!selectedClientId && (
               <div className="text-red-600 text-sm mb-3 font-medium">
                 ⚠️ Veuillez sélectionner un client avant de créer la commande
               </div>
@@ -2184,7 +2118,7 @@ export default function CatalogPage() {
               </button>
               <button
                 onClick={createNewOrder}
-                disabled={creatingOrder || (isAdmin && !selectedClientId)}
+                disabled={creatingOrder || !selectedClientId}
                 className="px-4 py-2 bg-gradient-to-r from-dbc-bright-green to-emerald-400 text-dbc-dark-green rounded-xl hover:from-emerald-300 hover:to-emerald-500 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed font-semibold shadow-lg backdrop-blur-sm transition-all duration-200"
               >
                 {creatingOrder ? 'Création...' : 'Créer la commande'}
@@ -2196,3 +2130,6 @@ export default function CatalogPage() {
     </div>
   );
 } 
+
+// Export avec protection admin
+export default withAuth(AdminCatalogPage, 'admin');

@@ -76,12 +76,14 @@ export async function GET(
     }
 
     // S'assurer que le status_label est correct et extraire le tracking
+    const { users, ...orderWithoutUsers } = order;
     const correctedOrder = {
-      ...order,
+      ...orderWithoutUsers,
       status_label: getStatusLabel(order.status),
       tracking_number: order.customer_ref?.startsWith('TRACKING:') 
         ? order.customer_ref.replace('TRACKING:', '') 
-        : null
+        : null,
+      client: users // Mapper 'users' vers 'client' pour la compatibilité frontend
     };
 
     return NextResponse.json({

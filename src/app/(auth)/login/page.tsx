@@ -2,8 +2,8 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import DBCLogo from '../../components/DBCLogo';
-import { supabase } from '../../lib/supabase';
+import DBCLogo from '../../../components/DBCLogo';
+import { supabase } from '../../../lib/supabase';
 import { Eye, EyeOff, Mail, Lock, ArrowRight, Shield, TrendingDown, Award, MapPin, Package, Zap } from 'lucide-react';
 
 export default function LoginPage() {
@@ -55,9 +55,10 @@ export default function LoginPage() {
         throw new Error('Votre compte est désactivé. Contactez le support.');
       }
 
-      // Connexion réussie - redirection
+      // Connexion réussie - redirection selon le rôle
       console.log('✅ Connexion réussie:', profile);
-      router.push('/catalog');
+      const redirectPath = profile.role === 'admin' ? '/admin' : '/catalog';
+      router.push(redirectPath);
       
     } catch (error: any) {
       console.error('❌ Erreur de connexion:', error);

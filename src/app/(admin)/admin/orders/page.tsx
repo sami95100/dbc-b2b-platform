@@ -2,11 +2,12 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import AppHeader from '../../components/AppHeader';
-import OrderImportButton from '../../components/OrderImportButton';
-import OrderFilters from '../../components/OrderFilters';
-import { supabase, Product } from '../../lib/supabase';
-import { OrdersUtils } from '../../lib/orders-utils';
+import { useAuth, withAuth } from '../../../../lib/auth-context';
+import AppHeader from '../../../../components/AppHeader';
+import OrderImportButton from '../../../../components/OrderImportButton';
+import OrderFilters from '../../../../components/OrderFilters';
+import { supabase, Product } from '../../../../lib/supabase';
+import { OrdersUtils } from '../../../../lib/orders-utils';
 import {
   User,
   LogOut,
@@ -24,51 +25,10 @@ import {
 
 // Page des commandes - Gestion des commandes client
 
-export default function OrdersPage() {
+function AdminOrdersPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-
-  // Vérification de l'authentification
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [authLoading, setAuthLoading] = useState(true);
-  const [userId, setUserId] = useState<string | null>(null);
-
-  useEffect(() => {
-    const checkAuth = async () => {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-
-        if (!session) {
-          router.push('/login');
-          return;
-        }
-
-        // Vérifier le profil utilisateur
-        const { data: profile, error } = await supabase
-          .from('users')
-          .select('id, role, is_active')
-          .eq('id', session.user.id)
-          .single();
-
-        if (error || !profile || !profile.is_active) {
-          console.error('Erreur profil ou compte inactif:', error);
-          await supabase.auth.signOut();
-          router.push('/login');
-          return;
-        }
-
-        setIsAuthenticated(true);
-        setUserId(session.user.id);
-      } catch (error) {
-        console.error('Erreur vérification auth:', error);
-        router.push('/login');
-      } finally {
-        setAuthLoading(false);
-      }
-    };
-
-    checkAuth();
-  }, [router]);
+  const { user, signOut } = useAuth();
 
   const [statusFilter, setStatusFilter] = useState('all');
   const [orders, setOrders] = useState<any[]>([]);
@@ -89,8 +49,8 @@ export default function OrdersPage() {
   const loadOrders = async (forceRefresh = false) => {
     setLoading(true);
     try {
-      // Attendre que l'userId soit disponible
-      if (!userId) {
+      // Utiliser l'userId du contexte
+      if (!user?.id) {
         console.log('⏳ Attente de l\'userId...');
         return;
       }
@@ -108,7 +68,7 @@ export default function OrdersPage() {
       
       // Construire l'URL avec les filtres
       const urlParams = new URLSearchParams({
-        userId: userId,
+        userId: user.id,
         ...(statusFilter !== 'all' && { status: statusFilter }),
         ...(advancedFilters.client && { client: advancedFilters.client }),
         ...(advancedFilters.dateFrom && { dateFrom: advancedFilters.dateFrom }),
@@ -126,7 +86,7 @@ export default function OrdersPage() {
       const result = await response.json();
 
       console.log('🔍 URL de l\'API appelée:', apiUrl);
-      console.log('�� Réponse brute de l\'API:', result);
+      console.log('💾 Réponse brute de l\'API:', result);
 
       if (!response.ok) {
         console.error('❌ Erreur API orders:', result.error);
@@ -236,10 +196,10 @@ export default function OrdersPage() {
 
   // Fonction pour charger le compte total des commandes
   const loadTotalOrdersCount = async () => {
-    if (!userId) return;
+    if (!user?.id) return;
     
     try {
-      const response = await fetch(`/api/orders?userId=${userId}`);
+      const response = await fetch(`/api/orders?userId=${user.id}`);
       const result = await response.json();
       if (result.success) {
         setTotalOrdersCount(result.count || 0);
@@ -269,15 +229,15 @@ export default function OrdersPage() {
 
   // Charger les commandes et le compte total quand userId est disponible
   useEffect(() => {
-    if (userId) {
+    if (user?.id) {
       loadOrders();
       loadTotalOrdersCount();
     }
-  }, [userId]);
+  }, [user?.id]);
 
   // Recharger quand les filtres changent
   useEffect(() => {
-    if (userId) {
+    if (user?.id) {
       loadOrders();
     }
   }, [statusFilter, advancedFilters]);
@@ -491,7 +451,7 @@ export default function OrdersPage() {
       alert(message.join('\n\n'));
 
       // Rediriger vers les détails de la commande (utiliser l'UUID Supabase)
-      router.push(`/orders/${result.order.id}`);
+      router.push(`/admin/orders/${result.order.id}`);
 
     } else if (result.error) {
       console.error('❌ Erreur import:', result.error);
@@ -525,7 +485,7 @@ export default function OrdersPage() {
   };
 
   // Afficher un loader pendant la vérification d'authentification
-  if (authLoading) {
+  if (!user) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-50 via-gray-50 to-emerald-50 flex items-center justify-center">
         <div className="text-center">
@@ -536,31 +496,26 @@ export default function OrdersPage() {
     );
   }
 
-  // Ne pas afficher la page si pas authentifié
-  if (!isAuthenticated) {
-    return null;
-  }
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-gray-50 to-emerald-50">
       {/* Header */}
       <AppHeader
         cartItemsCount={0}
-        onCartClick={() => router.push('/orders')}
-        onLogoClick={() => router.push('/catalog')}
+        onCartClick={() => router.push('/admin/orders')}
+        onLogoClick={() => router.push('/admin')}
       />
 
       <div className="max-w-[2000px] mx-auto px-8 py-6">
         {/* Navigation */}
         <div className="flex items-center space-x-4 mb-6">
           <button
-            onClick={() => router.push('/catalog')}
+            onClick={() => router.push('/admin')}
             className="text-dbc-light-green hover:text-dbc-dark-green"
           >
-            Catalogue
+            Admin
           </button>
           <ChevronRight className="h-4 w-4 text-gray-400" />
-          <span className="text-gray-900 font-medium">Mes commandes</span>
+          <span className="text-gray-900 font-medium">Commandes clients</span>
         </div>
 
         {/* Composant de filtres avancés */}
@@ -670,7 +625,7 @@ export default function OrdersPage() {
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center space-x-2">
                         <button
-                          onClick={() => router.push(`/orders/${order.id}`)}
+                          onClick={() => router.push(`/admin/orders/${order.id}`)}
                           className="px-3 py-1 bg-gradient-to-r from-dbc-bright-green to-emerald-400 text-dbc-dark-green hover:from-emerald-300 hover:to-emerald-500 hover:text-white rounded-lg text-sm font-semibold transition-all duration-200 shadow-sm backdrop-blur-sm"
                         >
                           Voir détails →
@@ -699,7 +654,7 @@ export default function OrdersPage() {
             <h3 className="text-lg font-medium text-gray-900 mb-2">Aucune commande trouvée</h3>
             <p className="text-gray-600 mb-4">Vous n'avez pas encore passé de commande</p>
             <button
-              onClick={() => router.push('/catalog')}
+              onClick={() => router.push('/admin/catalog')}
               className="bg-gradient-to-r from-dbc-bright-green to-emerald-400 text-dbc-dark-green py-2 px-6 rounded-xl hover:from-emerald-300 hover:to-emerald-500 hover:text-white font-semibold shadow-lg backdrop-blur-sm transition-all duration-200"
             >
               Voir le catalogue
@@ -710,3 +665,5 @@ export default function OrdersPage() {
     </div>
   );
 }
+
+export default withAuth(AdminOrdersPage, 'admin');
