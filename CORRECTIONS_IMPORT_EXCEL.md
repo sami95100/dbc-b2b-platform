@@ -126,8 +126,48 @@ SKU, Id, Product Name, Item Identifier, Appearance, Functionality, Boxed, Color,
 - Les informations produit (apparence, fonctionnalité) sont **systématiquement** affichées
 - La base de code est **nettoyée** des fichiers obsolètes
 
+### ✅ 6. Optimisation de la méthode voisin et gestion des marges négatives
+
+**Problème** :
+
+- La méthode voisin fallback sur le nom du produit seul, risquant de récupérer des prix trop élevés pour des produits similaires
+- Pas de vérification de marge négative lors de l'utilisation du prix voisin
+
+**Solution** :
+
+- **Suppression du fallback sur le nom seul** : La recherche ne se fait plus que sur :
+  1. product_name + appearance + functionality + vat_type (exact)
+  2. product_name + appearance + functionality (sans vat_type)
+  3. Fallback direct sur calcul de marge standard
+- **Ajout de vérification de marge automatique** : Si un produit voisin est trouvé, vérification que la marge n'est pas négative
+- **Correction automatique des marges négatives** : Si marge < 0, application automatique de +11% sur le prix fournisseur
+
+**Nouvelles fonctions ajoutées** :
+
+```typescript
+// Nouvelle fonction pour vérifier et corriger les marges négatives
+function calculateDbcPriceWithMarginCheck(
+  supplierPrice: number,
+  neighborPrice: number,
+  vatType?: string
+): number;
+```
+
+**Fichiers modifiés** :
+
+- `src/app/api/orders/import/route.ts`
+- `README_IMPORT_EXCEL.md`
+- `docs/IMPORT_EXCEL_GUIDE.md`
+
+**Bénéfices** :
+
+- ✅ Évite les prix trop élevés dus à des correspondances approximatives
+- ✅ Garantit des marges positives même avec des prix voisins
+- ✅ Sécurise le processus de pricing automatique
+- ✅ Améliore la fiabilité de la méthode voisin
+
 ---
 
 **Status** : ✅ Toutes les corrections appliquées et testées  
-**Version** : 1.1  
+**Version** : 1.2  
 **Date** : Décembre 2024

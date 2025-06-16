@@ -55,6 +55,26 @@ function calculateDbcPrice(originalPrice: number, vatType?: string): number {
   return Math.round(originalPrice * multiplier * 100) / 100; // Arrondir à 2 décimales
 }
 
+// Nouvelle fonction pour vérifier et corriger les marges négatives
+function calculateDbcPriceWithMarginCheck(supplierPrice: number, neighborPrice: number, vatType?: string): number {
+  if (!supplierPrice || supplierPrice <= 0) return neighborPrice;
+  
+  // Calculer la marge : (prix_voisin - prix_fournisseur) / prix_fournisseur
+  const margin = (neighborPrice - supplierPrice) / supplierPrice;
+  
+  console.log(`💰 Vérification marge: Prix fournisseur: ${supplierPrice}€, Prix voisin: ${neighborPrice}€, Marge: ${(margin * 100).toFixed(2)}%`);
+  
+  // Si la marge est négative, appliquer automatiquement 11% au prix d'achat fournisseur
+  if (margin < 0) {
+    const correctedPrice = Math.round(supplierPrice * 1.11 * 100) / 100;
+    console.log(`⚠️ Marge négative détectée (${(margin * 100).toFixed(2)}%), application de 11% sur le prix fournisseur: ${correctedPrice}€`);
+    return correctedPrice;
+  }
+  
+  // Sinon, utiliser le prix du voisin
+  return neighborPrice;
+}
+
 // Fonction améliorée pour trouver un produit "voisin" avec les mêmes caractéristiques
 async function findNeighborProduct(productName: string, appearance?: string, functionality?: string, vatType?: string): Promise<NeighborProduct | null> {
   try {
@@ -110,19 +130,9 @@ async function findNeighborProduct(productName: string, appearance?: string, fun
       }
     }
     
-    // Recherche avec seulement le nom du produit
-    const { data: nameOnlyMatch } = await supabaseAdmin
-      .from('products')
-      .select('sku, product_name, price_dbc, vat_type, appearance, functionality, color, boxed')
-      .eq('product_name', productName)
-      .gt('price_dbc', 0)
-      .eq('is_active', true)
-      .limit(1);
-      
-    if (nameOnlyMatch && nameOnlyMatch.length > 0) {
-      console.log(`✅ Produit voisin trouvé (nom seulement):`, nameOnlyMatch[0]);
-      return nameOnlyMatch[0];
-    }
+    // SUPPRIMÉ: Recherche avec seulement le nom du produit
+    // Cette étape est supprimée pour éviter les prix trop élevés
+    // car les produits avec seulement le nom similaire peuvent avoir des prix très différents
     
     console.log(`❌ Aucun produit voisin trouvé pour: ${productName}`);
     return null;
@@ -536,6 +546,17 @@ export async function POST(request: NextRequest) {
         const catalogStock = catalogProduct.quantity;
         const requiredQuantity = excelProduct.quantity;
         
+        // Vérifier la marge pour les produits existants aussi
+        let finalDbcPrice = dbcPrice;
+        let priceStatus = 'Prix catalogue';
+        
+        if (supplierPrice > 0) {
+          finalDbcPrice = calculateDbcPriceWithMarginCheck(supplierPrice, dbcPrice, catalogProduct.vat_type);
+          if (finalDbcPrice !== dbcPrice) {
+            priceStatus = 'Prix corrigé (marge négative détectée)';
+          }
+        }
+
         if (catalogStock >= requiredQuantity) {
           // Stock suffisant
           productsExistingWithGoodStock.push({
@@ -543,13 +564,14 @@ export async function POST(request: NextRequest) {
             product_name: catalogProduct.product_name,
             quantity: requiredQuantity,
             supplier_price: supplierPrice,
-            dbc_price: dbcPrice,
+            dbc_price: finalDbcPrice,
             vat_type: catalogProduct.vat_type || 'Non marginal',
             catalog_stock: catalogStock,
             appearance: catalogProduct.appearance || 'Grade A',
             functionality: catalogProduct.functionality || '100%',
             color: catalogProduct.color || null,
-            status: 'Stock suffisant'
+            status: 'Stock suffisant',
+            price_source: priceStatus
           });
         } else {
           // Stock insuffisant - à mettre à jour
@@ -558,14 +580,15 @@ export async function POST(request: NextRequest) {
             product_name: catalogProduct.product_name,
             quantity: requiredQuantity,
             supplier_price: supplierPrice,
-            dbc_price: dbcPrice,
+            dbc_price: finalDbcPrice,
             vat_type: catalogProduct.vat_type || 'Non marginal',
             catalog_stock: catalogStock,
             new_stock: requiredQuantity,
             appearance: catalogProduct.appearance || 'Grade A',
             functionality: catalogProduct.functionality || '100%',
             color: catalogProduct.color || null,
-            status: `Stock à mettre à jour (${catalogStock} → ${requiredQuantity})`
+            status: `Stock à mettre à jour (${catalogStock} → ${requiredQuantity})`,
+            price_source: priceStatus
           });
         }
       } else {
@@ -590,9 +613,11 @@ export async function POST(request: NextRequest) {
         );
         
         if (neighborProduct) {
-          // Utiliser le prix du produit voisin
-          dbcPrice = neighborProduct.price_dbc;
-          priceSource = `Prix voisin (${neighborProduct.sku})`;
+          // Vérifier la marge et corriger si nécessaire
+          dbcPrice = calculateDbcPriceWithMarginCheck(supplierPrice, neighborProduct.price_dbc, neighborProduct.vat_type);
+          priceSource = dbcPrice === neighborProduct.price_dbc 
+            ? `Prix voisin (${neighborProduct.sku})` 
+            : `Prix corrigé (marge négative détectée)`;
           
           // Utiliser les caractéristiques du voisin si pas spécifiées dans l'Excel
           if (!excelProduct.vat_type && neighborProduct.vat_type) {
@@ -611,7 +636,7 @@ export async function POST(request: NextRequest) {
             finalBoxed = neighborProduct.boxed;
           }
           
-          console.log(`✅ Produit voisin trouvé pour ${excelProduct.sku}: ${neighborProduct.sku} (prix: ${dbcPrice}€)`);
+          console.log(`✅ Produit voisin trouvé pour ${excelProduct.sku}: ${neighborProduct.sku} (prix final: ${dbcPrice}€)`);
         } else {
           // Aucun voisin trouvé, calculer le prix avec la marge standard
           if (supplierPrice > 0) {

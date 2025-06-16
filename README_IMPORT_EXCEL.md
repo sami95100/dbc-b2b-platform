@@ -37,9 +37,10 @@ Permettre l'import de commandes passées sur le site du fournisseur via un fichi
 // Stratégie de recherche par ordre de priorité :
 1. product_name + appearance + functionality + vat_type (exact)
 2. product_name + appearance + functionality (sans vat_type)
-3. product_name seul
-4. Fallback : calcul marge standard
+3. Fallback : calcul marge standard (pas de recherche par nom seul)
 ```
+
+**⚠️ Important :** La recherche ne fallback plus sur le nom du produit seul pour éviter les prix trop élevés. Si aucun produit voisin n'est trouvé avec appearance + functionality, on passe directement au calcul de marge standard.
 
 #### Catégorisation des produits
 

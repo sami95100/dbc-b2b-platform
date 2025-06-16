@@ -18,8 +18,9 @@ Le système utilise une méthode intelligente pour déterminer les prix des nouv
 
 - **Priorité 1** : Cherche un produit avec le même nom, apparence, fonctionnalité et VAT
 - **Priorité 2** : Cherche un produit avec le même nom, apparence et fonctionnalité (sans VAT)
-- **Priorité 3** : Cherche un produit avec le même nom uniquement
 - **Fallback** : Applique la marge DBC standard (+11% non marginal, +1% marginal)
+
+**⚠️ Modification récente :** La recherche ne fallback plus sur le nom du produit seul pour éviter les prix trop élevés.
 
 ### 3. **Interface de validation en 3 tableaux**
 
@@ -107,7 +108,10 @@ Le système recherche un produit similaire selon ces critères :
 3. **Fonctionnalité** (100%, 90%, etc.)
 4. **Type VAT** (marginal/non marginal)
 
-Si trouvé → utilise le prix DBC du produit voisin
+Si trouvé → **vérification automatique de la marge** :
+
+- Si marge négative (prix voisin < prix fournisseur) → applique automatiquement +11% sur le prix fournisseur
+- Sinon → utilise le prix DBC du produit voisin
 
 ### Marge standard (fallback)
 

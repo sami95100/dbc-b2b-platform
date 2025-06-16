@@ -35,6 +35,7 @@ function AdminOrdersPage() {
   const [totalOrdersCount, setTotalOrdersCount] = useState(0); // Comptage total des commandes
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true); // Démarrer avec loading=true
+  const [orderMargins, setOrderMargins] = useState<Record<string, number>>({}); // Cache des marges par commande
   const [advancedFilters, setAdvancedFilters] = useState({
     client: '',
     dateFrom: '',
@@ -45,7 +46,48 @@ function AdminOrdersPage() {
     amountMax: ''
   });
 
-  // Fonction pour charger les commandes via l'API  
+    // Fonction pour charger les marges des commandes
+  const loadOrderMargins = async (orderIds: string[]) => {
+    if (orderIds.length === 0) return;
+
+    try {
+      console.log('📊 Chargement marges pour', orderIds.length, 'commandes...');
+      
+      // Charger les marges en parallèle pour toutes les commandes
+      const marginPromises = orderIds.map(async (orderId) => {
+        try {
+          const { data: margin, error } = await supabase
+            .rpc('get_order_margin_by_id', { order_uuid: orderId });
+          
+          if (error) {
+            console.error(`❌ Erreur calcul marge commande ${orderId}:`, error);
+            return { orderId, margin: 0 };
+          }
+          
+          return { orderId, margin: margin || 0 };
+        } catch (error) {
+          console.error(`❌ Erreur calcul marge commande ${orderId}:`, error);
+          return { orderId, margin: 0 };
+        }
+      });
+
+      const marginResults = await Promise.all(marginPromises);
+      
+      // Convertir en objet pour un accès rapide
+      const marginsMap = marginResults.reduce((acc, { orderId, margin }) => {
+        acc[orderId] = margin;
+        return acc;
+      }, {} as Record<string, number>);
+
+      console.log('✅ Marges chargées:', marginsMap);
+      setOrderMargins(marginsMap);
+      
+    } catch (error) {
+      console.error('❌ Erreur chargement marges:', error);
+    }
+  };
+
+  // Fonction pour charger les commandes via l'API
   const loadOrders = async (forceRefresh = false) => {
     setLoading(true);
     try {
@@ -143,6 +185,12 @@ function AdminOrdersPage() {
       
       setOrders(allOrders);
       console.log('✅ State mis à jour avec', allOrders.length, 'commandes');
+
+      // Charger les marges pour toutes les commandes
+      const orderIds = allOrders.map((order: any) => order.id);
+      if (orderIds.length > 0) {
+        loadOrderMargins(orderIds);
+      }
 
     } catch (error) {
       console.error('❌ Erreur chargement commandes:', error);
@@ -565,6 +613,9 @@ function AdminOrdersPage() {
                     Montant total
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Marge
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Actions
                   </th>
                 </tr>
@@ -620,6 +671,12 @@ function AdminOrdersPage() {
                       <div className="flex items-center text-sm font-semibold text-gray-900">
                         <Euro className="h-4 w-4 mr-1 text-gray-400" />
                         {order.totalAmount.toFixed(2)}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="flex items-center text-sm font-semibold text-green-600">
+                        <Euro className="h-4 w-4 mr-1 text-green-400" />
+                        {orderMargins[order.id] !== undefined ? orderMargins[order.id].toFixed(2) : '...'}
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">

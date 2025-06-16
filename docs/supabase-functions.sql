@@ -86,3 +86,24 @@ AS $$
   INNER JOIN orders o ON oi.order_id = o.id
   WHERE o.status = 'completed';
 $$; 
+
+-- 4. Fonction pour calculer la marge d'une commande spécifique par son ID
+CREATE OR REPLACE FUNCTION get_order_margin_by_id(order_uuid UUID)
+RETURNS NUMERIC
+LANGUAGE SQL
+STABLE
+AS $$
+  SELECT COALESCE(SUM(
+    CASE 
+      WHEN oimei.dbc_price IS NOT NULL AND oimei.supplier_price IS NOT NULL 
+      THEN oimei.dbc_price - oimei.supplier_price 
+      ELSE 0 
+    END
+  ), 0) as order_margin
+  FROM order_item_imei oimei
+  INNER JOIN order_items oi ON oimei.order_item_id = oi.id
+  INNER JOIN orders o ON oi.order_id = o.id
+  WHERE o.id = order_uuid
+    AND oimei.dbc_price IS NOT NULL 
+    AND oimei.supplier_price IS NOT NULL;
+$$; 
