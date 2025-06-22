@@ -32,10 +32,11 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Configuration CORS
+# Configuration CORS pour production et développement
+cors_origins = os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],  # Frontend Next.js
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
