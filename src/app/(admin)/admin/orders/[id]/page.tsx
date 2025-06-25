@@ -320,8 +320,8 @@ function AdminOrderDetailPage() {
         unit_price: editablePrices[item.sku] || item.unitPrice
       }));
 
-      const totalItems = editedItems.reduce((sum, item) => sum + item.quantity, 0);
-      const totalAmount = editedItems.reduce((sum, item) => sum + (item.quantity * item.unit_price), 0);
+      const totalItems = editedItems.reduce((sum: number, item: any) => sum + item.quantity, 0);
+      const totalAmount = editedItems.reduce((sum: number, item: any) => sum + (item.quantity * item.unit_price), 0);
 
       const response = await fetch(`/api/orders/${orderDetail.id}`, {
         method: 'PUT',
@@ -338,7 +338,7 @@ function AdminOrderDetailPage() {
         throw new Error('Erreur lors de la validation');
       }
 
-      setOrderDetail(prev => ({
+      setOrderDetail((prev: any) => ({
         ...prev,
         status: 'pending_payment',
         status_label: 'En attente de paiement',
@@ -666,7 +666,7 @@ function AdminOrderDetailPage() {
 
       setOrderDetail((prev: any) => ({
         ...prev,
-        items: editedItems.map((editedItem, index) => ({
+        items: editedItems.map((editedItem: any, index: number) => ({
           ...prev.items[index],
           quantity: editedItem.quantity,
           unitPrice: editedItem.unit_price,

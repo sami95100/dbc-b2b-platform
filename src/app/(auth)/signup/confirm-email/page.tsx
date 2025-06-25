@@ -1,10 +1,11 @@
 'use client';
 
 import { useSearchParams } from 'next/navigation';
-import DBCLogo from '@/components/DBCLogo';
+import DBCLogo from '@/components/DBCLogo'; // Import absolu corrigé
 import { Mail, CheckCircle, ArrowRight } from 'lucide-react';
+import { Suspense } from 'react';
 
-export default function ConfirmEmailPage() {
+function ConfirmEmailContent() {
   const searchParams = useSearchParams();
   const email = searchParams.get('email') || '';
 
@@ -98,5 +99,13 @@ export default function ConfirmEmailPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function ConfirmEmailPage() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <ConfirmEmailContent />
+    </Suspense>
   );
 } 
