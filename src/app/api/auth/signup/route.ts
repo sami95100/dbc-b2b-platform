@@ -1,44 +1,36 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabaseAdmin } from '../../../../lib/supabase';
+import { createClient } from '@supabase/supabase-js';
 
-// Fonction helper pour vérifier supabaseAdmin
-function getSupabaseAdmin() {
-  // Debugging avancé
-  console.log('🔧 Debug getSupabaseAdmin:');
-  console.log(`  - supabaseAdmin: ${supabaseAdmin ? 'Défini' : 'NULL'}`);
-  console.log(`  - SUPABASE_SERVICE_ROLE_KEY: ${process.env.SUPABASE_SERVICE_ROLE_KEY ? 'Défini' : 'MANQUANT'}`);
+// Créer le client admin directement dans la fonction
+function createSupabaseAdminClient() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   
-  if (!supabaseAdmin) {
-    // Essayer de créer le client directement
-    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    
-    console.log('🔧 Tentative création client direct:');
-    console.log(`  - URL: ${url}`);
-    console.log(`  - Service Key: ${serviceKey ? `${serviceKey.substring(0, 20)}...` : 'MANQUANT'}`);
-    
-    if (serviceKey && url) {
-      const { createClient } = require('@supabase/supabase-js');
-      const directClient = createClient(url, serviceKey, {
-        auth: {
-          autoRefreshToken: false,
-          persistSession: false
-        }
-      });
-      console.log(`  - Client direct créé: ${directClient ? 'OUI' : 'NON'}`);
-      return directClient;
-    }
-    
+  console.log('🔧 Création client Supabase Admin:');
+  console.log(`  - URL: ${supabaseUrl}`);
+  console.log(`  - Service Key présente: ${supabaseServiceKey ? 'OUI' : 'NON'}`);
+  
+  if (!supabaseServiceKey) {
     throw new Error('Configuration Supabase admin manquante - vérifiez SUPABASE_SERVICE_ROLE_KEY dans .env.local');
   }
-  return supabaseAdmin;
+  
+  if (!supabaseUrl) {
+    throw new Error('Configuration Supabase URL manquante - vérifiez NEXT_PUBLIC_SUPABASE_URL dans .env.local');
+  }
+
+  return createClient(supabaseUrl, supabaseServiceKey, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false
+    }
+  });
 }
 
 export async function POST(request: NextRequest) {
   try {
     console.log('📝 Début inscription utilisateur...');
     
-    const admin = getSupabaseAdmin();
+    const admin = createSupabaseAdminClient();
     const body = await request.json();
     
     const {
