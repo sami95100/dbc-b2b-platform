@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import DBCLogo from '../../../components/DBCLogo';
+import DBCLogo from '@/components/DBCLogo';
 import { Eye, EyeOff, Mail, Lock, ArrowRight, Shield, Award, Package, User, Building, Phone, MapPin } from 'lucide-react';
 
 export default function SignupPage() {

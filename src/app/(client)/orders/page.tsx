@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth, withAuth } from '../../../lib/auth-context';
-import AppHeader from '../../../components/AppHeader';
+import AppHeader from '@/components/AppHeader';
 import { supabase, Product } from '../../../lib/supabase';
 import { OrdersUtils } from '../../../lib/orders-utils';
 import {

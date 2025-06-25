@@ -3,9 +3,9 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth, withAuth } from '../../../../lib/auth-context';
-import AppHeader from '../../../../components/AppHeader';
-import CatalogUpdateButton from '../../../../components/CatalogUpdateButton';
-import ClientSelector from '../../../../components/ClientSelector';
+import AppHeader from '@/components/AppHeader';
+import CatalogUpdateButton from '@/components/CatalogUpdateButton';
+import ClientSelector from '@/components/ClientSelector';
 import { supabase, Product } from '../../../../lib/supabase';
 import { OrdersUtils } from '../../../../lib/orders-utils';
 import { 

@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import DBCLogo from '../../../components/DBCLogo';
+import DBCLogo from '@/components/DBCLogo';
 import { supabase } from '../../../lib/supabase';
 import { Eye, EyeOff, Mail, Lock, ArrowRight, Shield, TrendingDown, Award, MapPin, Package, Zap } from 'lucide-react';
 

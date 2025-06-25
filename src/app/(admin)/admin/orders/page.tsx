@@ -3,9 +3,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth, withAuth } from '../../../../lib/auth-context';
-import AppHeader from '../../../../components/AppHeader';
-import OrderImportButton from '../../../../components/OrderImportButton';
-import OrderFilters from '../../../../components/OrderFilters';
+import AppHeader from '@/components/AppHeader';
+import OrderImportButton from '@/components/OrderImportButton';
+import OrderFilters from '@/components/OrderFilters';
 import { supabase, Product } from '../../../../lib/supabase';
 import { OrdersUtils } from '../../../../lib/orders-utils';
 import {

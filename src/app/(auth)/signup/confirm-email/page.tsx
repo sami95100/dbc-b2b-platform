@@ -1,7 +1,7 @@
 'use client';
 
 import { useSearchParams } from 'next/navigation';
-import DBCLogo from '../../../components/DBCLogo';
+import DBCLogo from '@/components/DBCLogo';
 import { Mail, CheckCircle, ArrowRight } from 'lucide-react';
 
 export default function ConfirmEmailPage() {
