@@ -208,12 +208,12 @@ export default function SignupPage() {
                     Email professionnel *
                   </label>
                   <div className="relative">
-                    <Mail className="absolute left-3 top-3 h-5 w-5 text-gray-400" />
+                    <Mail className="absolute left-3 top-3 h-5 w-5 text-gray-500" />
                     <input
                       type="email"
                       value={formData.email}
                       onChange={(e) => handleInputChange('email', e.target.value)}
-                      className={`w-full pl-10 pr-4 py-3 border rounded-lg focus:ring-2 focus:ring-dbc-bright-green focus:border-transparent ${
+                      className={`w-full pl-10 pr-4 py-3 border rounded-lg focus:ring-2 focus:ring-dbc-bright-green focus:border-transparent placeholder-gray-500 ${
                         errors.email ? 'border-red-300' : 'border-gray-300'
                       }`}
                       placeholder="contact@entreprise.com"
@@ -228,12 +228,12 @@ export default function SignupPage() {
                     Nom de la société *
                   </label>
                   <div className="relative">
-                    <Building className="absolute left-3 top-3 h-5 w-5 text-gray-400" />
+                    <Building className="absolute left-3 top-3 h-5 w-5 text-gray-500" />
                     <input
                       type="text"
                       value={formData.company_name}
                       onChange={(e) => handleInputChange('company_name', e.target.value)}
-                      className={`w-full pl-10 pr-4 py-3 border rounded-lg focus:ring-2 focus:ring-dbc-bright-green focus:border-transparent ${
+                      className={`w-full pl-10 pr-4 py-3 border rounded-lg focus:ring-2 focus:ring-dbc-bright-green focus:border-transparent placeholder-gray-500 ${
                         errors.company_name ? 'border-red-300' : 'border-gray-300'
                       }`}
                       placeholder="Ma Société SARL"
@@ -248,12 +248,12 @@ export default function SignupPage() {
                     Nom du contact *
                   </label>
                   <div className="relative">
-                    <User className="absolute left-3 top-3 h-5 w-5 text-gray-400" />
+                    <User className="absolute left-3 top-3 h-5 w-5 text-gray-500" />
                     <input
                       type="text"
                       value={formData.contact_name}
                       onChange={(e) => handleInputChange('contact_name', e.target.value)}
-                      className={`w-full pl-10 pr-4 py-3 border rounded-lg focus:ring-2 focus:ring-dbc-bright-green focus:border-transparent ${
+                      className={`w-full pl-10 pr-4 py-3 border rounded-lg focus:ring-2 focus:ring-dbc-bright-green focus:border-transparent placeholder-gray-500 ${
                         errors.contact_name ? 'border-red-300' : 'border-gray-300'
                       }`}
                       placeholder="Jean Dupont"
@@ -268,12 +268,12 @@ export default function SignupPage() {
                     Téléphone *
                   </label>
                   <div className="relative">
-                    <Phone className="absolute left-3 top-3 h-5 w-5 text-gray-400" />
+                    <Phone className="absolute left-3 top-3 h-5 w-5 text-gray-500" />
                     <input
                       type="tel"
                       value={formData.phone}
                       onChange={(e) => handleInputChange('phone', e.target.value)}
-                      className={`w-full pl-10 pr-4 py-3 border rounded-lg focus:ring-2 focus:ring-dbc-bright-green focus:border-transparent ${
+                      className={`w-full pl-10 pr-4 py-3 border rounded-lg focus:ring-2 focus:ring-dbc-bright-green focus:border-transparent placeholder-gray-500 ${
                         errors.phone ? 'border-red-300' : 'border-gray-300'
                       }`}
                       placeholder="+33 1 23 45 67 89"
@@ -288,12 +288,12 @@ export default function SignupPage() {
                     Adresse (optionnel)
                   </label>
                   <div className="relative">
-                    <MapPin className="absolute left-3 top-3 h-5 w-5 text-gray-400" />
+                    <MapPin className="absolute left-3 top-3 h-5 w-5 text-gray-500" />
                     <textarea
                       value={formData.address}
                       onChange={(e) => handleInputChange('address', e.target.value)}
                       rows={2}
-                      className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-dbc-bright-green focus:border-transparent"
+                      className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-dbc-bright-green focus:border-transparent placeholder-gray-500"
                       placeholder="123 Rue de la Paix, 75001 Paris"
                     />
                   </div>
@@ -305,12 +305,12 @@ export default function SignupPage() {
                     Mot de passe *
                   </label>
                   <div className="relative">
-                    <Lock className="absolute left-3 top-3 h-5 w-5 text-gray-400" />
+                    <Lock className="absolute left-3 top-3 h-5 w-5 text-gray-500" />
                     <input
                       type={showPassword ? 'text' : 'password'}
                       value={formData.password}
                       onChange={(e) => handleInputChange('password', e.target.value)}
-                      className={`w-full pl-10 pr-12 py-3 border rounded-lg focus:ring-2 focus:ring-dbc-bright-green focus:border-transparent ${
+                      className={`w-full pl-10 pr-12 py-3 border rounded-lg focus:ring-2 focus:ring-dbc-bright-green focus:border-transparent placeholder-gray-500 ${
                         errors.password ? 'border-red-300' : 'border-gray-300'
                       }`}
                       placeholder="Minimum 8 caractères"
@@ -318,7 +318,7 @@ export default function SignupPage() {
                     <button
                       type="button"
                       onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3 top-3 text-gray-400 hover:text-gray-600"
+                      className="absolute right-3 top-3 text-gray-500 hover:text-gray-700"
                     >
                       {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
                     </button>
@@ -332,12 +332,12 @@ export default function SignupPage() {
                     Confirmer le mot de passe *
                   </label>
                   <div className="relative">
-                    <Lock className="absolute left-3 top-3 h-5 w-5 text-gray-400" />
+                    <Lock className="absolute left-3 top-3 h-5 w-5 text-gray-500" />
                     <input
                       type={showConfirmPassword ? 'text' : 'password'}
                       value={formData.confirmPassword}
                       onChange={(e) => handleInputChange('confirmPassword', e.target.value)}
-                      className={`w-full pl-10 pr-12 py-3 border rounded-lg focus:ring-2 focus:ring-dbc-bright-green focus:border-transparent ${
+                      className={`w-full pl-10 pr-12 py-3 border rounded-lg focus:ring-2 focus:ring-dbc-bright-green focus:border-transparent placeholder-gray-500 ${
                         errors.confirmPassword ? 'border-red-300' : 'border-gray-300'
                       }`}
                       placeholder="Répétez le mot de passe"
@@ -345,7 +345,7 @@ export default function SignupPage() {
                     <button
                       type="button"
                       onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                      className="absolute right-3 top-3 text-gray-400 hover:text-gray-600"
+                      className="absolute right-3 top-3 text-gray-500 hover:text-gray-700"
                     >
                       {showConfirmPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
                     </button>
@@ -372,7 +372,7 @@ export default function SignupPage() {
 
               {/* Lien vers connexion */}
               <div className="mt-6 text-center">
-                <p className="text-gray-600">
+                <p className="text-gray-700">
                   Déjà un compte ?{' '}
                   <button
                     onClick={() => router.push('/login')}

@@ -3,7 +3,32 @@ import { supabaseAdmin } from '../../../../lib/supabase';
 
 // Fonction helper pour vérifier supabaseAdmin
 function getSupabaseAdmin() {
+  // Debugging avancé
+  console.log('🔧 Debug getSupabaseAdmin:');
+  console.log(`  - supabaseAdmin: ${supabaseAdmin ? 'Défini' : 'NULL'}`);
+  console.log(`  - SUPABASE_SERVICE_ROLE_KEY: ${process.env.SUPABASE_SERVICE_ROLE_KEY ? 'Défini' : 'MANQUANT'}`);
+  
   if (!supabaseAdmin) {
+    // Essayer de créer le client directement
+    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    
+    console.log('🔧 Tentative création client direct:');
+    console.log(`  - URL: ${url}`);
+    console.log(`  - Service Key: ${serviceKey ? `${serviceKey.substring(0, 20)}...` : 'MANQUANT'}`);
+    
+    if (serviceKey && url) {
+      const { createClient } = require('@supabase/supabase-js');
+      const directClient = createClient(url, serviceKey, {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false
+        }
+      });
+      console.log(`  - Client direct créé: ${directClient ? 'OUI' : 'NON'}`);
+      return directClient;
+    }
+    
     throw new Error('Configuration Supabase admin manquante - vérifiez SUPABASE_SERVICE_ROLE_KEY dans .env.local');
   }
   return supabaseAdmin;

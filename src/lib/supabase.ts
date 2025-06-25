@@ -10,6 +10,16 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey)
 // Client admin SEULEMENT pour les API routes côté serveur
 // ⚠️ ATTENTION: Ne jamais utiliser supabaseAdmin côté client !
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+
+// Debugging: Logger l'état de la clé service
+console.log('🔧 Configuration Supabase Admin:');
+console.log(`  - Service Key présente: ${supabaseServiceKey ? 'OUI' : 'NON'}`);
+if (supabaseServiceKey) {
+  console.log(`  - Longueur clé: ${supabaseServiceKey.length} caractères`);
+  console.log(`  - Début clé: ${supabaseServiceKey.substring(0, 20)}...`);
+}
+console.log(`  - URL Supabase: ${supabaseUrl}`);
+
 export const supabaseAdmin = supabaseServiceKey 
   ? createClient(supabaseUrl, supabaseServiceKey, {
       auth: {
@@ -18,6 +28,9 @@ export const supabaseAdmin = supabaseServiceKey
       }
     })
   : null // null si pas de clé service (dev mode)
+
+console.log(`  - Client Admin créé: ${supabaseAdmin ? 'OUI' : 'NON'}`);
+console.log('---');
 
 // Types pour TypeScript
 export interface Product {
