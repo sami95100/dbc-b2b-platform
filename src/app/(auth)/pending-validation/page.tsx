@@ -1,46 +1,129 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import DBCLogo from '@/components/DBCLogo';
-import { CheckCircle, MessageCircle, Clock, Shield, Phone, Mail, ArrowRight, LogOut } from 'lucide-react';
+import { MessageCircle, Clock, Shield, Phone, Mail, ArrowRight, LogOut } from 'lucide-react';
+import { supabase } from '../../../lib/supabase';
 
 export default function PendingValidationPage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const [userInfo, setUserInfo] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [timeElapsed, setTimeElapsed] = useState<string>('');
+  const [lastCheck, setLastCheck] = useState<Date>(new Date());
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const accountManagerPhone = "0768644427";
   const accountManagerWhatsApp = `https://wa.me/33${accountManagerPhone.substring(1)}`;
 
   useEffect(() => {
-    // Récupérer les informations utilisateur depuis les paramètres URL
-    const email = searchParams.get('email');
-    const company = searchParams.get('company');
-    const contact = searchParams.get('contact');
+    loadUserInfo();
     
-    if (email && company && contact) {
-      setUserInfo({ email, company, contact });
+    // Auto-refresh toutes les 30 secondes pour vérifier si le compte est validé
+    const autoRefreshInterval = setInterval(() => {
+      console.log('🔄 Vérification automatique du statut du compte...');
+      loadUserInfo();
+    }, 30000); // 30 secondes
+
+    // Cleanup de l'interval
+    return () => clearInterval(autoRefreshInterval);
+  }, []);
+
+  // Calculer le temps écoulé depuis l'inscription
+  useEffect(() => {
+    if (userInfo?.created_at) {
+      const updateTimeElapsed = () => {
+        const createdAt = new Date(userInfo.created_at);
+        const now = new Date();
+        const diffInMinutes = Math.floor((now.getTime() - createdAt.getTime()) / 60000);
+        
+        if (diffInMinutes < 1) {
+          setTimeElapsed('à l\'instant');
+        } else if (diffInMinutes < 60) {
+          setTimeElapsed(`il y a ${diffInMinutes} minute${diffInMinutes > 1 ? 's' : ''}`);
+        } else {
+          const hours = Math.floor(diffInMinutes / 60);
+          setTimeElapsed(`il y a ${hours} heure${hours > 1 ? 's' : ''}`);
+        }
+      };
+
+      updateTimeElapsed();
+      const timeInterval = setInterval(updateTimeElapsed, 60000); // Mise à jour chaque minute
+
+      return () => clearInterval(timeInterval);
     }
-  }, [searchParams]);
+  }, [userInfo]);
+
+  const loadUserInfo = async () => {
+    try {
+      setIsRefreshing(true);
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (user) {
+        const { data: userProfileData, error } = await supabase
+          .from('users')
+          .select('*')
+          .eq('id', user.id)
+          .single();
+
+        if (error) {
+          console.error('Erreur lors de la récupération du profil utilisateur:', error);
+        } else {
+          setUserInfo(userProfileData);
+          setLastCheck(new Date());
+          
+          // Si le compte est maintenant actif, rediriger vers le catalogue
+          if (userProfileData.is_active) {
+            console.log('✅ Compte validé ! Redirection...');
+            const redirectPath = userProfileData.role === 'admin' ? '/admin' : '/catalog';
+            router.push(redirectPath);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Erreur lors du chargement des infos utilisateur:', error);
+    } finally {
+      setLoading(false);
+      setIsRefreshing(false);
+    }
+  };
 
   const handleWhatsAppContact = () => {
+    if (!userInfo) return;
+    
     const message = encodeURIComponent(
-      `Bonjour ! Je viens de créer un compte B2B sur la plateforme DBC Electronics.\n\n` +
+      `Bonjour ! Mon compte B2B sur la plateforme DBC Electronics est en attente de validation.\n\n` +
       `Informations de mon entreprise :\n` +
-      `• Société : ${userInfo?.company || 'Non spécifié'}\n` +
-      `• Contact : ${userInfo?.contact || 'Non spécifié'}\n` +
-      `• Email : ${userInfo?.email || 'Non spécifié'}\n\n` +
-      `Je souhaiterais valider mon inscription et commencer l'onboarding pour accéder au catalogue. Merci !`
+      `• Société : ${userInfo.company_name}\n` +
+      `• Contact : ${userInfo.contact_name}\n` +
+      `• Email : ${userInfo.email}\n\n` +
+      `Pourriez-vous valider mon inscription pour que je puisse accéder au catalogue ? Merci !`
     );
     
     window.open(`${accountManagerWhatsApp}?text=${message}`, '_blank');
   };
 
-  const handleLogout = () => {
-    // Simple redirection vers la page de login - la déconnexion sera gérée là-bas
-    router.push('/login');
+  const handleLogout = async () => {
+    try {
+      await supabase.auth.signOut();
+      router.push('/login');
+    } catch (error) {
+      console.error('Erreur lors de la déconnexion:', error);
+      router.push('/login');
+    }
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-dbc-dark-green via-emerald-800 to-dbc-light-green flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white mx-auto mb-4"></div>
+          <p className="text-white">Chargement...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-dbc-dark-green via-emerald-800 to-dbc-light-green relative overflow-hidden">
@@ -61,12 +144,12 @@ export default function PendingValidationPage() {
                 <h1 className="text-3xl font-bold text-white">DBC Electronics</h1>
                 <p className="text-emerald-200 font-medium">Plateforme B2B Professionnelle</p>
               </div>
-              </div>
             </div>
+          </div>
 
           {/* Carte principale */}
           <div className="bg-white bg-opacity-20 backdrop-blur-xl rounded-3xl shadow-2xl p-8 border border-white border-opacity-30">
-
+            
             {/* Bouton de déconnexion */}
             <div className="flex justify-end mb-4">
               <button
@@ -99,9 +182,10 @@ export default function PendingValidationPage() {
                   Votre demande d'accès
                 </h3>
                 <div className="space-y-2 text-emerald-100">
-                  <p><span className="font-medium">Société :</span> {userInfo.company}</p>
-                  <p><span className="font-medium">Contact :</span> {userInfo.contact}</p>
+                  <p><span className="font-medium">Société :</span> {userInfo.company_name}</p>
+                  <p><span className="font-medium">Contact :</span> {userInfo.contact_name}</p>
                   <p><span className="font-medium">Email :</span> {userInfo.email}</p>
+                  <p><span className="font-medium">Inscription :</span> {timeElapsed}</p>
                 </div>
               </div>
             )}
@@ -156,10 +240,35 @@ export default function PendingValidationPage() {
                 >
                   <MessageCircle className="h-5 w-5" />
                   <span>Contacter via WhatsApp</span>
-                <ArrowRight className="h-5 w-5" />
-              </button>
+                  <ArrowRight className="h-5 w-5" />
+                </button>
+              </div>
             </div>
-          </div>
+
+            {/* Bouton de rafraîchissement automatique */}
+            <div className="mb-6">
+              <button
+                onClick={loadUserInfo}
+                disabled={isRefreshing}
+                className="w-full bg-white bg-opacity-20 backdrop-blur-sm border-2 border-white border-opacity-30 text-white py-3 px-6 rounded-xl hover:bg-opacity-30 focus:ring-2 focus:ring-dbc-bright-green transition-all duration-200 flex items-center justify-center space-x-2 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isRefreshing ? (
+                  <>
+                    <div className="animate-spin h-5 w-5 border-2 border-white border-t-transparent rounded-full"></div>
+                    <span>Vérification en cours...</span>
+                  </>
+                ) : (
+                  <>
+                    <ArrowRight className="h-5 w-5" />
+                    <span>Actualiser le statut</span>
+                  </>
+                )}
+              </button>
+              <div className="text-center text-emerald-200 text-xs mt-2 space-y-1">
+                <p>💡 Cette page se rafraîchit automatiquement toutes les 30 secondes</p>
+                <p>🕐 Dernière vérification : {lastCheck.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</p>
+              </div>
+            </div>
 
             {/* Informations de contact alternatif */}
             <div className="bg-white bg-opacity-10 backdrop-blur-sm rounded-2xl p-6 border border-white border-opacity-20">
@@ -178,9 +287,9 @@ export default function PendingValidationPage() {
                   <Mail className="h-5 w-5 text-emerald-300" />
                   <div>
                     <p className="text-white font-medium">Email professionnel</p>
-                    <a href="mailto:contact@dbcstore.fr" className="text-dbc-bright-green hover:text-white transition-colors">
-                      contact@dbcstore.fr
-              </a>
+                                    <a href="mailto:contact@dbcstore.fr" className="text-dbc-bright-green hover:text-white transition-colors">
+                  contact@dbcstore.fr
+                    </a>
                   </div>
                 </div>
               </div>

@@ -52,7 +52,9 @@ export default function LoginPage() {
       }
 
       if (!profile.is_active) {
-        throw new Error('Votre compte est désactivé. Contactez le support.');
+        // Rediriger vers la page d'attente de validation
+        router.push('/pending-validation');
+        return;
       }
 
       // Connexion réussie - redirection selon le rôle

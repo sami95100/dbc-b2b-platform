@@ -67,7 +67,7 @@ export async function POST(request: NextRequest) {
 
     console.log('✅ Utilisateur auth créé:', authData.user.id);
 
-    // 2. Créer l'entrée dans la table users
+    // 2. Créer l'entrée dans la table users - AVEC is_active: false pour validation admin
     const userData = {
       id: authData.user.id, // Utiliser le même ID que l'auth
       email,
@@ -76,7 +76,7 @@ export async function POST(request: NextRequest) {
       phone,
       address: address || null,
       role: 'client',
-      is_active: true,
+      is_active: false, // 🔒 NOUVEAU : Compte en attente de validation admin
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     };
@@ -94,7 +94,7 @@ export async function POST(request: NextRequest) {
       throw new Error(userError.message);
     }
 
-    console.log('✅ Utilisateur créé dans la table users');
+    console.log('✅ Utilisateur créé dans la table users (en attente de validation)');
 
     return NextResponse.json({
       success: true,
@@ -102,9 +102,11 @@ export async function POST(request: NextRequest) {
         id: authData.user.id,
         email: authData.user.email,
         company_name,
-        contact_name
+        contact_name,
+        is_active: false // Indiquer que le compte est en attente
       },
-      message: 'Compte créé avec succès'
+      message: 'Inscription enregistrée avec succès. Votre compte est en attente de validation.',
+      needs_validation: true // 🔔 Flag pour redirection vers page onboarding
     });
 
   } catch (error: any) {

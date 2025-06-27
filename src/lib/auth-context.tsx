@@ -48,12 +48,14 @@ export function AuthProvider({ children }: AuthProviderProps) {
         .eq('id', session.user.id)
         .single();
 
-      if (error || !profile || !profile.is_active) {
-        console.error('Erreur profil ou compte inactif:', error);
+      if (error || !profile) {
+        console.error('Erreur profil:', error);
         setUser(null);
         return;
       }
 
+      // Stocker le profil même si le compte n'est pas actif
+      // Cela permettra de gérer la redirection vers la page d'attente
       setUser(profile);
     } catch (error) {
       console.error('Erreur refreshUser:', error);
@@ -131,7 +133,7 @@ export function withAuth<T extends {}>(
     console.log('🔍 withAuth Debug:', {
       loading,
       isAuthenticated,
-      user: user ? { id: user.id, role: user.role } : null,
+      user: user ? { id: user.id, role: user.role, is_active: user.is_active } : null,
       userRole: user?.role,
       requiredRole,
       hasAccess: user?.role === requiredRole || !requiredRole,
@@ -163,6 +165,15 @@ export function withAuth<T extends {}>(
       // Redirection côté client
       if (typeof window !== 'undefined') {
         window.location.href = '/login';
+      }
+      return null;
+    }
+
+    // Vérifier si l'utilisateur est authentifié mais son compte n'est pas actif
+    if (user && !user.is_active) {
+      console.log('⏳ Compte non validé, redirection vers page d\'attente');
+      if (typeof window !== 'undefined') {
+        window.location.href = '/pending-validation';
       }
       return null;
     }

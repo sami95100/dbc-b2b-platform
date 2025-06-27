@@ -37,6 +37,7 @@ interface DashboardStats {
   draftOrdersCount: number; // Commandes en brouillon
   recentDraftOrders: OrderWithMargin[]; // Dernières commandes brouillons
   recentPendingOrders: OrderWithMargin[]; // Dernières commandes en attente
+  pendingUsersCount: number; // Ajout du nombre d'utilisateurs en attente
 }
 
 interface OrderWithMargin {
@@ -66,7 +67,8 @@ function AdminDashboard() {
     pendingOrdersCount: 0,
     draftOrdersCount: 0,
     recentDraftOrders: [],
-    recentPendingOrders: []
+    recentPendingOrders: [],
+    pendingUsersCount: 0
   });
   const [loading, setLoading] = useState(true);
   const [sortBy, setSortBy] = useState<'quantity' | 'margin' | 'revenue'>('quantity');
@@ -80,7 +82,7 @@ function AdminDashboard() {
     setLoading(true);
     try {
       // Charger les statistiques en parallèle
-      const [ordersRes, draftOrdersRes, clientsRes, marginRes, topModelsRes, debugDataRes] = await Promise.all([
+      const [ordersRes, draftOrdersRes, clientsRes, marginRes, topModelsRes, debugDataRes, pendingUsersRes] = await Promise.all([
         // Statistiques des commandes (hors brouillons)
         supabase
           .from('orders')
@@ -112,7 +114,14 @@ function AdminDashboard() {
 
         // Fonction de debug
         supabase
-          .rpc('debug_margin_data')
+          .rpc('debug_margin_data'),
+
+        // Utilisateurs en attente de validation
+        supabase
+          .from('users')
+          .select('id', { count: 'exact' })
+          .eq('role', 'client')
+          .eq('is_active', false)
       ]);
 
       // Traiter les commandes
@@ -225,6 +234,10 @@ function AdminDashboard() {
         margin: 0 // Sera calculé si nécessaire
       }));
 
+      // Récupérer le nombre d'utilisateurs en attente
+      const pendingUsersCount = pendingUsersRes.count || 0;
+      console.log(`👥 Utilisateurs en attente de validation: ${pendingUsersCount}`);
+
       setStats({
         totalOrders,
         totalRevenue,
@@ -237,7 +250,8 @@ function AdminDashboard() {
         pendingOrdersCount,
         draftOrdersCount,
         recentDraftOrders: recentDraftOrdersWithMargin,
-        recentPendingOrders: recentPendingOrdersWithMargin
+        recentPendingOrders: recentPendingOrdersWithMargin,
+        pendingUsersCount
       });
 
     } catch (error) {
@@ -362,13 +376,39 @@ function AdminDashboard() {
         </div>
 
         {/* Section Notifications */}
-        {(stats.pendingOrdersCount > 0 || stats.draftOrdersCount > 0) && (
+        {(stats.pendingOrdersCount > 0 || stats.draftOrdersCount > 0 || stats.pendingUsersCount > 0) && (
           <div className="mb-8">
             <h2 className="text-xl font-semibold text-gray-800 mb-4 flex items-center">
               <Bell className="h-5 w-5 mr-2 text-orange-500" />
               Notifications
             </h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {/* Inscriptions en attente */}
+              {stats.pendingUsersCount > 0 && (
+                <div className="bg-gradient-to-r from-purple-50 to-pink-50 border border-purple-200 rounded-xl p-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center">
+                      <div className="bg-purple-100 p-2 rounded-lg mr-3">
+                        <Users className="h-5 w-5 text-purple-600" />
+                      </div>
+                      <div>
+                        <h3 className="font-semibold text-purple-800">Nouvelles inscriptions</h3>
+                        <p className="text-sm text-purple-600">{stats.pendingUsersCount} client(s) à valider</p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => router.push('/admin/clients')}
+                      className="bg-purple-500 text-white px-4 py-2 rounded-lg hover:bg-purple-600 transition-colors text-sm font-medium"
+                    >
+                      Valider
+                    </button>
+                  </div>
+                  <div className="bg-white bg-opacity-60 rounded-lg p-3">
+                    <p className="text-sm text-purple-700 font-medium">Priorité haute</p>
+                    <p className="text-xs text-purple-600">Valider rapidement pour fidéliser les nouveaux clients</p>
+                  </div>
+                </div>
+              )}
               {/* Commandes en brouillon */}
               {stats.draftOrdersCount > 0 && (
                 <div className="bg-gradient-to-r from-yellow-50 to-orange-50 border border-yellow-200 rounded-xl p-6">
