@@ -37,7 +37,7 @@ type SortDirection = 'asc' | 'desc';
 
 function ClientCatalogPage() {
   const router = useRouter();
-  const { user, signOut } = useAuth();
+  const { user, isAdmin, isClient, signOut } = useAuth();
   
   // États des filtres avec valeurs par défaut
   const [searchTerm, setSearchTerm] = useState('');
@@ -87,7 +87,7 @@ function ClientCatalogPage() {
   const [selectedProducts, setSelectedProducts] = useState<{[key: string]: boolean}>({});
   
   // État pour éviter les erreurs d'hydratation
-  const [isClient, setIsClient] = useState(false);
+  const [isClientSide, setIsClientSide] = useState(false);
   
   // État pour les vrais produits depuis Supabase
   const [products, setProducts] = useState<Product[]>([]);
@@ -170,7 +170,7 @@ function ClientCatalogPage() {
   // Charger les quantités de la commande active
   useEffect(() => {
     // Marquer qu'on est côté client
-    setIsClient(true);
+    setIsClientSide(true);
     
     // Synchroniser avec Supabase au chargement
     const initializeOrders = async () => {
@@ -954,7 +954,7 @@ function ClientCatalogPage() {
           name: finalOrderName,
           items: initialItems,
           totalItems: totalItems,
-          userId: selectedClientId // Ajouter l'ID du client sélectionné
+          userId: isAdmin ? selectedClientId : user?.id // Utiliser l'ID du client sélectionné si admin, sinon l'utilisateur connecté
         })
       });
 
@@ -997,7 +997,9 @@ function ClientCatalogPage() {
       setCurrentDraftOrder(supabaseOrder.id);
       setShowOrderNamePopup(false);
       setOrderName('');
-      setSelectedClientId(null);
+      if (isAdmin) {
+        setSelectedClientId(null);
+      }
       
       // Sauvegarder dans localStorage avec l'UUID Supabase
       saveDraftOrdersToLocalStorage(newDraftOrders);
@@ -1307,8 +1309,6 @@ function ClientCatalogPage() {
           totalItems: getTotalCartItems(),
           totalAmount: getTotalCartAmount()
         } : undefined}
-        onCartClick={() => router.push('/admin/orders?refresh=' + Date.now())}
-        onLogoClick={() => router.push('/admin')}
       />
 
       {/* Zone d'information pour les commandes en brouillon */}
@@ -1970,16 +1970,18 @@ function ClientCatalogPage() {
               autoFocus
             />
             
-            {/* Sélecteur de client */}
-            <div className="mb-4">
-              <ClientSelector
-                selectedClientId={selectedClientId}
-                onChange={setSelectedClientId}
-                isAdmin={true}
-                currentUserId={user?.id}
-              />
-            </div>
-            {!selectedClientId && (
+            {/* Sélecteur de client - uniquement pour les admins */}
+            {isAdmin && (
+              <div className="mb-4">
+                <ClientSelector
+                  selectedClientId={selectedClientId}
+                  onChange={setSelectedClientId}
+                  isAdmin={isAdmin}
+                  currentUserId={user?.id}
+                />
+              </div>
+            )}
+            {isAdmin && !selectedClientId && (
               <div className="text-red-600 text-sm mb-3 font-medium">
                 ⚠️ Veuillez sélectionner un client avant de créer la commande
               </div>
@@ -1990,7 +1992,9 @@ function ClientCatalogPage() {
                 onClick={() => {
                   setShowOrderNamePopup(false);
                   setOrderName('');
-                  setSelectedClientId(null);
+                  if (isAdmin) {
+                    setSelectedClientId(null);
+                  }
                   sessionStorage.removeItem('pendingProduct');
                   // Décocher toutes les cases
                   setSelectedProducts({});
@@ -2001,7 +2005,7 @@ function ClientCatalogPage() {
               </button>
               <button
                 onClick={createNewOrder}
-                disabled={creatingOrder || !selectedClientId}
+                disabled={creatingOrder || (isAdmin && !selectedClientId)}
                 className="px-4 py-2 bg-gradient-to-r from-dbc-bright-green to-emerald-400 text-dbc-dark-green rounded-xl hover:from-emerald-300 hover:to-emerald-500 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed font-semibold shadow-lg backdrop-blur-sm transition-all duration-200"
               >
                 {creatingOrder ? 'Création...' : 'Créer la commande'}

@@ -18,6 +18,7 @@ interface OrderFiltersProps {
   onClearFilters: () => void;
   totalOrders: number;
   filteredCount: number;
+  hideClientFilter?: boolean;
 }
 
 export default function OrderFilters({
@@ -26,7 +27,8 @@ export default function OrderFilters({
   onFiltersChange,
   onClearFilters,
   totalOrders,
-  filteredCount
+  filteredCount,
+  hideClientFilter = false
 }: OrderFiltersProps) {
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [filters, setFilters] = useState({
@@ -73,7 +75,9 @@ export default function OrderFilters({
     <div className="bg-white rounded-lg shadow-sm border p-6 mb-6">
       {/* Header avec titre et boutons principaux */}
       <div className="flex items-center justify-between mb-4">
-        <h1 className="text-2xl font-bold text-gray-900">Mes commandes</h1>
+        <h1 className="text-2xl font-bold text-gray-900">
+          {hideClientFilter ? 'Mes commandes' : 'Commandes clients'}
+        </h1>
         <div className="flex items-center space-x-4">
           {/* Bouton pour afficher/masquer les filtres avancés */}
           <button
@@ -135,20 +139,22 @@ export default function OrderFilters({
       {showAdvancedFilters && (
         <div className="border-t pt-4 mt-4">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {/* Filtre par client */}
-            <div className="space-y-2">
-              <label className="flex items-center text-sm font-medium text-gray-700">
-                <Users className="h-4 w-4 mr-1" />
-                Client
-              </label>
-              <input
-                type="text"
-                placeholder="Nom d'entreprise, contact ou email..."
-                value={filters.client}
-                onChange={(e) => handleFilterChange('client', e.target.value)}
-                className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-dbc-light-green focus:border-transparent"
-              />
-            </div>
+            {/* Filtre par client - masqué pour les clients normaux */}
+            {!hideClientFilter && (
+              <div className="space-y-2">
+                <label className="flex items-center text-sm font-medium text-gray-700">
+                  <Users className="h-4 w-4 mr-1" />
+                  Client
+                </label>
+                <input
+                  type="text"
+                  placeholder="Nom d'entreprise, contact ou email..."
+                  value={filters.client}
+                  onChange={(e) => handleFilterChange('client', e.target.value)}
+                  className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-dbc-light-green focus:border-transparent"
+                />
+              </div>
+            )}
 
             {/* Plage de dates */}
             <div className="space-y-2">

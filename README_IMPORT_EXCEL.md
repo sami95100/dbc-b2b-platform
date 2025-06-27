@@ -42,6 +42,10 @@ Permettre l'import de commandes passées sur le site du fournisseur via un fichi
 
 **⚠️ Important :** La recherche ne fallback plus sur le nom du produit seul pour éviter les prix trop élevés. Si aucun produit voisin n'est trouvé avec appearance + functionality, on passe directement au calcul de marge standard.
 
+#### Vérification automatique des marges négatives
+
+Si un produit voisin est trouvé, vérification que la marge n'est pas négative. Si marge < 0, application automatique de +11% sur le prix fournisseur.
+
 #### Catégorisation des produits
 
 1. **Existants OK** : SKU trouvé + stock suffisant
@@ -61,12 +65,14 @@ Permettre l'import de commandes passées sur le site du fournisseur via un fichi
 - Recherche intelligente par similitude
 - Priorité : nom > apparence > fonctionnalité > VAT
 - Fallback sur marge DBC standard
+- **Protection contre marges négatives**
 
 ### ✅ Interface de validation en 3 tableaux
 
 - **Tableau 1** : Produits existants avec stock suffisant (vert)
 - **Tableau 2** : Produits avec stock à mettre à jour (jaune)
 - **Tableau 3** : Nouveaux produits à créer (bleu)
+- **Affichage complet** : Apparence, fonctionnalité, couleur avec badges colorés
 
 ### ✅ Édition des prix
 
@@ -84,7 +90,14 @@ Permettre l'import de commandes passées sur le site du fournisseur via un fichi
 
 - Création en brouillon (peut être supprimée)
 - Transition vers "pending_payment" après validation
-- Une fois validée, seulement annulation possible
+- Passage automatique en "En cours de livraison" après import IMEI
+- Synchronisation parfaite entre `status` et `status_label`
+
+### ✅ Export/Import circulaire
+
+- Fichiers Excel exportés directement réimportables
+- Headers standardisés et cohérents
+- Compatibilité parfaite avec logiciels de gestion de stock
 
 ## 📁 Structure des fichiers
 
@@ -140,12 +153,13 @@ data/examples/
 - Totaux mis à jour en temps réel
 - Messages explicatifs pour chaque section
 - Indicateurs visuels pour les sources de prix
+- Badges colorés pour grades et fonctionnalités
 
 ## 🧪 Tests suggérés
 
 ### Cas de test standard
 
-1. **Import produits existants** : Fichier avec SKUs déjà en catalogue
+1. **Import produits existants** : Fichiers avec SKUs déjà en catalogue
 2. **Import produits nouveaux** : SKUs inexistants, test méthode voisin
 3. **Import mixte** : Combinaison des deux cas
 4. **Stock insuffisant** : Test mise à jour automatique
@@ -187,6 +201,48 @@ npm install xlsx
 npm run dev
 ```
 
+## 📋 Workflow Complet
+
+1. **Import Excel** → Analyse avec méthode voisin → Affichage des 3 tableaux avec toutes les infos
+2. **Validation** → Création commande en brouillon
+3. **Validation finale** → Passage en "En attente de paiement"
+4. **Import IMEI** → Passage automatique en "En cours de livraison"
+5. **Export Excel/CSV** → Fichiers réimportables avec headers standardisés
+
+## 🔮 Historique des Améliorations
+
+### Version 1.2 - Décembre 2024
+
+#### ✅ Améliorations UX
+
+- Ajout des colonnes Apparence et Fonctionnalité dans le récap d'import
+- Badges colorés pour une meilleure lisibilité
+- Affichage complet des caractéristiques produits
+
+#### ✅ Corrections Statuts
+
+- Correction de l'affichage "En cours de livraison" après import IMEI
+- Synchronisation parfaite entre `status` et `status_label`
+- Workflow de commande fluide
+
+#### ✅ Export/Import Circulaire
+
+- Headers d'export identiques aux headers d'import
+- Compatibilité parfaite avec logiciels de gestion de stock
+- Fichiers Excel exportés directement réimportables
+
+#### ✅ Optimisation Méthode Voisin
+
+- Suppression du fallback sur nom seul (évite prix trop élevés)
+- Ajout de vérification automatique des marges négatives
+- Sécurisation du processus de pricing automatique
+
+#### ✅ Nettoyage Code
+
+- Suppression des fichiers de backup obsolètes
+- Correction des erreurs de linter
+- Base de code optimisée
+
 ## 🔮 Améliorations futures possibles
 
 ### Fonctionnalités avancées
@@ -198,17 +254,9 @@ npm run dev
 
 ### Optimisations techniques
 
-- **Cache produits** : Éviter rechargement catalogue complet
-- **Import asynchrone** : Pour gros volumes (background jobs)
-- **Validation schema** : JSON Schema pour validation stricte
-- **Logs détaillés** : Audit trail complet
-
-### Intégrations
-
-- **API fournisseur** : Import direct depuis API
-- **Notifications** : Email/SMS confirmation import
-- **Export résultats** : Rapport PDF post-import
-- **Multi-devises** : Support EUR/USD/GBP
+- **Cache intelligent** : Mémorisation des correspondances produits
+- **Import asynchrone** : Traitement en arrière-plan pour gros volumes
+- **Validation avancée** : Détection d'anomalies de prix automatique
 
 ## 📊 Métriques de succès
 

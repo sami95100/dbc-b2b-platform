@@ -514,4 +514,191 @@ export const orderService = {
       throw error;
     }
   }
-} 
+}
+
+// Configuration pour admin (server-side seulement)
+export const getSupabaseAdmin = () => {
+  if (typeof window !== 'undefined') {
+    console.warn('⚠️ getSupabaseAdmin ne doit être utilisé que côté serveur');
+    return null;
+  }
+
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!serviceKey) {
+    console.error('❌ SUPABASE_SERVICE_ROLE_KEY manquante');
+    return null;
+  }
+
+  // Debugging: Logger l'état de la clé service
+  console.log('🔑 Service key présente:', serviceKey.substring(0, 20) + '...');
+
+  try {
+    return createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      serviceKey,
+      {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false
+        }
+      }
+    );
+  } catch (error) {
+    console.error('❌ Erreur création client admin:', error);
+    return null;
+  }
+};
+
+// Fonctions utilitaires pour les opérations admin
+export const supabaseOperations = {
+  // Créer un utilisateur
+  async createUser(email: string, password: string, userData: any) {
+    // Cette opération nécessite des privilèges admin
+    const supabaseAdmin = getSupabaseAdmin();
+    if (!supabaseAdmin) return { error: 'Client admin non disponible' };
+
+    const { data, error } = await supabaseAdmin.auth.admin.createUser({
+      email,
+      password,
+      user_metadata: userData,
+      email_confirm: true
+    });
+
+    if (error) return { error };
+
+    // Créer l'entrée dans la table users
+    const { error: userError } = await supabaseAdmin
+      .from('users')
+      .insert({
+        id: data.user.id,
+        email: data.user.email,
+        ...userData
+      });
+
+    return { data, error: userError };
+  },
+
+  // Mettre à jour un utilisateur
+  async updateUser(userId: string, updates: any) {
+    // Cette opération nécessite des privilèges admin
+    const supabaseAdmin = getSupabaseAdmin();
+    if (!supabaseAdmin) return { error: 'Client admin non disponible' };
+
+    const { data, error } = await supabaseAdmin.auth.admin.updateUserById(
+      userId,
+      updates
+    );
+
+    if (error) return { error };
+
+    // Mettre à jour la table users
+    const { error: userError } = await supabaseAdmin
+      .from('users')
+      .update(updates)
+      .eq('id', userId);
+
+    return { data, error: userError };
+  },
+
+  // Supprimer un utilisateur
+  async deleteUser(userId: string) {
+    // Cette opération nécessite des privilèges admin
+    const supabaseAdmin = getSupabaseAdmin();
+    if (!supabaseAdmin) return { error: 'Client admin non disponible' };
+    
+    // Supprimer de la table users d'abord
+    const { error: userError } = await supabaseAdmin
+      .from('users')
+      .delete()
+      .eq('id', userId);
+
+    if (userError) return { error: userError };
+
+    // Puis supprimer l'auth user
+    const { data, error } = await supabaseAdmin.auth.admin.deleteUser(userId);
+    return { data, error };
+  },
+
+  // Lister tous les utilisateurs  
+  async listUsers(page = 1, perPage = 50) {
+    // Cette opération nécessite des privilèges admin
+    const supabaseAdmin = getSupabaseAdmin();
+    if (!supabaseAdmin) return { error: 'Client admin non disponible' };
+
+    const { data, error } = await supabaseAdmin.auth.admin.listUsers({
+      page,
+      perPage
+    });
+
+    return { data, error };
+  },
+
+  // Obtenir un utilisateur par ID
+  async getUserById(userId: string) {
+    // Cette opération nécessite des privilèges admin
+    const supabaseAdmin = getSupabaseAdmin();
+    if (!supabaseAdmin) return { error: 'Client admin non disponible' };
+
+    const { data, error } = await supabaseAdmin.auth.admin.getUserById(userId);
+    return { data, error };
+  },
+
+  // Créer un client avec un code unique
+  async createClientWithCode(email: string, password: string, clientData: any) {
+    // Cette opération nécessite des privilèges admin
+    const supabaseAdmin = getSupabaseAdmin();
+    if (!supabaseAdmin) return { error: 'Client admin non disponible' };
+
+    // Générer un code client unique
+    const clientCode = `CLI${Date.now()}`;
+    
+    const result = await this.createUser(email, password, {
+      ...clientData,
+      user_type: 'client',
+      client_code: clientCode
+    });
+
+    return result;
+  },
+
+  // Réinitialiser le mot de passe d'un utilisateur
+  async resetUserPassword(userId: string, newPassword: string) {
+    // Cette opération nécessite des privilèges admin
+    const supabaseAdmin = getSupabaseAdmin();
+    if (!supabaseAdmin) return { error: 'Client admin non disponible' };
+
+    const { data, error } = await supabaseAdmin.auth.admin.updateUserById(
+      userId,
+      { password: newPassword }
+    );
+
+    return { data, error };
+  },
+
+  // Obtenir les statistiques des utilisateurs
+  async getUserStats() {
+    // Cette opération nécessite des privilèges admin
+    const supabaseAdmin = getSupabaseAdmin();
+    if (!supabaseAdmin) return { error: 'Client admin non disponible' };
+
+    const { data: users, error } = await supabaseAdmin
+      .from('users')
+      .select('user_type, created_at');
+
+    if (error) return { error };
+
+    const stats = {
+      total: users.length,
+      admins: users.filter(u => u.user_type === 'admin').length,
+      clients: users.filter(u => u.user_type === 'client').length,
+      recent: users.filter(u => {
+        const created = new Date(u.created_at);
+        const week = new Date();
+        week.setDate(week.getDate() - 7);
+        return created > week;
+      }).length
+    };
+
+    return { data: stats, error: null };
+  }
+}; 

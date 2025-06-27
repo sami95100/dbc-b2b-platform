@@ -1,9 +1,10 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth, withAuth } from '../../../lib/auth-context';
 import AppHeader from '@/components/AppHeader';
+import OrderFilters from '@/components/OrderFilters';
 import { supabase, Product } from '../../../lib/supabase';
 import { OrdersUtils } from '../../../lib/orders-utils';
 import {
@@ -16,15 +17,18 @@ import {
   CheckCircle,
   Truck,
   AlertCircle,
-  Eye
+  Eye,
+  Trash2
 } from 'lucide-react';
 
 function ClientOrdersPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { user, signOut } = useAuth();
 
   const [statusFilter, setStatusFilter] = useState('all');
   const [orders, setOrders] = useState<any[]>([]);
+  const [totalOrdersCount, setTotalOrdersCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [advancedFilters, setAdvancedFilters] = useState({
     dateFrom: '',
@@ -118,10 +122,12 @@ function ClientOrdersPage() {
       OrdersUtils.markOrdersAsFresh();
       
       setOrders(clientOrders);
+      setTotalOrdersCount(clientOrders.length);
 
     } catch (error) {
       console.error('❌ Erreur chargement commandes client:', error);
       setOrders([]);
+      setTotalOrdersCount(0);
     } finally {
       setLoading(false);
     }
@@ -166,18 +172,64 @@ function ClientOrdersPage() {
     };
   }, [user?.id, statusFilter, advancedFilters]);
 
+  // Gestion des filtres avancés
+  const handleAdvancedFiltersChange = (filters: any) => {
+    setAdvancedFilters(filters);
+  };
+
+  const handleClearFilters = () => {
+    setStatusFilter('all');
+    setAdvancedFilters({
+      dateFrom: '',
+      dateTo: '',
+      quantityMin: '',
+      quantityMax: '',
+      amountMin: '',
+      amountMax: ''
+    });
+  };
+
+  // Filtres appliqués côté client
+  const filteredOrders = orders.filter(order => {
+    // Tous les filtres sont déjà appliqués côté serveur via l'API
+    return true;
+  });
+
   const handleOrderClick = (orderId: string) => {
     router.push(`/orders/${orderId}`);
   };
 
+  const deleteOrder = async (orderId: string, orderName: string) => {
+    if (!confirm(`Êtes-vous sûr de vouloir supprimer la commande "${orderName}" ?`)) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/orders/${orderId}`, {
+        method: 'DELETE'
+      });
+
+      if (!response.ok) {
+        throw new Error('Erreur lors de la suppression');
+      }
+
+      alert('✅ Commande supprimée avec succès !');
+      // Recharger la liste des commandes
+      loadOrders(true);
+    } catch (error) {
+      console.error('❌ Erreur suppression:', error);
+      alert('❌ Erreur lors de la suppression');
+    }
+  };
+
   const getStatusIcon = (status: string) => {
     switch (status) {
-      case 'completed': return <CheckCircle className="h-5 w-5 text-green-600" />;
-      case 'shipping': return <Truck className="h-5 w-5 text-blue-600" />;
+      case 'completed': return <CheckCircle className="h-4 w-4 text-green-600" />;
+      case 'shipping': return <Truck className="h-4 w-4 text-blue-600" />;
       case 'pending_payment': 
-      case 'validated': return <Clock className="h-5 w-5 text-yellow-600" />;
-      case 'draft': return <AlertCircle className="h-5 w-5 text-gray-600" />;
-      default: return <AlertCircle className="h-5 w-5 text-gray-600" />;
+      case 'validated': return <Clock className="h-4 w-4 text-yellow-600" />;
+      case 'draft': return <AlertCircle className="h-4 w-4 text-gray-600" />;
+      default: return <AlertCircle className="h-4 w-4 text-gray-600" />;
     }
   };
 
@@ -192,18 +244,13 @@ function ClientOrdersPage() {
     }
   };
 
-  const handleLogout = async () => {
-    if (window.confirm('Êtes-vous sûr de vouloir vous déconnecter ?')) {
-      await signOut();
-    }
-  };
-
-  if (loading) {
+  // Afficher un loader pendant la vérification d'authentification
+  if (!user) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-50 via-gray-50 to-emerald-50 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-dbc-light-green mx-auto mb-4"></div>
-          <p className="text-gray-600">Chargement de vos commandes...</p>
+          <p className="text-gray-600">Vérification de l'authentification...</p>
         </div>
       </div>
     );
@@ -211,194 +258,157 @@ function ClientOrdersPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-gray-50 to-emerald-50">
-      <AppHeader 
-        onCartClick={() => router.push('/catalog')}
-        onLogout={handleLogout}
-      />
+      {/* Header */}
+      <AppHeader />
 
-      <div className="container mx-auto px-4 py-8">
-        <div className="flex justify-between items-center mb-8">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-800 mb-2">Mes Commandes</h1>
-            <p className="text-gray-600">
-              {user?.company_name} - {orders.length} commande(s)
-            </p>
-          </div>
-          
+      <div className="max-w-[2000px] mx-auto px-8 py-6">
+        {/* Navigation */}
+        <div className="flex items-center space-x-4 mb-6">
           <button
             onClick={() => router.push('/catalog')}
-            className="bg-dbc-light-green text-white px-6 py-3 rounded-lg hover:bg-dbc-dark-green transition-colors flex items-center"
+            className="text-dbc-light-green hover:text-dbc-dark-green"
           >
-            <Package className="h-5 w-5 mr-2" />
             Catalogue
           </button>
+          <ChevronRight className="h-4 w-4 text-gray-400" />
+          <span className="text-gray-900 font-medium">Mes commandes</span>
         </div>
 
-        {/* Filtres */}
-        <div className="bg-white rounded-xl shadow-sm p-6 mb-8">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Statut
-              </label>
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-dbc-light-green focus:border-transparent"
-              >
-                <option value="all">Tous les statuts</option>
-                <option value="draft">Brouillon</option>
-                <option value="pending_payment">En attente de paiement</option>
-                <option value="validated">Validée</option>
-                <option value="shipping">En livraison</option>
-                <option value="completed">Terminée</option>
-                <option value="cancelled">Annulée</option>
-              </select>
-            </div>
+        {/* Composant de filtres avancés - version client sans filtre client */}
+        <OrderFilters
+          statusFilter={statusFilter}
+          onStatusFilterChange={setStatusFilter}
+          onFiltersChange={handleAdvancedFiltersChange}
+          onClearFilters={handleClearFilters}
+          totalOrders={totalOrdersCount}
+          filteredCount={filteredOrders.length}
+          hideClientFilter={true}
+        />
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Date de début
-              </label>
-              <input
-                type="date"
-                value={advancedFilters.dateFrom}
-                onChange={(e) => setAdvancedFilters(prev => ({ ...prev, dateFrom: e.target.value }))}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-dbc-light-green focus:border-transparent"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Date de fin
-              </label>
-              <input
-                type="date"
-                value={advancedFilters.dateTo}
-                onChange={(e) => setAdvancedFilters(prev => ({ ...prev, dateTo: e.target.value }))}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-dbc-light-green focus:border-transparent"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Montant minimum
-              </label>
-              <input
-                type="number"
-                value={advancedFilters.amountMin}
-                onChange={(e) => setAdvancedFilters(prev => ({ ...prev, amountMin: e.target.value }))}
-                placeholder="0"
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-dbc-light-green focus:border-transparent"
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* Liste des commandes */}
-        <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-          {orders.length === 0 ? (
-            <div className="p-12 text-center">
-              <ShoppingCart className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-gray-700 mb-2">Aucune commande trouvée</h3>
-              <p className="text-gray-500 mb-6">
-                {statusFilter === 'all' 
-                  ? 'Vous n\'avez pas encore de commandes.' 
-                  : 'Aucune commande ne correspond à vos filtres.'
-                }
-              </p>
-              <button
-                onClick={() => router.push('/catalog')}
-                className="bg-dbc-light-green text-white px-6 py-3 rounded-lg hover:bg-dbc-dark-green transition-colors flex items-center mx-auto"
-              >
-                <Package className="h-5 w-5 mr-2" />
-                Parcourir le catalogue
-              </button>
+        {/* Tableau des commandes */}
+        <div className="bg-white rounded-lg shadow-sm border overflow-hidden">
+          {loading ? (
+            <div className="flex items-center justify-center py-12">
+              <div className="text-center">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-dbc-light-green mx-auto mb-4"></div>
+                <p className="text-gray-600">Chargement de vos commandes...</p>
+              </div>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Commande
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Statut
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Date
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Articles
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Montant
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Actions
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {orders.map((order) => (
-                    <tr key={order.id} className="hover:bg-gray-50">
-                      <td className="px-6 py-4">
-                        <div>
-                          <div className="text-sm font-medium text-gray-900">
-                            {order.name}
-                          </div>
-                          <div className="text-sm text-gray-500">
-                            {order.customerRef && `Réf: ${order.customerRef}`}
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="flex items-center">
+            <table className="w-full">
+              <thead className="bg-gray-50 border-b">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Numéro de commande
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Statut
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Date de création
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Nombre de produits
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Montant total
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Actions
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {filteredOrders.map((order) => (
+                  <tr key={order.id} className="hover:bg-gray-50">
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div>
+                        <span className="text-sm font-medium text-gray-900">{order.id}</span>
+                        {order.name && (
+                          <div className="text-xs text-gray-500">{order.name}</div>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="flex flex-col space-y-1">
+                        <span className={`inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(order.status)} w-fit`}>
                           {getStatusIcon(order.status)}
-                          <span className={`ml-2 px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(order.status)}`}>
-                            {order.status_label}
-                          </span>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 text-sm text-gray-900">
-                        <div className="flex items-center">
-                          <Calendar className="h-4 w-4 text-gray-400 mr-2" />
-                          {new Date(order.createdAt).toLocaleDateString('fr-FR')}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 text-sm text-gray-900">
-                        <div className="flex items-center">
-                          <Package className="h-4 w-4 text-gray-400 mr-2" />
-                          {order.totalItems} article(s)
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 text-sm text-gray-900">
-                        <div className="flex items-center">
-                          <Euro className="h-4 w-4 text-gray-400 mr-2" />
-                          {order.totalAmount?.toFixed(2)} €
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
+                          <span>{order.status_label}</span>
+                        </span>
+                        {order.tracking_number && (
+                          <div className="flex items-center space-x-1 text-xs text-blue-600">
+                            <Truck className="h-3 w-3" />
+                            <span>Tracking: {order.tracking_number}</span>
+                          </div>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="flex items-center text-sm text-gray-900">
+                        <Calendar className="h-4 w-4 mr-1 text-gray-400" />
+                        {new Date(order.createdAt).toLocaleDateString('fr-FR')}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="flex items-center text-sm text-gray-900">
+                        <Package className="h-4 w-4 mr-1 text-gray-400" />
+                        {order.totalItems} article{order.totalItems > 1 ? 's' : ''}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="flex items-center text-sm font-semibold text-gray-900">
+                        <Euro className="h-4 w-4 mr-1 text-gray-400" />
+                        {order.totalAmount?.toFixed(2)} €
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="flex items-center space-x-2">
                         <button
                           onClick={() => handleOrderClick(order.id)}
-                          className="bg-gray-100 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-200 transition-colors flex items-center"
+                          className="px-3 py-1 bg-gradient-to-r from-dbc-bright-green to-emerald-400 text-dbc-dark-green hover:from-emerald-300 hover:to-emerald-500 hover:text-white rounded-lg text-sm font-semibold transition-all duration-200 shadow-sm backdrop-blur-sm"
                         >
-                          <Eye className="h-4 w-4 mr-2" />
+                          <Eye className="h-4 w-4 inline mr-1" />
                           Voir détails
                         </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                        {order.status === 'draft' && (
+                          <button
+                            onClick={() => deleteOrder(order.id, order.name || order.id)}
+                            className="px-3 py-1 bg-white border border-red-300 text-red-600 hover:bg-red-50 rounded-lg text-sm font-semibold transition-all duration-200 shadow-sm"
+                          >
+                            <Trash2 className="h-4 w-4 inline mr-1" />
+                            Supprimer
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           )}
         </div>
+
+        {!loading && filteredOrders.length === 0 && (
+          <div className="text-center py-12">
+            <Package className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+            <h3 className="text-lg font-medium text-gray-900 mb-2">Aucune commande trouvée</h3>
+            <p className="text-gray-600 mb-4">
+              {statusFilter === 'all' 
+                ? 'Vous n\'avez pas encore passé de commande' 
+                : 'Aucune commande ne correspond à vos filtres.'
+              }
+            </p>
+            <button
+              onClick={() => router.push('/catalog')}
+              className="bg-gradient-to-r from-dbc-bright-green to-emerald-400 text-dbc-dark-green py-2 px-6 rounded-xl hover:from-emerald-300 hover:to-emerald-500 hover:text-white font-semibold shadow-lg backdrop-blur-sm transition-all duration-200"
+            >
+              Voir le catalogue
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
-// Protéger la page pour les clients uniquement
 export default withAuth(ClientOrdersPage, 'client'); 
