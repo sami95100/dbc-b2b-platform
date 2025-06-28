@@ -373,36 +373,36 @@ function ClientOrderDetailPage() {
         </button>
 
         {/* Informations de la commande */}
-        <div className="bg-white rounded-lg shadow-sm border p-6 mb-6">
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900 mb-2">
+        <div className="bg-white rounded-lg shadow-sm border p-4 sm:p-6 mb-6">
+          <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4 mb-6">
+            <div className="flex-1 min-w-0">
+              <h1 className="text-lg sm:text-xl lg:text-2xl font-bold text-gray-900 mb-2 break-words">
                 {orderDetail.name || `Commande ${orderDetail.id}`}
               </h1>
-              <div className="flex items-center space-x-4">
-                <span className={`inline-flex items-center space-x-1 px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(orderDetail.status)}`}>
+              <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
+                <span className={`inline-flex items-center space-x-1 px-2 py-1 rounded-full text-xs sm:text-sm font-medium ${getStatusColor(orderDetail.status)} w-fit`}>
                   {getStatusIcon(orderDetail.status)}
                   <span>{orderDetail.status_label}</span>
                 </span>
-                <div className="flex items-center text-sm text-gray-600">
-                  <Calendar className="h-4 w-4 mr-1" />
-                  Créée le {new Date(orderDetail.createdAt).toLocaleDateString('fr-FR')}
+                <div className="flex items-center text-xs sm:text-sm text-gray-600">
+                  <Calendar className="h-3 w-3 sm:h-4 sm:w-4 mr-1" />
+                  <span className="truncate">Créée le {formatDate(orderDetail.createdAt)}</span>
                 </div>
                 {orderDetail.tracking_number && (
-                  <div className="flex items-center space-x-1 text-sm text-blue-600 bg-blue-50 px-3 py-1 rounded-full">
-                    <Truck className="h-4 w-4" />
-                    <span>Tracking: {orderDetail.tracking_number}</span>
+                  <div className="flex items-center space-x-1 text-xs sm:text-sm text-blue-600 bg-blue-50 px-2 py-1 rounded-full w-fit">
+                    <Truck className="h-3 w-3 sm:h-4 sm:w-4" />
+                    <span className="truncate">Tracking: {orderDetail.tracking_number}</span>
                   </div>
                 )}
               </div>
             </div>
             
-            <div className="flex items-center space-x-3">
+            <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 lg:flex-shrink-0">
               {orderDetail.status === 'draft' && (
                 <>
                   <button
                     onClick={deleteOrder}
-                    className="flex items-center space-x-2 px-4 py-2 bg-white bg-opacity-80 backdrop-blur-sm border border-red-300 text-red-600 rounded-xl hover:bg-red-50 hover:shadow-lg text-sm transition-all duration-200"
+                    className="flex items-center justify-center space-x-1 px-3 py-2 bg-white border border-red-300 text-red-600 rounded-lg hover:bg-red-50 text-sm transition-all duration-200"
                   >
                     <Trash2 className="h-4 w-4" />
                     <span>Supprimer</span>
@@ -410,7 +410,7 @@ function ClientOrderDetailPage() {
                   <button
                     onClick={validateOrder}
                     disabled={validating}
-                    className="flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-dbc-bright-green to-emerald-400 text-dbc-dark-green rounded-xl hover:from-emerald-300 hover:to-emerald-500 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed font-semibold shadow-lg backdrop-blur-sm transition-all duration-200"
+                    className="flex items-center justify-center space-x-1 px-3 py-2 bg-gradient-to-r from-dbc-bright-green to-emerald-400 text-dbc-dark-green rounded-lg hover:from-emerald-300 hover:to-emerald-500 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed font-semibold transition-all duration-200 text-sm"
                   >
                     {validating ? (
                       <>
@@ -420,16 +420,16 @@ function ClientOrderDetailPage() {
                     ) : (
                       <>
                         <CheckCircle className="h-4 w-4" />
-                        <span>Valider la commande</span>
+                        <span>Valider</span>
                       </>
                     )}
                   </button>
                   <button
                     onClick={exportToExcel}
-                    className="flex items-center space-x-2 px-4 py-2 bg-white bg-opacity-80 backdrop-blur-sm border border-white border-opacity-30 rounded-xl hover:bg-opacity-90 hover:shadow-lg text-gray-700 transition-all duration-200"
+                    className="flex items-center justify-center space-x-1 px-3 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-700 transition-all duration-200 text-sm"
                   >
                     <FileSpreadsheet className="h-4 w-4" />
-                    <span>Export Excel</span>
+                    <span>Excel</span>
                   </button>
                 </>
               )}
@@ -438,17 +438,17 @@ function ClientOrderDetailPage() {
                 <>
                   <button
                     onClick={() => exportData(viewMode, 'csv')}
-                    className="flex items-center space-x-2 px-4 py-2 bg-white bg-opacity-80 backdrop-blur-sm border border-white border-opacity-30 rounded-xl hover:bg-opacity-90 hover:shadow-lg text-gray-700 transition-all duration-200"
+                    className="flex items-center justify-center space-x-1 px-3 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-700 transition-all duration-200 text-sm"
                   >
                     <Download className="h-4 w-4" />
-                    <span>Export CSV</span>
+                    <span>CSV</span>
                   </button>
                   <button
                     onClick={() => exportData(viewMode, 'xlsx')}
-                    className="flex items-center space-x-2 px-4 py-2 bg-white bg-opacity-80 backdrop-blur-sm border border-white border-opacity-30 rounded-xl hover:bg-opacity-90 hover:shadow-lg text-gray-700 transition-all duration-200"
+                    className="flex items-center justify-center space-x-1 px-3 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-700 transition-all duration-200 text-sm"
                   >
                     <FileSpreadsheet className="h-4 w-4" />
-                    <span>Export Excel</span>
+                    <span>Excel</span>
                   </button>
                 </>
               )}
@@ -467,172 +467,388 @@ function ClientOrderDetailPage() {
           </div>
         </div>
 
-        {/* Tableau des produits */}
-        <div className="bg-white rounded-lg shadow-sm border overflow-hidden mb-6">
-          <div className="px-6 py-4 border-b bg-gray-50 flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-gray-900">Détail des produits</h2>
-            
-            <div className="flex items-center space-x-4">
-              {/* Switch vue SKU/IMEI */}
+        {/* Tableau des produits - Version Responsive */}
+        <div className="bg-white rounded-lg shadow-sm border mb-6">
+          <div className="p-4 border-b bg-gray-50">
+            <div className="flex flex-col space-y-3">
+              <h2 className="text-lg font-semibold text-gray-900">Détail des produits</h2>
+              
               {(orderDetail.status === 'shipping' || orderDetail.status === 'completed') && (
-                <div className="flex items-center space-x-2">
-                  <button
-                    onClick={() => setViewMode('sku')}
-                    className={`px-3 py-1 text-sm rounded ${
-                      viewMode === 'sku' 
-                        ? 'bg-blue-600 text-white' 
-                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                    }`}
-                  >
-                    Vue SKU
-                  </button>
-                  <button
-                    onClick={() => setViewMode('imei')}
-                    className={`px-3 py-1 text-sm rounded ${
-                      viewMode === 'imei' 
-                        ? 'bg-blue-600 text-white' 
-                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                    }`}
-                  >
-                    Vue IMEI
-                  </button>
-                </div>
-              )}
+                <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                  {/* Switch vue SKU/IMEI */}
+                  <div className="flex items-center space-x-2">
+                    <button
+                      onClick={() => setViewMode('sku')}
+                      className={`px-3 py-1 text-sm rounded transition-colors ${
+                        viewMode === 'sku' 
+                          ? 'bg-blue-600 text-white' 
+                          : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                      }`}
+                    >
+                      SKU
+                    </button>
+                    <button
+                      onClick={() => setViewMode('imei')}
+                      className={`px-3 py-1 text-sm rounded transition-colors ${
+                        viewMode === 'imei' 
+                          ? 'bg-blue-600 text-white' 
+                          : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                      }`}
+                    >
+                      IMEI
+                    </button>
+                  </div>
 
-              {/* Boutons d'export */}
-              {(orderDetail.status === 'shipping' || orderDetail.status === 'completed') && (
-                <div className="flex items-center space-x-2">
-                  <button
-                    onClick={() => exportData(viewMode, 'csv')}
-                    className="flex items-center space-x-1 px-3 py-1 text-sm bg-green-600 text-white rounded hover:bg-green-700"
-                  >
-                    <Download className="h-4 w-4" />
-                    <span>CSV</span>
-                  </button>
-                  <button
-                    onClick={() => exportData(viewMode, 'xlsx')}
-                    className="flex items-center space-x-1 px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
-                  >
-                    <FileSpreadsheet className="h-4 w-4" />
-                    <span>Excel</span>
-                  </button>
+                  {/* Boutons d'export */}
+                  <div className="flex items-center space-x-2">
+                    <button
+                      onClick={() => exportData(viewMode, 'csv')}
+                      className="flex items-center space-x-1 px-3 py-1 text-sm bg-green-600 text-white rounded hover:bg-green-700 transition-colors"
+                    >
+                      <Download className="h-4 w-4" />
+                      <span>CSV</span>
+                    </button>
+                    <button
+                      onClick={() => exportData(viewMode, 'xlsx')}
+                      className="flex items-center space-x-1 px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+                    >
+                      <FileSpreadsheet className="h-4 w-4" />
+                      <span>Excel</span>
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
           </div>
           
-          <div className="w-full">
+          {/* Contenu responsive sans scroll horizontal */}
+          <div>
             {viewMode === 'sku' ? (
-              <table className="w-full">
-                <thead className="bg-gray-50 border-b">
-                  <tr>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">SKU</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nom du produit</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Apparence</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fonctionnalité</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Informations</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Couleur</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Emballage</th>
-                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Qté</th>
-                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Prix unit.</th>
-                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Total</th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {orderDetail.items.map((item: any) => (
-                    <tr key={item.sku}>
-                      <td className="px-4 py-3 text-sm font-mono text-gray-900">{item.sku}</td>
-                      <td className="px-4 py-3 text-sm text-gray-900 font-medium">{item.name}</td>
-                      <td className="px-4 py-3">
-                        <span className={`inline-flex px-2 py-1 text-xs font-medium rounded ${
-                          item.appearance === 'Grade A+' ? 'bg-green-100 text-green-800' :
-                          item.appearance === 'Grade A' ? 'bg-blue-100 text-blue-800' :
-                          'bg-yellow-100 text-yellow-800'
-                        }`}>
-                          {item.appearance?.replace('Grade ', '') || 'N/A'}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className="inline-flex px-2 py-1 text-xs font-medium rounded bg-green-100 text-green-800">
-                          {item.functionality || 'N/A'}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-sm text-gray-800">{item.additional_info}</td>
-                      <td className="px-4 py-3 text-sm text-gray-900">
-                        <div className="flex items-center space-x-2">
-                          <div className={`w-3 h-3 rounded-full border ${getColorClass(item.color)}`}></div>
-                          <span>{item.color || 'N/A'}</span>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 text-sm text-gray-900">{item.boxed || 'N/A'}</td>
-                      <td className="px-4 py-3 text-center">
-                        <span className="text-sm font-medium text-gray-900">{item.quantity}</span>
-                      </td>
-                      <td className="px-4 py-3 text-sm text-right font-medium text-gray-900">
-                        {item.unitPrice.toFixed(2)}€
-                      </td>
-                      <td className="px-4 py-3 text-sm text-right font-semibold text-gray-900">
-                        {item.totalPrice.toFixed(2)}€
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            ) : (
-              // Vue IMEI - identique à l'admin mais sans prix fournisseur
-              <table className="w-full">
-                <thead className="bg-gray-50 border-b">
-                  <tr>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">SKU</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">IMEI</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nom du produit</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Apparence</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fonctionnalité</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Couleur</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Emballage</th>
-                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Prix DBC</th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {imeiData.length > 0 ? (
-                    imeiData.map((imei: any) => (
-                      <tr key={imei.imei}>
-                        <td className="px-4 py-3 text-sm font-mono text-gray-900">{imei.sku}</td>
-                        <td className="px-4 py-3 text-sm font-mono text-blue-600">{imei.imei}</td>
-                        <td className="px-4 py-3 text-sm text-gray-900 font-medium">{imei.product_name}</td>
-                        <td className="px-4 py-3">
-                          <span className={`inline-flex px-2 py-1 text-xs font-medium rounded ${
-                            imei.appearance === 'Grade A+' ? 'bg-green-100 text-green-800' :
-                            imei.appearance === 'Grade A' ? 'bg-blue-100 text-blue-800' :
-                            'bg-yellow-100 text-yellow-800'
-                          }`}>
-                            {imei.appearance.replace('Grade ', '')}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className="inline-flex px-2 py-1 text-xs font-medium rounded bg-green-100 text-green-800">
-                            {imei.functionality}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-sm text-gray-900">
-                          <div className="flex items-center space-x-2">
-                            <div className={`w-3 h-3 rounded-full border ${getColorClass(imei.color)}`}></div>
-                            <span>{imei.color || '-'}</span>
+              <>
+                {/* Vue Mobile - Cards responsive */}
+                <div className="block lg:hidden">
+                  <div className="space-y-3 p-4">
+                    {orderDetail.items.map((item: any) => (
+                      <div key={item.sku} className="bg-white rounded border shadow-sm p-3 transition-all duration-200">
+                        {/* Header avec SKU et Quantité */}
+                        <div className="flex items-start justify-between mb-2">
+                          <div className="flex-1">
+                            <div className="text-sm font-mono text-blue-600 bg-blue-50 px-2 py-1 rounded inline-block">
+                              {item.sku}
+                            </div>
                           </div>
-                        </td>
-                        <td className="px-4 py-3 text-sm text-gray-900">{imei.boxed}</td>
-                        <td className="px-4 py-3 text-sm text-right font-semibold text-gray-900">{imei.dbc_price.toFixed(2)}€</td>
+                          <div className="text-right">
+                            <div className="text-sm font-bold text-gray-900">Qté: {item.quantity}</div>
+                          </div>
+                        </div>
+
+                        {/* Nom du produit */}
+                        <h3 className="text-sm font-medium text-gray-900 mb-2">
+                          {item.name}
+                        </h3>
+
+                        {/* Ligne avec états et couleur */}
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            {/* Fonctionnalité */}
+                            <span className={`text-xs font-medium ${
+                              item.functionality === 'Working' ? 'text-green-600' : 'text-amber-600'
+                            }`}>
+                              {item.functionality === 'Working' ? 'Working' : 'Minor Fault'}
+                            </span>
+                            
+                            {/* Grade */}
+                            <span className={`text-xs font-medium px-1 py-0.5 rounded ${
+                              item.appearance?.includes('A+') ? 'bg-green-100 text-green-800' :
+                              item.appearance?.includes('A') && !item.appearance?.includes('AB') ? 'bg-blue-100 text-blue-800' :
+                              item.appearance?.includes('B') ? 'bg-yellow-100 text-yellow-800' :
+                              'bg-orange-100 text-orange-800'
+                            }`}>
+                              {item.appearance?.replace('Grade ', '') || ''}
+                            </span>
+
+                            {/* Additional Info - seulement si non vide */}
+                            {item.additional_info && item.additional_info !== '-' && item.additional_info.trim() && (
+                              <span className="text-xs px-1 py-0.5 bg-gray-100 text-gray-700 rounded border">
+                                {item.additional_info}
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Couleur */}
+                          {item.color && (
+                            <div className="flex items-center gap-1">
+                              <div className={`w-3 h-3 rounded border-2 border-gray-300 ${getColorClass(item.color)}`} title={item.color}></div>
+                              <span className="text-xs text-gray-600">{item.color}</span>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Prix sur même ligne */}
+                        <div className="flex items-center justify-between pt-2 border-t border-gray-100">
+                          <div className="text-sm">
+                            <span className="font-bold text-gray-900">{item.unitPrice.toFixed(2)}€</span>
+                            <span className="text-xs text-gray-500 ml-1">DBC</span>
+                          </div>
+                          <div className="text-right">
+                            <div className="text-sm font-bold text-gray-900">{item.totalPrice.toFixed(2)}€</div>
+                            <div className="text-xs text-gray-500">Total</div>
+                          </div>
+                        </div>
+
+                        {/* Badge indisponible si nécessaire */}
+                        {item.isUnavailable && (
+                          <div className="mt-2 inline-flex items-center px-2 py-1 text-xs font-medium bg-red-100 text-red-800 rounded w-full justify-center">
+                            <AlertCircle className="h-3 w-3 mr-1" />
+                            Produit non disponible
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Vue Desktop - Tableau Responsive (≥1024px) */}
+                <div className="hidden lg:block">
+                  <table className="w-full">
+                    <thead className="bg-gray-50 border-b">
+                      <tr>
+                        <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Produit</th>
+                        <th className="hidden xl:table-cell px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">États</th>
+                        <th className="hidden 2xl:table-cell px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Couleur</th>
+                        <th className="hidden 2xl:table-cell px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Emballage</th>
+                        <th className="hidden 2xl:table-cell px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Infos</th>
+                        <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Qté</th>
+                        <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Prix</th>
+                        <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Total</th>
                       </tr>
-                    ))
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {orderDetail.items.map((item: any) => (
+                        <tr key={item.sku} className="hover:bg-gray-50 transition-colors">
+                          {/* Produit - Toujours visible */}
+                          <td className="px-3 py-3">
+                            <div className="max-w-xs">
+                              <div className="text-xs font-mono text-blue-600 bg-blue-50 px-2 py-0.5 rounded inline-block mb-1">
+                                {item.sku}
+                              </div>
+                              <div className="text-sm font-medium text-gray-900 line-clamp-2">{item.name}</div>
+                              {/* États sur mobile et tablet */}
+                              <div className="xl:hidden flex flex-wrap gap-1 mt-1">
+                                <span className={`inline-flex px-1.5 py-0.5 text-xs font-medium rounded ${
+                                  item.appearance === 'Grade A+' ? 'bg-green-100 text-green-800' :
+                                  item.appearance === 'Grade A' ? 'bg-blue-100 text-blue-800' :
+                                  'bg-yellow-100 text-yellow-800'
+                                }`}>
+                                  {item.appearance?.replace('Grade ', '') || 'N/A'}
+                                </span>
+                                <span className="inline-flex px-1.5 py-0.5 text-xs font-medium rounded bg-green-100 text-green-800">
+                                  {item.functionality || 'N/A'}
+                                </span>
+                              </div>
+                            </div>
+                          </td>
+
+                          {/* États - Visible XL+ */}
+                          <td className="hidden xl:table-cell px-3 py-3">
+                            <div className="flex flex-wrap gap-1">
+                              <span className={`inline-flex px-2 py-1 text-xs font-medium rounded ${
+                                item.appearance === 'Grade A+' ? 'bg-green-100 text-green-800' :
+                                item.appearance === 'Grade A' ? 'bg-blue-100 text-blue-800' :
+                                'bg-yellow-100 text-yellow-800'
+                              }`}>
+                                {item.appearance?.replace('Grade ', '') || 'N/A'}
+                              </span>
+                              <span className="inline-flex px-2 py-1 text-xs font-medium rounded bg-green-100 text-green-800">
+                                {item.functionality || 'N/A'}
+                              </span>
+                            </div>
+                          </td>
+
+                          {/* Couleur - Visible 2XL+ */}
+                          <td className="hidden 2xl:table-cell px-3 py-3">
+                            <div className="flex items-center space-x-2">
+                              <div className={`w-3 h-3 rounded-full border ${getColorClass(item.color)}`}></div>
+                              <span className="text-sm text-gray-900">{item.color || 'N/A'}</span>
+                            </div>
+                          </td>
+
+                          {/* Emballage - Visible 2XL+ */}
+                          <td className="hidden 2xl:table-cell px-3 py-3 text-sm text-gray-900">
+                            {item.boxed || 'N/A'}
+                          </td>
+
+                          {/* Infos - Visible 2XL+ */}
+                          <td className="hidden 2xl:table-cell px-3 py-3 text-sm text-gray-800 max-w-32 truncate">
+                            {item.additional_info && item.additional_info !== '-' ? item.additional_info : 'N/A'}
+                          </td>
+
+                          {/* Quantité - Toujours visible */}
+                          <td className="px-3 py-3 text-center">
+                            <span className="text-sm font-medium text-gray-900 bg-gray-50 px-2 py-1 rounded">
+                              {item.quantity}
+                            </span>
+                          </td>
+
+                          {/* Prix unitaire - Toujours visible */}
+                          <td className="px-3 py-3 text-right text-sm font-medium text-gray-900">
+                            {item.unitPrice.toFixed(2)}€
+                          </td>
+
+                          {/* Total - Toujours visible */}
+                          <td className="px-3 py-3 text-right text-sm font-semibold text-gray-900">
+                            {item.totalPrice.toFixed(2)}€
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            ) : (
+              // Vue IMEI - Version Responsive
+              <>
+                {/* Vue Mobile IMEI - Cards responsive */}
+                <div className="block lg:hidden">
+                  {imeiData.length > 0 ? (
+                    <div className="space-y-3 p-4">
+                      {imeiData.map((imei: any) => (
+                        <div key={imei.imei} className="bg-white rounded border shadow-sm p-3 transition-all duration-200">
+                          {/* Header avec SKU, IMEI et Prix */}
+                          <div className="flex items-start justify-between mb-2">
+                            <div className="flex-1 overflow-hidden">
+                              <div className="flex items-center gap-2 mb-1">
+                                <div className="text-sm font-mono text-blue-600 bg-blue-50 px-2 py-1 rounded">
+                                  {imei.sku}
+                                </div>
+                                <div className="text-sm font-mono text-purple-600 bg-purple-50 px-2 py-1 rounded">
+                                  {imei.imei}
+                                </div>
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              <div className="text-sm font-bold text-gray-900">{imei.dbc_price.toFixed(2)}€</div>
+                              <div className="text-xs text-gray-500">DBC</div>
+                            </div>
+                          </div>
+
+                          {/* Nom du produit */}
+                          <h3 className="text-sm font-medium text-gray-900 mb-2">
+                            {imei.product_name}
+                          </h3>
+
+                          {/* Ligne avec états et couleur */}
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              {/* Fonctionnalité */}
+                              <span className={`text-xs font-medium ${
+                                imei.functionality === 'Working' ? 'text-green-600' : 'text-amber-600'
+                              }`}>
+                                {imei.functionality === 'Working' ? 'Working' : 'Minor Fault'}
+                              </span>
+                              
+                              {/* Grade */}
+                              <span className={`text-xs font-medium px-1 py-0.5 rounded ${
+                                imei.appearance?.includes('A+') ? 'bg-green-100 text-green-800' :
+                                imei.appearance?.includes('A') && !imei.appearance?.includes('AB') ? 'bg-blue-100 text-blue-800' :
+                                imei.appearance?.includes('B') ? 'bg-yellow-100 text-yellow-800' :
+                                'bg-orange-100 text-orange-800'
+                              }`}>
+                                {imei.appearance?.replace('Grade ', '') || ''}
+                              </span>
+                            </div>
+
+                            {/* Couleur */}
+                            {imei.color && (
+                              <div className="flex items-center gap-1">
+                                <div className={`w-3 h-3 rounded border-2 border-gray-300 ${getColorClass(imei.color)}`} title={imei.color}></div>
+                                <span className="text-xs text-gray-600">{imei.color}</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   ) : (
-                    <tr>
-                      <td colSpan={8} className="px-4 py-8 text-center text-gray-500">
-                        Aucun IMEI trouvé pour cette commande.
-                      </td>
-                    </tr>
+                    <div className="p-8 text-center text-gray-500">
+                      <Package className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+                      <p>Aucun IMEI trouvé pour cette commande.</p>
+                    </div>
                   )}
-                </tbody>
-              </table>
+                </div>
+
+                {/* Vue Desktop IMEI - Tableau Responsive (≥1024px) */}
+                <div className="hidden lg:block">
+                  <table className="w-full">
+                    <thead className="bg-gray-50 border-b">
+                      <tr>
+                        <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">SKU</th>
+                        <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">IMEI</th>
+                        <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Produit</th>
+                        <th className="hidden xl:table-cell px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">États</th>
+                        <th className="hidden 2xl:table-cell px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Couleur</th>
+                        <th className="hidden 2xl:table-cell px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Emballage</th>
+                        <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Prix DBC</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {imeiData.length > 0 ? (
+                        imeiData.map((imei: any) => (
+                          <tr key={imei.imei} className="hover:bg-gray-50 transition-colors">
+                            <td className="px-3 py-3 text-sm font-mono text-blue-600">{imei.sku}</td>
+                            <td className="px-3 py-3 text-sm font-mono text-purple-600">{imei.imei}</td>
+                            <td className="px-3 py-3">
+                              <div className="text-sm text-gray-900 font-medium line-clamp-2">{imei.product_name}</div>
+                              {/* États sur mobile et tablet */}
+                              <div className="xl:hidden flex flex-wrap gap-1 mt-1">
+                                <span className={`inline-flex px-1.5 py-0.5 text-xs font-medium rounded ${
+                                  imei.appearance === 'Grade A+' ? 'bg-green-100 text-green-800' :
+                                  imei.appearance === 'Grade A' ? 'bg-blue-100 text-blue-800' :
+                                  'bg-yellow-100 text-yellow-800'
+                                }`}>
+                                  {imei.appearance.replace('Grade ', '')}
+                                </span>
+                                <span className="inline-flex px-1.5 py-0.5 text-xs font-medium rounded bg-green-100 text-green-800">
+                                  {imei.functionality}
+                                </span>
+                              </div>
+                            </td>
+                            <td className="hidden xl:table-cell px-3 py-3">
+                              <div className="flex flex-wrap gap-1">
+                                <span className={`inline-flex px-2 py-1 text-xs font-medium rounded ${
+                                  imei.appearance === 'Grade A+' ? 'bg-green-100 text-green-800' :
+                                  imei.appearance === 'Grade A' ? 'bg-blue-100 text-blue-800' :
+                                  'bg-yellow-100 text-yellow-800'
+                                }`}>
+                                  {imei.appearance.replace('Grade ', '')}
+                                </span>
+                                <span className="inline-flex px-2 py-1 text-xs font-medium rounded bg-green-100 text-green-800">
+                                  {imei.functionality}
+                                </span>
+                              </div>
+                            </td>
+                            <td className="hidden 2xl:table-cell px-3 py-3">
+                              <div className="flex items-center space-x-2">
+                                <div className={`w-3 h-3 rounded-full border ${getColorClass(imei.color)}`}></div>
+                                <span className="text-sm text-gray-900">{imei.color || '-'}</span>
+                              </div>
+                            </td>
+                            <td className="hidden 2xl:table-cell px-3 py-3 text-sm text-gray-900">{imei.boxed}</td>
+                            <td className="px-3 py-3 text-sm text-right font-semibold text-gray-900">{imei.dbc_price.toFixed(2)}€</td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan={7} className="px-4 py-8 text-center text-gray-500">
+                            <Package className="h-8 w-8 mx-auto mb-2 text-gray-300" />
+                            <p>Aucun IMEI trouvé pour cette commande.</p>
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </>
             )}
           </div>
         </div>

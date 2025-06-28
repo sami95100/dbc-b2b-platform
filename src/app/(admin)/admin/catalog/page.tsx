@@ -23,13 +23,15 @@ import {
   Minus,
   ArrowUpDown,
   FileSpreadsheet,
-  Package
+  Package,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 
 // Valeurs de filtres basées sur l'analyse du vrai catalogue
 const MANUFACTURERS = ['Apple', 'Samsung', 'Xiaomi', 'Google', 'Huawei', 'OnePlus', 'Motorola', 'Honor', 'Oppo', 'Realme', 'Sony', 'LG', 'TCL', 'Nokia', 'Vivo', 'Asus', 'ZTE', 'Nothing', 'Gigaset', 'HTC'];
 const APPEARANCES = ['Brand New', 'Grade A+', 'Grade A', 'Grade AB', 'Grade B', 'Grade BC', 'Grade C', 'Grade C+'];
-const FUNCTIONALITIES = ['Working', 'Minor Fault'];
+const FUNCTIONALITIES = ['Minor Fault', 'Working'];
 const BOXED_OPTIONS = ['Original Box', 'Premium Unboxed', 'Unboxed'];
 const ADDITIONAL_INFO_OPTIONS = ['AS-IS', 'Brand New Battery', 'Chip/Crack', 'Discoloration', 'Engraving', 'Engraving Removed', 'Heavy cosmetic wear', 'Other', 'Premium Refurbished', 'Reduced Battery Performance'];
 
@@ -112,6 +114,9 @@ function AdminCatalogPage() {
     export: false
   });
   const [closeTimeout, setCloseTimeout] = useState<NodeJS.Timeout | null>(null);
+
+  // État pour gérer l'affichage des filtres sur mobile
+  const [showMobileFilters, setShowMobileFilters] = useState(false);
 
   // Fonction pour synchroniser les commandes brouillon avec Supabase
   const syncDraftOrdersWithSupabase = async () => {
@@ -545,51 +550,46 @@ function AdminCatalogPage() {
     return standardCapacities;
   }, [products]);
 
+  // Fonction pour raccourcir les noms de produits Apple
+  const shortenProductName = (productName: string): string => {
+    // Enlever "Apple " du début du nom pour économiser de l'espace
+    if (productName.toLowerCase().startsWith('apple ')) {
+      return productName.substring(6); // Enlever "Apple "
+    }
+    return productName;
+  };
+
   // Filtrage et tri des produits
   const filteredAndSortedProducts = useMemo(() => {
     let filtered = products.filter(product => {
-      // Recherche globale
       const matchesSearch = !searchTerm || 
         product.product_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         product.sku.toLowerCase().includes(searchTerm.toLowerCase());
       
-      // Manufacturer (dans le nom du produit)
       const matchesManufacturer = selectedManufacturers.length === 0 || 
         productContainsManufacturer(product.product_name, selectedManufacturers);
       
-      // Appearance
       const matchesAppearance = selectedAppearances.length === 0 || 
         selectedAppearances.includes(product.appearance);
       
-      // Functionality
       const matchesFunctionality = selectedFunctionalities.length === 0 || 
         selectedFunctionalities.includes(product.functionality);
       
-      // Color
       const matchesColor = selectedColors.length === 0 || 
         selectedColors.includes(product.color);
       
-      // Boxed
       const matchesBoxed = selectedBoxedOptions.length === 0 || 
         selectedBoxedOptions.includes(product.boxed);
       
-      // Additional Info
       const matchesAdditionalInfo = selectedAdditionalInfo.length === 0 || 
         (product.additional_info && selectedAdditionalInfo.includes(product.additional_info));
       
-      // Prix
       const matchesPriceMin = !priceMin || product.price_dbc >= parseFloat(priceMin);
       const matchesPriceMax = !priceMax || product.price_dbc <= parseFloat(priceMax);
-      
-      // Quantité
       const matchesQuantityMin = !quantityMin || product.quantity >= parseInt(quantityMin);
       const matchesQuantityMax = !quantityMax || product.quantity <= parseInt(quantityMax);
       
-      // Filtre nouveaux produits - CORRIGÉ: ne montrer que les nouveaux produits qui ont maintenant du stock
-      const matchesNewProducts = !showNewProductsOnly || 
-        (newProductsSKUs.includes(product.sku) && product.quantity > 0);
-      
-      // Filtre capacité standard (Apple et Samsung uniquement)
+      const matchesNewProducts = !showNewProductsOnly || newProductsSKUs.includes(product.sku);
       const matchesStandardCapacity = !showStandardCapacityOnly || (() => {
         // Vérifier si c'est Apple ou Samsung
         const isAppleOrSamsung = product.product_name.toLowerCase().includes('apple') || 
@@ -603,20 +603,23 @@ function AdminCatalogPage() {
         const parsed = parseProductInfo(product.product_name);
         if (!parsed) return false;
         
-        const standardCapacity = getStandardCapacities[parsed.baseModel];
+        const standardCapacities = getStandardCapacities;
+        const standardCapacity = standardCapacities[parsed.baseModel];
         return standardCapacity && parsed.capacity === standardCapacity;
       })();
       
-      // Filtrage par activité et stock
+      // Gestion du stock: distinguer recherche explicite de filtrage passif
       const hasSearch = searchTerm.trim().length > 0;
       const hasStock = product.quantity > 0;
       const allowZeroQuantity = quantityMin === '0' || (quantityMin !== '' && parseInt(quantityMin) === 0);
       
+      // CORRECTION: Ne pas afficher les produits à quantité 0 sauf si explicitement demandé
       // Filtrer les produits inactifs SAUF si recherche active ou filtre quantité explicite
       const isActiveOrSearched = product.is_active || hasSearch || allowZeroQuantity || includeZeroStock;
       
-      // Si pas de stock, n'afficher que si: recherche active OU filtre quantité OU toggle stock zéro activé
-      const matchesStock = hasStock || hasSearch || allowZeroQuantity || includeZeroStock;
+      // CORRECTION STRICTE: Produits à stock 0 UNIQUEMENT si toggle activé
+      // La recherche et les filtres ne doivent pas forcer l'affichage des produits à stock 0
+      const matchesStock = hasStock || includeZeroStock;
       
       return matchesSearch && matchesManufacturer && matchesAppearance && 
              matchesFunctionality && matchesColor && matchesBoxed &&
@@ -625,8 +628,16 @@ function AdminCatalogPage() {
              matchesStandardCapacity && matchesStock && isActiveOrSearched;
     });
 
-    // Tri
+    // Tri avec priorisation ABSOLUE Minor Fault > Working
     filtered.sort((a, b) => {
+      // TRI PRIMAIRE OBLIGATOIRE : Minor Fault en premier, TOUJOURS
+      if (a.functionality === 'Minor Fault' && b.functionality === 'Working') {
+        return -1; // Minor Fault avant Working
+      } else if (a.functionality === 'Working' && b.functionality === 'Minor Fault') {
+        return 1; // Working après Minor Fault
+      }
+
+      // TRI SECONDAIRE : selon le champ sélectionné (seulement si même fonctionnalité)
       let aValue = a[sortField];
       let bValue = b[sortField];
       
@@ -634,7 +645,7 @@ function AdminCatalogPage() {
         aValue = aValue.toLowerCase();
         bValue = bValue.toLowerCase();
       }
-      
+
       if (sortDirection === 'asc') {
         return aValue < bValue ? -1 : aValue > bValue ? 1 : 0;
       } else {
@@ -1267,48 +1278,56 @@ function AdminCatalogPage() {
     }
   }, [currentDraftOrder, draftOrders, products]);
 
-  // Fonction pour obtenir la classe CSS de la couleur
+  // Fonction pour obtenir la classe CSS de la couleur avec les vraies couleurs Apple
   const getColorClass = (color: string | null) => {
-    if (!color) return 'bg-gray-100 text-gray-800';
+    if (!color) return 'bg-gray-100';
     
     const colorLower = color.toLowerCase();
     
     switch (colorLower) {
       case 'black':
-        return 'bg-gray-900 text-white';
+      case 'space black':
+      case 'space gray':
+        return 'bg-zinc-800'; // Apple Space Gray authentique
       case 'white':
-        return 'bg-gray-100 text-gray-900 border border-gray-300';
+        return 'bg-gray-50 border-gray-200'; // Apple White authentique
       case 'red':
-        return 'bg-red-500 text-white';
+      case 'product red':
+        return 'bg-red-600'; // Apple Product Red authentique
       case 'blue':
-        return 'bg-blue-500 text-white';
+      case 'pacific blue':
+      case 'sierra blue':
+        return 'bg-blue-600'; // Apple Blue authentique
       case 'green':
-        return 'bg-green-500 text-white';
+      case 'alpine green':
+      case 'midnight green':
+        return 'bg-emerald-700'; // Apple Green authentique
       case 'yellow':
-        return 'bg-yellow-400 text-gray-900';
+        return 'bg-amber-400'; // Apple Yellow authentique
       case 'purple':
-        return 'bg-purple-500 text-white';
+      case 'deep purple':
+        return 'bg-purple-600'; // Apple Purple authentique
       case 'pink':
-        return 'bg-pink-500 text-white';
+      case 'rose':
+      case 'rose gold':
+        return 'bg-rose-400'; // Apple Pink/Rose Gold authentique
       case 'orange':
-        return 'bg-orange-500 text-white';
+        return 'bg-orange-500';
       case 'gray':
       case 'grey':
-        return 'bg-gray-500 text-white';
+        return 'bg-gray-500';
       case 'silver':
-        return 'bg-gray-300 text-gray-900';
+        return 'bg-gray-200'; // Apple Silver authentique
       case 'gold':
-        return 'bg-yellow-600 text-white';
-      case 'rose':
-        return 'bg-rose-500 text-white';
+        return 'bg-amber-300'; // Apple Gold authentique
       case 'coral':
-        return 'bg-coral-500 text-white';
+        return 'bg-coral-500';
       case 'midnight':
-        return 'bg-slate-900 text-white';
+        return 'bg-slate-900'; // Apple Midnight authentique
       case 'graphite':
-        return 'bg-slate-700 text-white';
+        return 'bg-zinc-700'; // Apple Graphite authentique
       default:
-        return 'bg-gray-100 text-gray-800';
+        return 'bg-gray-200';
     }
   };
 
@@ -1371,6 +1390,164 @@ function AdminCatalogPage() {
   }, []);
 
   // Plus besoin de vérifications d'auth car protégé par withAuth
+
+  // Composant ProductCard intégré pour la vue mobile
+  const ProductCard = ({ product }: { product: Product }) => {
+    const quantityInCart = currentDraftOrder && draftOrders[currentDraftOrder]?.items?.[product.sku] || 0;
+    const isChecked = quantityInCart === product.quantity && quantityInCart > 0;
+    const isHighlighted = quantityInCart > 0;
+
+    return (
+      <div className={`
+        bg-white rounded border shadow-sm p-2 transition-all duration-200
+        ${isHighlighted ? 'ring-1 ring-dbc-light-green bg-green-50/20' : 'hover:shadow-md'}
+      `}>
+        {/* Header compact avec checkbox et SKU */}
+        <div className="flex items-center justify-between mb-1">
+          <div className="flex items-center gap-1">
+            <input
+              type="checkbox"
+              checked={isChecked}
+              onChange={async (e) => {
+                const isChecked = e.target.checked;
+                
+                if (isChecked) {
+                  await selectFullQuantity(product.sku, product.quantity);
+                  setSelectedProducts(prev => ({ ...prev, [product.sku]: true }));
+                } else {
+                  if (currentDraftOrder && draftOrders[currentDraftOrder]) {
+                    const newItems = { ...draftOrders[currentDraftOrder].items };
+                    delete newItems[product.sku];
+                    
+                    const newDraftOrders = {
+                      ...draftOrders,
+                      [currentDraftOrder]: {
+                        ...draftOrders[currentDraftOrder],
+                        items: newItems
+                      }
+                    };
+                    
+                    setDraftOrders(newDraftOrders);
+                    
+                    setQuantities(prev => {
+                      const newQuantities = { ...prev };
+                      delete newQuantities[product.sku];
+                      return newQuantities;
+                    });
+                    
+                    await saveDraftOrdersToLocalStorage(newDraftOrders);
+                  }
+                  setSelectedProducts(prev => ({ ...prev, [product.sku]: false }));
+                }
+              }}
+              className="scale-75 rounded border-gray-300 text-dbc-light-green focus:ring-dbc-light-green"
+            />
+            <span className="text-xs font-mono text-gray-500 truncate">{product.sku}</span>
+          </div>
+          {isHighlighted && (
+            <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+          )}
+        </div>
+
+        {/* Nom du produit */}
+        <h3 className="text-sm font-medium text-gray-900 mb-2 line-clamp-1">
+          {shortenProductName(product.product_name)}
+        </h3>
+
+        {/* Ligne avec Working/Grade, Additional Info et Couleur */}
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* Fonctionnalité */}
+            <span className={`text-sm font-medium ${
+              product.functionality === 'Working' ? 'text-green-600' : 'text-amber-600'
+            }`}>
+              {product.functionality === 'Working' ? 'Working' : 'Minor Fault'}
+            </span>
+            
+            {/* Grade */}
+            <span className={`text-sm font-medium px-1 py-0.5 rounded ${
+              product.appearance.includes('A+') ? 'bg-green-100 text-green-800' :
+              product.appearance.includes('A') && !product.appearance.includes('AB') ? 'bg-blue-100 text-blue-800' :
+              product.appearance.includes('B') ? 'bg-yellow-100 text-yellow-800' :
+              'bg-orange-100 text-orange-800'
+            }`}>
+              {product.appearance.replace('Grade ', '')}
+            </span>
+
+            {/* Additional Info */}
+            {product.additional_info && (
+              <span className="text-xs px-1 py-0.5 bg-gray-100 text-gray-700 rounded border">
+                {product.additional_info}
+              </span>
+            )}
+          </div>
+
+          {/* Couleur à droite */}
+          {product.color && (
+            <div className={`w-8 h-4 rounded border-2 border-gray-300 ${getColorClass(product.color)}`} title={product.color} />
+          )}
+        </div>
+
+        {/* Prix en bas, centré, juste au-dessus de la quantité */}
+        <div className="text-center mb-2">
+          <div className="text-sm font-bold text-gray-900">
+            {product.price_dbc.toFixed(2)}€
+          </div>
+        </div>
+
+        {/* Contrôles de quantité ultra-compacts */}
+        <div className="flex items-center gap-1">
+          <button
+            onClick={async () => await decrementQuantity(product.sku)}
+            disabled={!quantityInCart || quantityInCart === 0}
+            className={`p-1 rounded text-xs ${
+              !quantityInCart || quantityInCart === 0
+                ? 'bg-gray-100 text-gray-400 cursor-not-allowed' 
+                : 'bg-red-500 text-white hover:bg-red-600'
+            }`}
+          >
+            <Minus className="h-3 w-3" />
+          </button>
+          
+          <div className="flex-1 relative">
+            <input
+              type="number"
+              min="0"
+              max={product.quantity}
+              value={quantityInCart || ''}
+              onChange={async (e) => {
+                const newValue = e.target.value;
+                const numValue = parseInt(newValue);
+                
+                if (newValue === '' || (numValue >= 0 && numValue <= product.quantity)) {
+                  await updateQuantity(product.sku, newValue);
+                }
+              }}
+              placeholder="0"
+              className={`w-full px-1 py-1 pr-6 text-xs text-center border rounded focus:outline-none focus:ring-1 focus:ring-dbc-light-green ${
+                isHighlighted ? 'border-dbc-light-green bg-green-50' : 'border-gray-300'
+              }`}
+            />
+            <span className="absolute right-1 top-1/2 transform -translate-y-1/2 text-xs text-gray-500">
+              /{product.quantity}
+            </span>
+          </div>
+          
+          <button
+            onClick={async () => await addToCart(product.sku)}
+            disabled={quantityInCart >= product.quantity}
+            className={`p-1 rounded text-xs transition-all duration-200 ${
+              quantityInCart >= product.quantity 
+                ? 'bg-gray-400 cursor-not-allowed text-white' 
+                : 'bg-gradient-to-r from-dbc-bright-green to-emerald-400 hover:from-emerald-300 hover:to-emerald-500 text-dbc-dark-green hover:text-white'
+            }`}
+          >
+            <Plus className="h-3 w-3" />
+          </button>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-gray-50 to-emerald-50">
@@ -1440,10 +1617,10 @@ function AdminCatalogPage() {
       {/* Conteneur principal avec plus d'espace et centrage */}
       <div className="max-w-[2000px] mx-auto px-4 py-6">
         {/* Barre d'outils principale */}
-        <div className="bg-white rounded-lg shadow-sm border p-6 mb-6">
+        <div className="bg-white rounded-lg shadow-sm border p-4 md:p-6 mb-6">
           {/* Recherche et actions */}
           <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-6">
-            <div className="flex-1 max-w-md">
+            <div className="flex-1 max-w-full lg:max-w-md">
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
                 <input
@@ -1456,12 +1633,23 @@ function AdminCatalogPage() {
               </div>
             </div>
             
-            <div className="flex items-center space-x-3">
+            <div className="flex items-center justify-between lg:justify-start gap-2 lg:gap-3 flex-wrap">
+              {/* Bouton filtres mobile */}
+              <button
+                onClick={() => setShowMobileFilters(!showMobileFilters)}
+                className="lg:hidden px-4 py-2 bg-white bg-opacity-80 backdrop-blur-sm border border-white border-opacity-30 rounded-xl hover:bg-opacity-90 hover:shadow-lg text-sm text-gray-700 transition-all duration-200 shadow-md flex items-center gap-2"
+              >
+                <Filter className="h-4 w-4" />
+                Filtres
+                {showMobileFilters ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+              </button>
+              
               <button
                 onClick={resetFilters}
                 className="px-4 py-2 bg-white bg-opacity-80 backdrop-blur-sm border border-white border-opacity-30 rounded-xl hover:bg-opacity-90 hover:shadow-lg text-sm text-gray-700 transition-all duration-200 shadow-md"
               >
-                Réinitialiser filtres
+                <span className="hidden sm:inline">Réinitialiser</span>
+                <span className="sm:hidden">Reset</span>
               </button>
               
               <CatalogUpdateButton onUpdateComplete={refreshProducts} />
@@ -1477,7 +1665,8 @@ function AdminCatalogPage() {
                   className="flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-dbc-bright-green to-emerald-400 text-dbc-dark-green rounded-xl hover:from-emerald-300 hover:to-emerald-500 hover:text-white transition-all duration-200 text-sm font-semibold shadow-lg backdrop-blur-sm"
                 >
                   <FileSpreadsheet className="h-4 w-4" />
-                  <span>Export Catalogue</span>
+                  <span className="hidden sm:inline">Export Catalogue</span>
+                  <span className="sm:hidden">Export</span>
                   <ChevronDown className="h-4 w-4" />
                 </button>
                 
@@ -1510,66 +1699,15 @@ function AdminCatalogPage() {
           </div>
 
           {/* Pagination en haut */}
-          <div className="flex items-center justify-between mb-6 pb-4 border-b border-gray-200">
-            <div className="flex items-center space-x-4">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6 pb-4 border-b border-gray-200">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
               <div className="text-sm text-gray-700">
                 <span className="font-semibold text-lg">{filteredAndSortedProducts.length.toLocaleString('fr-FR')}</span> produits affichés
                 {totalProductsCount && filteredAndSortedProducts.length !== totalProductsCount && (
-                  <span className="text-gray-500">
+                  <span className="text-gray-500 block sm:inline">
                     {' '}(filtrés sur <span className="font-medium">{totalProductsCount.toLocaleString('fr-FR')}</span> total)
                   </span>
                 )}
-                {/* Boutons de toggle toujours visibles */}
-                <div className="text-xs mt-1 space-y-1">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    {/* Toggle pour les produits en rupture de stock */}
-                    <button
-                      onClick={toggleZeroStockProducts}
-                      className={`text-xs px-2 py-1 rounded-md border transition-colors ${
-                        includeZeroStock 
-                          ? 'bg-orange-100 text-orange-800 border-orange-300 hover:bg-orange-200' 
-                          : 'bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200'
-                      }`}
-                    >
-                      {includeZeroStock ? '✓ ' : ''}📦 Afficher produits à quantité 0
-                      {!includeZeroStock && filteredZeroStockProducts.length > 0 && ` (${filteredZeroStockProducts.length} masqués)`}
-                    </button>
-                    
-                    {/* Toggle pour les nouveaux produits */}
-                    {newProductsSKUs.length > 0 && (
-                      <button
-                        onClick={toggleNewProductsFilter}
-                        className={`text-xs px-2 py-1 rounded-md border transition-colors ${
-                          showNewProductsOnly 
-                            ? 'bg-green-100 text-green-800 border-green-300 hover:bg-green-200' 
-                            : 'bg-blue-100 text-blue-800 border-blue-300 hover:bg-blue-200'
-                        }`}
-                      >
-                        {showNewProductsOnly ? '✓ ' : ''}✨ {newProductsSKUs.length} nouveaux produits
-                        {lastImportDate && ` (${lastImportDate.toLocaleDateString('fr-FR')})`}
-                      </button>
-                    )}
-                    
-                    {/* Toggle pour les capacités standard Apple/Samsung */}
-                    <button
-                      onClick={toggleStandardCapacityFilter}
-                      className={`text-xs px-2 py-1 rounded-md border transition-colors ${
-                        showStandardCapacityOnly 
-                          ? 'bg-purple-100 text-purple-800 border-purple-300 hover:bg-purple-200' 
-                          : 'bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200'
-                      }`}
-                    >
-                      {showStandardCapacityOnly ? '✓ ' : ''}📱 Capacités standard (Apple/Samsung)
-                    </button>
-                  </div>
-                  
-                  {/* Informations sur les filtres actifs */}
-                  {(selectedManufacturers.length > 0 || selectedAppearances.length > 0 || searchTerm || priceMin || priceMax || quantityMin || quantityMax || showNewProductsOnly) && (
-                    <div className="text-amber-600">
-                      ⚠️ Filtres actifs - {products.length - filteredAndSortedProducts.length} produits masqués
-                    </div>
-                  )}
-                </div>
               </div>
               <select
                 value={itemsPerPage}
@@ -1577,55 +1715,134 @@ function AdminCatalogPage() {
                   setItemsPerPage(Number(e.target.value));
                   setCurrentPage(1);
                 }}
-                className="text-sm border border-gray-300 rounded px-2 py-1 text-gray-900"
+                className="text-sm border border-gray-300 rounded px-2 py-1 text-gray-900 w-full sm:w-auto"
               >
+                <option value={50}>50 par page</option>
                 <option value={100}>100 par page</option>
                 <option value={250}>250 par page</option>
                 <option value={500}>500 par page</option>
-                <option value={1000}>1000 par page</option>
               </select>
             </div>
             
-            {/* Navigation des pages */}
+            {/* Navigation des pages - version responsive */}
             {totalPages > 1 && (
-              <div className="flex items-center space-x-2">
-                <button
-                  onClick={() => setCurrentPage(1)}
-                  disabled={currentPage === 1}
-                  className="px-3 py-1 text-sm bg-white bg-opacity-80 backdrop-blur-sm border border-white border-opacity-30 rounded-lg disabled:bg-opacity-50 disabled:text-gray-400 text-gray-700 hover:bg-opacity-90 hover:shadow-md transition-all duration-200 shadow-sm"
-                >
-                  Premier
-                </button>
-                <button
-                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                  disabled={currentPage === 1}
-                  className="px-3 py-1 text-sm bg-white bg-opacity-80 backdrop-blur-sm border border-white border-opacity-30 rounded-lg disabled:bg-opacity-50 disabled:text-gray-400 text-gray-700 hover:bg-opacity-90 hover:shadow-md transition-all duration-200 shadow-sm"
-                >
-                  ←
-                </button>
-                <span className="px-3 py-1 text-sm text-gray-700 bg-white bg-opacity-60 backdrop-blur-sm rounded-lg border border-white border-opacity-20 shadow-sm">
-                  Page {currentPage} sur {totalPages}
-                </span>
-                <button
-                  onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                  disabled={currentPage === totalPages}
-                  className="px-3 py-1 text-sm bg-white bg-opacity-80 backdrop-blur-sm border border-white border-opacity-30 rounded-lg disabled:bg-opacity-50 disabled:text-gray-400 text-gray-700 hover:bg-opacity-90 hover:shadow-md transition-all duration-200 shadow-sm"
-                >
-                  →
-                </button>
-                <button
-                  onClick={() => setCurrentPage(totalPages)}
-                  disabled={currentPage === totalPages}
-                  className="px-3 py-1 text-sm bg-white bg-opacity-80 backdrop-blur-sm border border-white border-opacity-30 rounded-lg disabled:bg-opacity-50 disabled:text-gray-400 text-gray-700 hover:bg-opacity-90 hover:shadow-md transition-all duration-200 shadow-sm"
-                >
-                  Dernier
-                </button>
+              <div className="flex items-center justify-center sm:justify-end gap-1 sm:gap-2">
+                {/* Version mobile simplifiée */}
+                <div className="flex sm:hidden items-center gap-2">
+                  <button
+                    onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                    disabled={currentPage === 1}
+                    className="p-2 text-sm bg-white bg-opacity-80 backdrop-blur-sm border border-white border-opacity-30 rounded-lg disabled:bg-opacity-50 disabled:text-gray-400 text-gray-700 hover:bg-opacity-90 hover:shadow-md transition-all duration-200 shadow-sm"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </button>
+                  <span className="px-3 py-1 text-sm text-gray-700 bg-white bg-opacity-60 backdrop-blur-sm rounded-lg border border-white border-opacity-20 shadow-sm">
+                    {currentPage} / {totalPages}
+                  </span>
+                  <button
+                    onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                    disabled={currentPage === totalPages}
+                    className="p-2 text-sm bg-white bg-opacity-80 backdrop-blur-sm border border-white border-opacity-30 rounded-lg disabled:bg-opacity-50 disabled:text-gray-400 text-gray-700 hover:bg-opacity-90 hover:shadow-md transition-all duration-200 shadow-sm"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </button>
+                </div>
+                
+                {/* Version desktop complète */}
+                <div className="hidden sm:flex items-center gap-2">
+                  <button
+                    onClick={() => setCurrentPage(1)}
+                    disabled={currentPage === 1}
+                    className="px-3 py-1 text-sm bg-white bg-opacity-80 backdrop-blur-sm border border-white border-opacity-30 rounded-lg disabled:bg-opacity-50 disabled:text-gray-400 text-gray-700 hover:bg-opacity-90 hover:shadow-md transition-all duration-200 shadow-sm"
+                  >
+                    Premier
+                  </button>
+                  <button
+                    onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                    disabled={currentPage === 1}
+                    className="px-3 py-1 text-sm bg-white bg-opacity-80 backdrop-blur-sm border border-white border-opacity-30 rounded-lg disabled:bg-opacity-50 disabled:text-gray-400 text-gray-700 hover:bg-opacity-90 hover:shadow-md transition-all duration-200 shadow-sm"
+                  >
+                    ←
+                  </button>
+                  <span className="px-3 py-1 text-sm text-gray-700 bg-white bg-opacity-60 backdrop-blur-sm rounded-lg border border-white border-opacity-20 shadow-sm">
+                    Page {currentPage} sur {totalPages}
+                  </span>
+                  <button
+                    onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                    disabled={currentPage === totalPages}
+                    className="px-3 py-1 text-sm bg-white bg-opacity-80 backdrop-blur-sm border border-white border-opacity-30 rounded-lg disabled:bg-opacity-50 disabled:text-gray-400 text-gray-700 hover:bg-opacity-90 hover:shadow-md transition-all duration-200 shadow-sm"
+                  >
+                    →
+                  </button>
+                  <button
+                    onClick={() => setCurrentPage(totalPages)}
+                    disabled={currentPage === totalPages}
+                    className="px-3 py-1 text-sm bg-white bg-opacity-80 backdrop-blur-sm border border-white border-opacity-30 rounded-lg disabled:bg-opacity-50 disabled:text-gray-400 text-gray-700 hover:bg-opacity-90 hover:shadow-md transition-all duration-200 shadow-sm"
+                  >
+                    Dernier
+                  </button>
+                </div>
               </div>
             )}
           </div>
 
-          {/* Filtres avancés avec dropdowns cliquables */}
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
+          {/* Boutons de toggle */}
+          <div className="text-xs mb-4 space-y-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              {/* Toggle pour les produits en rupture de stock */}
+              <button
+                onClick={toggleZeroStockProducts}
+                className={`text-xs px-2 py-1 rounded-md border transition-colors ${
+                  includeZeroStock 
+                    ? 'bg-orange-100 text-orange-800 border-orange-300 hover:bg-orange-200' 
+                    : 'bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200'
+                }`}
+              >
+                {includeZeroStock ? '✓ ' : ''}📦 <span className="hidden sm:inline">Afficher produits à</span> quantité 0
+                {!includeZeroStock && filteredZeroStockProducts.length > 0 && ` (${filteredZeroStockProducts.length})`}
+              </button>
+              
+              {/* Toggle pour les nouveaux produits */}
+              {newProductsSKUs.length > 0 && (
+                <button
+                  onClick={toggleNewProductsFilter}
+                  className={`text-xs px-2 py-1 rounded-md border transition-colors ${
+                    showNewProductsOnly 
+                      ? 'bg-green-100 text-green-800 border-green-300 hover:bg-green-200' 
+                      : 'bg-blue-100 text-blue-800 border-blue-300 hover:bg-blue-200'
+                  }`}
+                >
+                  {showNewProductsOnly ? '✓ ' : ''}✨ {newProductsSKUs.length} nouveaux
+                  {lastImportDate && (
+                    <span className="hidden sm:inline"> ({lastImportDate.toLocaleDateString('fr-FR')})</span>
+                  )}
+                </button>
+              )}
+              
+              {/* Toggle pour les capacités standard Apple/Samsung */}
+              <button
+                onClick={toggleStandardCapacityFilter}
+                className={`text-xs px-2 py-1 rounded-md border transition-colors ${
+                  showStandardCapacityOnly 
+                    ? 'bg-purple-100 text-purple-800 border-purple-300 hover:bg-purple-200' 
+                    : 'bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200'
+                }`}
+              >
+                {showStandardCapacityOnly ? '✓ ' : ''}📱 Capacités standard
+              </button>
+            </div>
+            
+            {/* Informations sur les filtres actifs */}
+            {(selectedManufacturers.length > 0 || selectedAppearances.length > 0 || searchTerm || priceMin || priceMax || quantityMin || quantityMax || showNewProductsOnly) && (
+              <div className="text-amber-600">
+                ⚠️ Filtres actifs - {products.length - filteredAndSortedProducts.length} produits masqués
+              </div>
+            )}
+          </div>
+
+          {/* Filtres avancés avec dropdowns cliquables - cachés sur mobile par défaut */}
+          <div className={`${showMobileFilters ? 'block' : 'hidden'} lg:block`}>
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
             {/* Manufacturer - Fixé */}
             <div 
               className="relative dropdown-container"
@@ -1840,198 +2057,256 @@ function AdminCatalogPage() {
             </div>
           </div>
         </div>
+      </div>
 
-        {/* Tableau des produits avec pagination en bas aussi */}
-        <div className="bg-white rounded-lg shadow-sm border overflow-x-auto">
-          <table className="w-full table-auto divide-y divide-gray-200 min-w-[1400px]">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="w-12 px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+        {/* Vue responsive : Cartes jusqu'à lg, table sur lg+ */}
+        {loading && !products.length ? (
+          <div className="bg-white rounded-lg shadow-sm border p-8 text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-dbc-light-green mx-auto mb-4"></div>
+            <p className="text-gray-600">Chargement des produits...</p>
+          </div>
+        ) : error ? (
+          <div className="bg-white rounded-lg shadow-sm border p-8 text-center">
+            <p className="text-red-600">{error}</p>
+          </div>
+        ) : (
+          <>
+            {/* Vue cartes (≤1023px) - Permet de voir toutes les infos importantes */}
+            <div className="lg:hidden">
+              {/* Sélection globale sur mobile */}
+              <div className="bg-white rounded-lg shadow-sm border p-4 mb-4 flex items-center justify-between">
+                <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
                   <input
                     type="checkbox"
-                    checked={selectedProducts && products.length > 0 && products.every(p => selectedProducts[p.sku])}
+                    checked={selectedProducts && paginatedProducts.length > 0 && paginatedProducts.every(p => selectedProducts[p.sku])}
                     onChange={(e) => {
                       if (e.target.checked) {
-                        // Sélectionner tous les produits visibles avec leur quantité max
                         const newSelection: {[key: string]: boolean} = {};
                         const newQuantities: {[key: string]: number} = {};
-                        products.forEach(product => {
+                        paginatedProducts.forEach(product => {
                           newSelection[product.sku] = true;
                           newQuantities[product.sku] = product.quantity;
                         });
                         setSelectedProducts(newSelection);
                         setQuantities(newQuantities);
                       } else {
-                        // Désélectionner tous
                         setSelectedProducts({});
                         setQuantities({});
                       }
                     }}
                     className="rounded border-gray-300"
                   />
-                </th>
-                <th className="w-32 px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">SKU</th>
-                <th className="w-80 px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nom du produit</th>
-                <th className="w-24 px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Apparence</th>
-                <th className="w-24 px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fonction.</th>
-                <th className="w-32 px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Informations</th>
-                <th className="w-24 px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Couleur</th>
-                <th className="w-24 px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Emballage</th>
-                <th className="w-16 px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Stock</th>
-                <th className="w-20 px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Prix</th>
-                <th className="w-16 px-2 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Qté</th>
-                <th className="w-20 px-2 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {paginatedProducts.map((product) => {
-                const quantityInCart = currentDraftOrder && draftOrders[currentDraftOrder]?.items?.[product.sku] || 0;
-                // La case est cochée SEULEMENT si on a pris TOUTE la quantité disponible
-                const isChecked = quantityInCart === product.quantity && quantityInCart > 0;
-                // La ligne est en surbrillance dès qu'il y a une quantité dans le panier
-                const isHighlighted = quantityInCart > 0;
-                
-                return (
-                  <tr 
-                    key={product.sku} 
-                    className={`hover:bg-gray-50 ${isHighlighted ? 'bg-green-50 border-l-4 border-dbc-light-green' : ''}`}
-                  >
-                    <td className="px-2 py-2">
-                      <input
-                        type="checkbox"
-                        checked={isChecked}
-                        onChange={async (e) => {
-                          e.stopPropagation();
-                          const isChecked = e.target.checked;
-                          
-                          if (isChecked) {
-                            // Si coché, sélectionner TOUTE la quantité disponible
-                            await selectFullQuantity(product.sku, product.quantity);
-                            setSelectedProducts(prev => ({ ...prev, [product.sku]: true }));
-                          } else {
-                            // Si décoché, retirer du panier
-                            if (currentDraftOrder && draftOrders[currentDraftOrder]) {
-                              const newItems = { ...draftOrders[currentDraftOrder].items };
-                              delete newItems[product.sku];
-                              
-                              const newDraftOrders = {
-                                ...draftOrders,
-                                [currentDraftOrder]: {
-                                  ...draftOrders[currentDraftOrder],
-                                  items: newItems
-                                }
-                              };
-                              
-                              setDraftOrders(newDraftOrders);
-                              
-                              setQuantities(prev => {
-                                const newQuantities = { ...prev };
-                                delete newQuantities[product.sku];
-                                return newQuantities;
+                  Tout sélectionner
+                </label>
+                <span className="text-xs text-gray-500">
+                  {Object.keys(selectedProducts).filter(key => selectedProducts[key]).length} sélectionnés
+                </span>
+              </div>
+
+              {/* Grille de cartes responsive */}
+              <div className="grid grid-cols-1 gap-2">
+                {paginatedProducts.map((product) => (
+                  <ProductCard key={product.sku} product={product} />
+                ))}
+              </div>
+            </div>
+
+            {/* Vue table compacte (≥1024px) - Toutes les colonnes importantes visibles */}
+            <div className="hidden lg:block bg-white rounded-lg shadow-sm border overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-gray-50">
+                    <tr className="border-b border-gray-200">
+                      <th className="sticky left-0 z-10 bg-gray-50 w-8 px-1 py-1.5 text-left text-xs font-medium text-gray-500 uppercase">
+                        <input
+                          type="checkbox"
+                          checked={selectedProducts && paginatedProducts.length > 0 && paginatedProducts.every(p => selectedProducts[p.sku])}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              const newSelection: {[key: string]: boolean} = {};
+                              const newQuantities: {[key: string]: number} = {};
+                              paginatedProducts.forEach(product => {
+                                newSelection[product.sku] = true;
+                                newQuantities[product.sku] = product.quantity;
                               });
-                              
-                              // Sauvegarder avec sync Supabase
-                              await saveDraftOrdersToLocalStorage(newDraftOrders);
+                              setSelectedProducts(newSelection);
+                              setQuantities(newQuantities);
+                            } else {
+                              setSelectedProducts({});
+                              setQuantities({});
                             }
-                            setSelectedProducts(prev => ({ ...prev, [product.sku]: false }));
-                          }
-                        }}
-                        className="rounded border-gray-300"
-                      />
-                    </td>
-                    <td className="px-2 py-2 text-xs font-mono text-gray-900">{product.sku}</td>
-                    <td className="px-2 py-2 text-xs text-gray-900">
-                      <div className="break-words" title={product.product_name}>
-                        {product.product_name}
-                      </div>
-                    </td>
-                    <td className="px-2 py-2">
-                      <span className={`inline-flex px-1 py-0.5 text-xs font-medium rounded-full ${
-                        product.appearance.includes('A+') ? 'bg-green-100 text-green-800' :
-                        product.appearance.includes('A') && !product.appearance.includes('AB') ? 'bg-blue-100 text-blue-800' :
-                        product.appearance.includes('B') ? 'bg-yellow-100 text-yellow-800' :
-                        'bg-orange-100 text-orange-800'
-                      }`}>
-                        {product.appearance.replace('Grade ', '')}
-                      </span>
-                    </td>
-                    <td className="px-2 py-2 text-xs text-gray-900">{product.functionality}</td>
-                    <td className="px-2 py-2 text-xs text-gray-900">
-                      <div className="break-words">
-                        {product.additional_info || '-'}
-                      </div>
-                    </td>
-                    <td className="px-2 py-2">
-                      {product.color ? (
-                        <div className="flex items-center gap-1">
-                          <div 
-                            className={`w-2 h-2 rounded-full border flex-shrink-0 ${getColorClass(product.color)}`}
-                          />
-                          <span className="text-xs text-gray-900">{product.color}</span>
-                        </div>
-                      ) : (
-                        <span className="text-xs text-gray-400">-</span>
-                      )}
-                    </td>
-                    <td className="px-2 py-2 text-xs text-gray-900">{product.boxed}</td>
-                    <td className="px-2 py-2 text-xs text-left font-medium text-gray-900">{product.quantity}</td>
-                    <td className="px-2 py-2 text-xs text-left font-medium text-gray-900">{product.price_dbc.toFixed(2)}€</td>
-                    <td className="px-2 py-2">
-                      <input
-                        type="number"
-                        min="0"
-                        max={product.quantity}
-                        placeholder="0"
-                        value={quantityInCart || (quantities[product.sku] || '')}
-                        onChange={async (e) => {
-                          const newValue = e.target.value;
-                          const numValue = parseInt(newValue);
-                          
-                          // Permettre 0 ou vide, et empêcher de dépasser la quantité disponible
-                          if (newValue === '' || (numValue >= 0 && numValue <= product.quantity)) {
-                            await updateQuantity(product.sku, newValue);
-                          }
-                        }}
-                        className={`w-10 px-1 py-0.5 text-xs border rounded focus:border-dbc-light-green focus:outline-none text-center bg-white font-medium text-gray-900 ${
-                          isHighlighted ? 'border-dbc-light-green bg-green-50' : 'border-gray-300'
-                        }`}
-                      />
-                    </td>
-                    <td className="px-2 py-2">
-                      <div className="flex items-center justify-center gap-0.5">
-                        {/* Bouton décrémenter */}
-                        <button
-                          onClick={async () => await decrementQuantity(product.sku)}
-                          disabled={!quantityInCart || quantityInCart === 0}
-                          className={`inline-flex items-center p-1 border border-transparent text-xs rounded focus:outline-none ${
-                            !quantityInCart || quantityInCart === 0
-                              ? 'bg-gray-200 text-gray-400 cursor-not-allowed' 
-                              : 'bg-red-500 text-white hover:bg-red-600'
-                          }`}
+                          }}
+                          className="rounded border-gray-300 scale-75"
+                        />
+                      </th>
+                      <th className="px-1 py-1.5 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">SKU</th>
+                      <th className="px-1 py-1.5 text-left text-xs font-medium text-gray-500 uppercase min-w-[180px]">Nom du produit</th>
+                      <th className="px-1 py-1.5 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap hidden md:table-cell">Apparence</th>
+                      <th className="px-1 py-1.5 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap hidden lg:table-cell">Add. Info</th>
+                      <th className="px-1 py-1.5 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap hidden lg:table-cell">Fonction.</th>
+                      <th className="px-1 py-1.5 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap hidden lg:table-cell">Couleur</th>
+                      <th className="px-1 py-1.5 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap hidden 2xl:table-cell">Emballage</th>
+                      <th className="px-1 py-1.5 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">Prix</th>
+                      <th className="px-1 py-1.5 text-center text-xs font-medium text-gray-500 uppercase whitespace-nowrap">Qté/Stock</th>
+                      <th className="px-1 py-1.5 text-center text-xs font-medium text-gray-500 uppercase whitespace-nowrap">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white">
+                    {paginatedProducts.map((product) => {
+                      const quantityInCart = currentDraftOrder && draftOrders[currentDraftOrder]?.items?.[product.sku] || 0;
+                      const isChecked = quantityInCart === product.quantity && quantityInCart > 0;
+                      const isHighlighted = quantityInCart > 0;
+                      
+                      return (
+                        <tr 
+                          key={product.sku} 
+                          className={`border-b border-gray-100 hover:bg-gray-50 ${isHighlighted ? 'bg-green-50 border-l-2 border-dbc-light-green' : ''}`}
                         >
-                          <Minus className="h-2.5 w-2.5" />
-                        </button>
-                        
-                        {/* Bouton incrémenter */}
-                        <button
-                          onClick={async () => await addToCart(product.sku)}
-                          disabled={quantityInCart >= product.quantity}
-                          className={`inline-flex items-center p-1 border border-transparent text-xs rounded-lg focus:outline-none transition-all duration-200 ${
-                            quantityInCart >= product.quantity 
-                              ? 'bg-gray-400 cursor-not-allowed text-white' 
-                              : 'bg-gradient-to-r from-dbc-bright-green to-emerald-400 hover:from-emerald-300 hover:to-emerald-500 text-dbc-dark-green hover:text-white shadow-sm backdrop-blur-sm'
-                          }`}
-                        >
-                          <Plus className="h-2.5 w-2.5" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+                          <td className="sticky left-0 z-10 bg-inherit px-1 py-1">
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={async (e) => {
+                                e.stopPropagation();
+                                const isChecked = e.target.checked;
+                                
+                                if (isChecked) {
+                                  await selectFullQuantity(product.sku, product.quantity);
+                                  setSelectedProducts(prev => ({ ...prev, [product.sku]: true }));
+                                } else {
+                                  if (currentDraftOrder && draftOrders[currentDraftOrder]) {
+                                    const newItems = { ...draftOrders[currentDraftOrder].items };
+                                    delete newItems[product.sku];
+                                    
+                                    const newDraftOrders = {
+                                      ...draftOrders,
+                                      [currentDraftOrder]: {
+                                        ...draftOrders[currentDraftOrder],
+                                        items: newItems
+                                      }
+                                    };
+                                    
+                                    setDraftOrders(newDraftOrders);
+                                    
+                                    setQuantities(prev => {
+                                      const newQuantities = { ...prev };
+                                      delete newQuantities[product.sku];
+                                      return newQuantities;
+                                    });
+                                    
+                                    await saveDraftOrdersToLocalStorage(newDraftOrders);
+                                  }
+                                  setSelectedProducts(prev => ({ ...prev, [product.sku]: false }));
+                                }
+                              }}
+                              className="rounded border-gray-300 scale-75"
+                            />
+                          </td>
+                          <td className="px-1 py-1 text-xs font-mono text-gray-900 whitespace-nowrap">{product.sku}</td>
+                          <td className="px-1 py-1 text-xs text-gray-900">
+                            <div className="break-words max-w-[160px]" title={product.product_name}>
+                              {shortenProductName(product.product_name)}
+                            </div>
+                          </td>
+                          <td className="px-1 py-1 hidden md:table-cell">
+                            <span className={`inline-flex px-1 py-0.5 text-xs font-medium rounded-md ${
+                              product.appearance.includes('A+') ? 'bg-green-100 text-green-800' :
+                              product.appearance.includes('A') && !product.appearance.includes('AB') ? 'bg-blue-100 text-blue-800' :
+                              product.appearance.includes('B') ? 'bg-yellow-100 text-yellow-800' :
+                              'bg-orange-100 text-orange-800'
+                            }`}>
+                              {product.appearance.replace('Grade ', '')}
+                            </span>
+                          </td>
+                          <td className="px-1 py-1 text-xs text-gray-900 hidden lg:table-cell text-center">
+                            {product.additional_info ? (
+                              <span className="text-xs px-1 py-0.5 bg-gray-100 text-gray-700 rounded border">
+                                {product.additional_info}
+                              </span>
+                            ) : (
+                              <span className="text-xs text-gray-400">-</span>
+                            )}
+                          </td>
+                          <td className="px-1 py-1 text-xs text-gray-900 hidden lg:table-cell">
+                            <div className={`text-center font-medium ${
+                              product.functionality.includes('Working') ? 'text-green-600' : 'text-amber-600'
+                            }`}>
+                              {product.functionality.includes('Working') ? 'Working' : 'Minor Fault'}
+                            </div>
+                          </td>
+                          <td className="px-1 py-1 hidden lg:table-cell">
+                            {product.color ? (
+                              <div className="flex items-center gap-1">
+                                <div 
+                                  className={`w-2 h-2 rounded-full border flex-shrink-0 ${getColorClass(product.color)}`}
+                                />
+                                <span className="text-xs text-gray-900 truncate max-w-[60px]">{product.color}</span>
+                              </div>
+                            ) : (
+                              <span className="text-xs text-gray-400">-</span>
+                            )}
+                          </td>
+                          <td className="px-1 py-1 text-xs text-gray-900 hidden 2xl:table-cell text-center">{product.boxed}</td>
+                          <td className="px-1 py-1 text-xs text-center font-medium text-gray-900 whitespace-nowrap">{product.price_dbc.toFixed(2)}€</td>
+                          <td className="px-1 py-1">
+                            <div className="flex items-center justify-center gap-1">
+                              <input
+                                type="number"
+                                min="0"
+                                max={product.quantity}
+                                placeholder="0"
+                                value={quantityInCart || (quantities[product.sku] || '')}
+                                onChange={async (e) => {
+                                  const newValue = e.target.value;
+                                  const numValue = parseInt(newValue);
+                                  
+                                  if (newValue === '' || (numValue >= 0 && numValue <= product.quantity)) {
+                                    await updateQuantity(product.sku, newValue);
+                                  }
+                                }}
+                                className={`w-8 px-1 py-0.5 text-xs border rounded focus:border-dbc-light-green focus:outline-none text-center bg-white font-medium text-gray-900 ${
+                                  isHighlighted ? 'border-dbc-light-green bg-green-50' : 'border-gray-300'
+                                }`}
+                              />
+                              <span className="text-xs text-gray-500">/{product.quantity}</span>
+                            </div>
+                          </td>
+                          <td className="px-1 py-1">
+                            <div className="flex items-center justify-center gap-0.5">
+                              <button
+                                onClick={async () => await decrementQuantity(product.sku)}
+                                disabled={!quantityInCart || quantityInCart === 0}
+                                className={`inline-flex items-center p-0.5 border border-transparent text-xs rounded focus:outline-none ${
+                                  !quantityInCart || quantityInCart === 0
+                                    ? 'bg-gray-200 text-gray-400 cursor-not-allowed' 
+                                    : 'bg-red-500 text-white hover:bg-red-600'
+                                }`}
+                              >
+                                <Minus className="h-2 w-2" />
+                              </button>
+                              
+                              <button
+                                onClick={async () => await addToCart(product.sku)}
+                                disabled={quantityInCart >= product.quantity}
+                                className={`inline-flex items-center p-0.5 border border-transparent text-xs rounded focus:outline-none transition-all duration-200 ${
+                                  quantityInCart >= product.quantity 
+                                    ? 'bg-gray-400 cursor-not-allowed text-white' 
+                                    : 'bg-gradient-to-r from-dbc-bright-green to-emerald-400 hover:from-emerald-300 hover:to-emerald-500 text-dbc-dark-green hover:text-white shadow-sm backdrop-blur-sm'
+                                }`}
+                              >
+                                <Plus className="h-2 w-2" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </>
+        )}
 
         {/* Pagination en bas */}
         {totalPages > 1 && (

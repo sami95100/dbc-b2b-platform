@@ -73,23 +73,24 @@ export default function OrderFilters({
 
   return (
     <div className="bg-white rounded-lg shadow-sm border p-6 mb-6">
-      {/* Header avec titre et boutons principaux */}
-      <div className="flex items-center justify-between mb-4">
-        <h1 className="text-2xl font-bold text-gray-900">
+      {/* Header avec titre et boutons principaux - Responsive */}
+      <div className="flex flex-col space-y-4 lg:flex-row lg:items-center lg:justify-between lg:space-y-0 mb-4">
+        <h1 className="text-xl lg:text-2xl font-bold text-gray-900">
           {hideClientFilter ? 'Mes commandes' : 'Commandes clients'}
         </h1>
-        <div className="flex items-center space-x-4">
+        <div className="flex flex-col space-y-2 sm:flex-row sm:items-center sm:space-y-0 sm:space-x-4">
           {/* Bouton pour afficher/masquer les filtres avancés */}
           <button
             onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
-            className={`inline-flex items-center px-3 py-2 text-sm font-medium rounded-lg border transition-all duration-200 ${
+            className={`inline-flex items-center justify-center px-3 py-2 text-sm font-medium rounded-lg border transition-all duration-200 ${
               showAdvancedFilters || hasActiveAdvancedFilters
                 ? 'bg-dbc-light-green text-dbc-dark-green border-dbc-light-green'
                 : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
             }`}
           >
             <Filter className="h-4 w-4 mr-2" />
-            Filtres avancés
+            <span className="hidden sm:inline">Filtres avancés</span>
+            <span className="sm:hidden">Filtres</span>
             {hasActiveAdvancedFilters && (
               <span className="ml-2 inline-flex items-center justify-center w-5 h-5 text-xs font-bold text-white bg-red-500 rounded-full">
                 {Object.values(filters).filter(v => v !== '').length}
@@ -106,10 +107,11 @@ export default function OrderFilters({
           {hasAnyActiveFilter && (
             <button
               onClick={clearAllFilters}
-              className="inline-flex items-center px-3 py-2 text-sm font-medium text-red-600 hover:text-red-700 border border-red-300 hover:border-red-400 rounded-lg hover:bg-red-50 transition-all duration-200"
+              className="inline-flex items-center justify-center px-3 py-2 text-sm font-medium text-red-600 hover:text-red-700 border border-red-300 hover:border-red-400 rounded-lg hover:bg-red-50 transition-all duration-200"
             >
               <X className="h-4 w-4 mr-1" />
-              Effacer filtres
+              <span className="hidden sm:inline">Effacer filtres</span>
+              <span className="sm:hidden">Effacer</span>
             </button>
           )}
         </div>
@@ -138,7 +140,7 @@ export default function OrderFilters({
       {/* Filtres avancés */}
       {showAdvancedFilters && (
         <div className="border-t pt-4 mt-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
             {/* Filtre par client - masqué pour les clients normaux */}
             {!hideClientFilter && (
               <div className="space-y-2">
@@ -250,19 +252,20 @@ export default function OrderFilters({
         </div>
       )}
 
-      {/* Résumé des résultats */}
-      <div className="flex items-center justify-between mt-4 pt-4 border-t">
+      {/* Résumé des résultats - Responsive */}
+      <div className="flex flex-col space-y-2 sm:flex-row sm:items-center sm:justify-between sm:space-y-0 mt-4 pt-4 border-t">
         <p className="text-sm text-gray-600">
-          <span className="font-medium">{filteredCount}</span> commande{filteredCount > 1 ? 's' : ''} trouvée{filteredCount > 1 ? 's' : ''}
+          <span className="font-medium text-dbc-dark-green text-lg">{filteredCount}</span>
+          <span className="ml-1">commande{filteredCount > 1 ? 's' : ''} trouvée{filteredCount > 1 ? 's' : ''}</span>
           {filteredCount !== totalOrders && (
-            <span className="text-gray-500"> sur {totalOrders} au total</span>
+            <span className="text-gray-500 block sm:inline"> sur {totalOrders} au total</span>
           )}
         </p>
         
         {hasAnyActiveFilter && (
-          <div className="flex items-center text-sm text-gray-500">
+          <div className="flex items-center text-sm text-gray-500 bg-gray-50 px-3 py-1 rounded-full">
             <Filter className="h-4 w-4 mr-1" />
-            Filtres actifs
+            <span>Filtres actifs</span>
           </div>
         )}
       </div>

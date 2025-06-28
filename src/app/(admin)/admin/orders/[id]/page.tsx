@@ -730,61 +730,58 @@ function AdminOrderDetailPage() {
         </button>
 
         {/* Informations de la commande */}
-        <div className="bg-white rounded-lg shadow-sm border p-6 mb-6">
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900 mb-2">
+        <div className="bg-white rounded-lg shadow-sm border p-4 sm:p-6 mb-6">
+          <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4 mb-6">
+            <div className="flex-1 min-w-0">
+              <h1 className="text-lg sm:text-xl lg:text-2xl font-bold text-gray-900 mb-2 break-words">
                 {orderDetail.name || `Commande ${orderDetail.id}`}
               </h1>
-              <div className="flex items-center space-x-4">
-                <span className={`inline-flex items-center space-x-1 px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(orderDetail.status)}`}>
+              <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
+                <span className={`inline-flex items-center space-x-1 px-2 py-1 rounded-full text-xs sm:text-sm font-medium ${getStatusColor(orderDetail.status)} w-fit`}>
                   {getStatusIcon(orderDetail.status)}
                   <span>{orderDetail.status_label}</span>
                 </span>
-                <div className="flex items-center text-sm text-gray-600">
-                  <Calendar className="h-4 w-4 mr-1" />
-                  Créée le {new Date(orderDetail.createdAt).toLocaleDateString('fr-FR')}
+                <div className="flex items-center text-xs sm:text-sm text-gray-600">
+                  <Calendar className="h-3 w-3 sm:h-4 sm:w-4 mr-1" />
+                  <span className="truncate">Créée le {formatDate(orderDetail.createdAt)}</span>
                 </div>
               </div>
             </div>
             
-            <div className="flex items-center space-x-3">
+            <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 lg:flex-shrink-0">
               {orderDetail.status === 'draft' && (
                 <>
                   <button
                     onClick={deleteOrder}
-                    className="flex items-center space-x-2 px-4 py-2 bg-white bg-opacity-80 backdrop-blur-sm border border-red-300 text-red-600 rounded-xl hover:bg-red-50 hover:shadow-lg text-sm transition-all duration-200"
+                    className="flex items-center justify-center space-x-1 px-3 py-2 bg-white border border-red-300 text-red-600 rounded-lg hover:bg-red-50 text-sm transition-all duration-200"
                   >
                     <Trash2 className="h-4 w-4" />
                     <span>Supprimer</span>
                   </button>
-                  <div className="flex space-x-3">
-                    <button
-                      onClick={validateOrder}
-                      disabled={validating}
-                      className="flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-dbc-bright-green to-emerald-400 text-dbc-dark-green rounded-xl hover:from-emerald-300 hover:to-emerald-500 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed font-semibold shadow-lg backdrop-blur-sm transition-all duration-200"
-                    >
-                      {validating ? (
-                        <>
-                          <Clock className="h-4 w-4 animate-spin" />
-                          <span>Validation...</span>
-                        </>
-                      ) : (
-                        <>
-                          <CheckCircle className="h-4 w-4" />
-                          <span>Valider la commande</span>
-                        </>
-                      )}
-                    </button>
-
-                    <button
-                      onClick={exportToExcel}
-                      className="flex items-center space-x-2 px-4 py-2 bg-white bg-opacity-80 backdrop-blur-sm border border-white border-opacity-30 rounded-xl hover:bg-opacity-90 hover:shadow-lg text-gray-700 transition-all duration-200"
-                    >
-                      <FileSpreadsheet className="h-4 w-4" />
-                      <span>Export Excel</span>
-                    </button>
-                  </div>
+                  <button
+                    onClick={validateOrder}
+                    disabled={validating}
+                    className="flex items-center justify-center space-x-1 px-3 py-2 bg-gradient-to-r from-dbc-bright-green to-emerald-400 text-dbc-dark-green rounded-lg hover:from-emerald-300 hover:to-emerald-500 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed font-semibold transition-all duration-200 text-sm"
+                  >
+                    {validating ? (
+                      <>
+                        <Clock className="h-4 w-4 animate-spin" />
+                        <span>Validation...</span>
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle className="h-4 w-4" />
+                        <span>Valider</span>
+                      </>
+                    )}
+                  </button>
+                  <button
+                    onClick={exportToExcel}
+                    className="flex items-center justify-center space-x-1 px-3 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-700 transition-all duration-200 text-sm"
+                  >
+                    <FileSpreadsheet className="h-4 w-4" />
+                    <span>Excel</span>
+                  </button>
                 </>
               )}
               
@@ -793,7 +790,7 @@ function AdminOrderDetailPage() {
                   {/* Boutons facture et export - disponibles pour toutes les commandes validées */}
                   <button 
                     onClick={downloadInvoice}
-                    className="flex items-center space-x-2 px-4 py-2 bg-white bg-opacity-80 backdrop-blur-sm border border-white border-opacity-30 rounded-xl hover:bg-opacity-90 hover:shadow-lg text-gray-700 text-sm transition-all duration-200"
+                    className="flex items-center justify-center space-x-1 px-3 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-700 text-sm transition-all duration-200"
                   >
                     <FileText className="h-4 w-4" />
                     <span>Facture</span>
@@ -801,48 +798,44 @@ function AdminOrderDetailPage() {
                   
                   <button
                     onClick={exportToExcel}
-                    className="flex items-center space-x-2 px-4 py-2 bg-white bg-opacity-80 backdrop-blur-sm border border-white border-opacity-30 rounded-xl hover:bg-opacity-90 hover:shadow-lg text-gray-700 transition-all duration-200"
+                    className="flex items-center justify-center space-x-1 px-3 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-700 transition-all duration-200 text-sm"
                   >
                     <FileSpreadsheet className="h-4 w-4" />
-                    <span>Export Excel</span>
+                    <span>Excel</span>
                   </button>
 
                   {/* Boutons de progression du workflow */}
                   {orderDetail.status === 'pending_payment' && (
-                    <div className="flex space-x-3">
-                      <label className="flex items-center space-x-2 px-4 py-2 bg-white bg-opacity-80 backdrop-blur-sm border border-white border-opacity-30 rounded-xl hover:bg-opacity-90 hover:shadow-lg cursor-pointer text-sm text-gray-700 transition-all duration-200">
-                        <input
-                          type="file"
-                          accept=".xlsx,.xls"
-                          onChange={handleImeiImport}
-                          className="hidden"
-                        />
-                        <Truck className="h-4 w-4" />
-                        <span>Importer IMEI</span>
-                      </label>
-                    </div>
+                    <label className="flex items-center justify-center space-x-1 px-3 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 cursor-pointer text-sm text-gray-700 transition-all duration-200">
+                      <input
+                        type="file"
+                        accept=".xlsx,.xls"
+                        onChange={handleImeiImport}
+                        className="hidden"
+                      />
+                      <Truck className="h-4 w-4" />
+                      <span>Importer IMEI</span>
+                    </label>
                   )}
 
                   {orderDetail.status === 'shipping' && (
-                    <div className="flex space-x-3">
-                      <button
-                        onClick={markAsCompleted}
-                        className="flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-dbc-bright-green to-emerald-400 text-dbc-dark-green rounded-xl hover:from-emerald-300 hover:to-emerald-500 hover:text-white font-semibold shadow-lg backdrop-blur-sm transition-all duration-200 text-sm"
-                      >
-                        <CheckCircle className="h-4 w-4" />
-                        <span>Marquer comme terminée</span>
-                      </button>
-                    </div>
+                    <button
+                      onClick={markAsCompleted}
+                      className="flex items-center justify-center space-x-1 px-3 py-2 bg-gradient-to-r from-dbc-bright-green to-emerald-400 text-dbc-dark-green rounded-lg hover:from-emerald-300 hover:to-emerald-500 hover:text-white font-semibold transition-all duration-200 text-sm"
+                    >
+                      <CheckCircle className="h-4 w-4" />
+                      <span>Terminée</span>
+                    </button>
                   )}
 
                   {/* Bouton d'édition manuelle pour commandes en attente de paiement */}
                   {orderDetail.status === 'pending_payment' && !isEditing && (
                     <button
                       onClick={handleManualEdit}
-                      className="flex items-center space-x-2 px-4 py-2 bg-white bg-opacity-80 backdrop-blur-sm border border-orange-300 text-orange-600 rounded-xl hover:bg-orange-50 hover:shadow-lg text-sm transition-all duration-200"
+                      className="flex items-center justify-center space-x-1 px-3 py-2 bg-white border border-orange-300 text-orange-600 rounded-lg hover:bg-orange-50 text-sm transition-all duration-200"
                     >
                       <Edit className="h-4 w-4" />
-                      <span>Éditer manuellement</span>
+                      <span>Éditer</span>
                     </button>
                   )}
 
@@ -851,7 +844,7 @@ function AdminOrderDetailPage() {
                     <button
                       onClick={revalidateOrder}
                       disabled={validating}
-                      className="flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-dbc-bright-green to-emerald-400 text-dbc-dark-green rounded-xl hover:from-emerald-300 hover:to-emerald-500 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed font-semibold shadow-lg backdrop-blur-sm transition-all duration-200 text-sm"
+                      className="flex items-center justify-center space-x-1 px-3 py-2 bg-gradient-to-r from-dbc-bright-green to-emerald-400 text-dbc-dark-green rounded-lg hover:from-emerald-300 hover:to-emerald-500 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed font-semibold transition-all duration-200 text-sm"
                     >
                       {validating ? (
                         <>
@@ -883,226 +876,558 @@ function AdminOrderDetailPage() {
           </div>
         </div>
 
-        {/* Tableau des produits */}
-        <div className="bg-white rounded-lg shadow-sm border overflow-hidden mb-6">
-          <div className="px-6 py-4 border-b bg-gray-50 flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-gray-900">Détail des produits</h2>
-            
-            <div className="flex items-center space-x-4">
-              {/* Switch vue SKU/IMEI */}
+        {/* Tableau des produits - Version Responsive */}
+        <div className="bg-white rounded-lg shadow-sm border mb-6">
+          <div className="p-4 border-b bg-gray-50">
+            <div className="flex flex-col space-y-3">
+              <h2 className="text-lg font-semibold text-gray-900">Détail des produits</h2>
+              
               {(orderDetail.status === 'pending_payment' || orderDetail.status === 'shipping' || orderDetail.status === 'completed') && (
-                <div className="flex items-center space-x-2">
-                  <button
-                    onClick={() => setViewMode('sku')}
-                    className={`px-3 py-1 text-sm rounded ${
-                      viewMode === 'sku' 
-                        ? 'bg-blue-600 text-white' 
-                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                    }`}
-                  >
-                    Vue SKU
-                  </button>
-                  <button
-                    onClick={() => setViewMode('imei')}
-                    className={`px-3 py-1 text-sm rounded ${
-                      viewMode === 'imei' 
-                        ? 'bg-blue-600 text-white' 
-                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                    }`}
-                  >
-                    Vue IMEI
-                  </button>
-                </div>
-              )}
+                <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                  {/* Switch vue SKU/IMEI */}
+                  <div className="flex items-center space-x-2">
+                    <button
+                      onClick={() => setViewMode('sku')}
+                      className={`px-3 py-1 text-sm rounded transition-colors ${
+                        viewMode === 'sku' 
+                          ? 'bg-blue-600 text-white' 
+                          : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                      }`}
+                    >
+                      SKU
+                    </button>
+                    <button
+                      onClick={() => setViewMode('imei')}
+                      className={`px-3 py-1 text-sm rounded transition-colors ${
+                        viewMode === 'imei' 
+                          ? 'bg-blue-600 text-white' 
+                          : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                      }`}
+                    >
+                      IMEI
+                    </button>
+                  </div>
 
-              {/* Boutons d'export */}
-              {(orderDetail.status === 'pending_payment' || orderDetail.status === 'shipping' || orderDetail.status === 'completed') && (
-                <div className="flex items-center space-x-2">
-                  <button
-                    onClick={() => exportData(viewMode, 'csv')}
-                    className="flex items-center space-x-1 px-3 py-1 text-sm bg-green-600 text-white rounded hover:bg-green-700"
-                  >
-                    <Download className="h-4 w-4" />
-                    <span>CSV</span>
-                  </button>
-                  <button
-                    onClick={() => exportData(viewMode, 'xlsx')}
-                    className="flex items-center space-x-1 px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
-                  >
-                    <FileSpreadsheet className="h-4 w-4" />
-                    <span>Excel</span>
-                  </button>
+                  {/* Boutons d'export */}
+                  <div className="flex items-center space-x-2">
+                    <button
+                      onClick={() => exportData(viewMode, 'csv')}
+                      className="flex items-center space-x-1 px-3 py-1 text-sm bg-green-600 text-white rounded hover:bg-green-700 transition-colors"
+                    >
+                      <Download className="h-4 w-4" />
+                      <span>CSV</span>
+                    </button>
+                    <button
+                      onClick={() => exportData(viewMode, 'xlsx')}
+                      className="flex items-center space-x-1 px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+                    >
+                      <FileSpreadsheet className="h-4 w-4" />
+                      <span>Excel</span>
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
           </div>
           
-          <div className="w-full">
+          {/* Contenu responsive sans scroll horizontal */}
+          <div>
             {viewMode === 'sku' ? (
-              <table className="w-full">
-                <thead className="bg-gray-50 border-b">
-                  <tr>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">SKU</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nom du produit</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Apparence</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fonctionnalité</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Informations</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Couleur</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Emballage</th>
-                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Qté</th>
-                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Prix fourn.</th>
-                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Prix unit.</th>
-                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Total</th>
-                    {orderDetail.status === 'draft' && (
-                      <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-                    )}
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {orderDetail.items.map((item: any) => (
-                    <tr key={item.sku}>
-                      <td className="px-4 py-3 text-sm font-mono text-gray-900">{item.sku}</td>
-                      <td className="px-4 py-3 text-sm text-gray-900 font-medium">{item.name}</td>
-                      <td className="px-4 py-3">
-                        <span className={`inline-flex px-2 py-1 text-xs font-medium rounded ${
-                          item.appearance === 'Grade A+' ? 'bg-green-100 text-green-800' :
-                          item.appearance === 'Grade A' ? 'bg-blue-100 text-blue-800' :
-                          'bg-yellow-100 text-yellow-800'
-                        }`}>
-                          {item.appearance?.replace('Grade ', '') || 'N/A'}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className="inline-flex px-2 py-1 text-xs font-medium rounded bg-green-100 text-green-800">
-                          {item.functionality || 'N/A'}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-sm text-gray-800">{item.additional_info}</td>
-                      <td className="px-4 py-3 text-sm text-gray-900">
-                        <div className="flex items-center space-x-2">
-                          <div className={`w-3 h-3 rounded-full border ${getColorClass(item.color)}`}></div>
-                          <span>{item.color || 'N/A'}</span>
+              <>
+                {/* Vue Mobile - Cards responsive */}
+                <div className="block lg:hidden">
+                  <div className="space-y-3 p-4">
+                    {orderDetail.items.map((item: any) => (
+                      <div key={item.sku} className="bg-white rounded border shadow-sm p-3 transition-all duration-200">
+                        {/* Header avec SKU et Quantité */}
+                        <div className="flex items-start justify-between mb-2">
+                          <div className="flex-1">
+                            <div className="text-sm font-mono text-blue-600 bg-blue-50 px-2 py-1 rounded inline-block">
+                              {item.sku}
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <div className="text-sm font-bold text-gray-900">
+                              Qté: {isEditing ? editableQuantities[item.sku] : item.quantity}
+                            </div>
+                          </div>
                         </div>
-                      </td>
-                      <td className="px-4 py-3 text-sm text-gray-900">{item.boxed || 'N/A'}</td>
-                      <td className="px-4 py-3 text-center">
-                        {isEditing ? (
-                          <div className="flex items-center justify-center space-x-1">
-                            <button
-                              onClick={() => updateQuantity(item.sku, editableQuantities[item.sku] - 1)}
-                              className="p-1 text-gray-600 hover:text-gray-800"
-                              disabled={editableQuantities[item.sku] <= 1}
-                            >
-                              <Minus className="h-3 w-3" />
-                            </button>
-                            <span className="text-sm font-medium w-8 text-center text-gray-900">
-                              {editableQuantities[item.sku]}
+
+                        {/* Nom du produit */}
+                        <h3 className="text-sm font-medium text-gray-900 mb-2">
+                          {item.name}
+                        </h3>
+
+                        {/* Ligne avec états et couleur */}
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            {/* Fonctionnalité */}
+                            <span className={`text-xs font-medium ${
+                              item.functionality === 'Working' ? 'text-green-600' : 'text-amber-600'
+                            }`}>
+                              {item.functionality === 'Working' ? 'Working' : 'Minor Fault'}
                             </span>
-                            <button
-                              onClick={() => updateQuantity(item.sku, editableQuantities[item.sku] + 1)}
-                              className="p-1 text-gray-600 hover:text-gray-800"
-                            >
-                              <Plus className="h-3 w-3" />
-                            </button>
+                            
+                            {/* Grade */}
+                            <span className={`text-xs font-medium px-1 py-0.5 rounded ${
+                              item.appearance?.includes('A+') ? 'bg-green-100 text-green-800' :
+                              item.appearance?.includes('A') && !item.appearance?.includes('AB') ? 'bg-blue-100 text-blue-800' :
+                              item.appearance?.includes('B') ? 'bg-yellow-100 text-yellow-800' :
+                              'bg-orange-100 text-orange-800'
+                            }`}>
+                              {item.appearance?.replace('Grade ', '') || ''}
+                            </span>
+
+                            {/* Additional Info - seulement si non vide */}
+                            {item.additional_info && item.additional_info !== '-' && item.additional_info.trim() && (
+                              <span className="text-xs px-1 py-0.5 bg-gray-100 text-gray-700 rounded border">
+                                {item.additional_info}
+                              </span>
+                            )}
                           </div>
-                        ) : (
-                          <span className="text-sm font-medium text-gray-900">{item.quantity}</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-right font-medium text-gray-600">
-                        {item.supplierPrice?.toFixed(2) || '0.00'}€
-                      </td>
-                      <td className="px-4 py-3 text-sm text-right font-medium text-gray-900">
-                        {isEditing ? (
-                          <input
-                            type="number"
-                            step="0.01"
-                            value={editablePrices[item.sku]?.toFixed(2) || item.unitPrice.toFixed(2)}
-                            onChange={(e) => updatePrice(item.sku, parseFloat(e.target.value) || 0)}
-                            className="w-20 px-2 py-1 text-right border border-gray-300 rounded text-sm"
-                          />
-                        ) : (
-                          `${item.unitPrice.toFixed(2)}€`
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-right font-semibold text-gray-900">
-                        {((editablePrices[item.sku] || item.unitPrice) * editableQuantities[item.sku]).toFixed(2)}€
-                      </td>
-                      {orderDetail.status === 'draft' && (
-                        <td className="px-4 py-3 text-center">
-                          <button
-                            onClick={() => removeItem(item.sku)}
-                            className="text-red-600 hover:text-red-800 p-1"
-                            title="Supprimer ce produit"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        </td>
-                      )}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            ) : (
-              // Vue IMEI
-              <table className="w-full">
-                <thead className="bg-gray-50 border-b">
-                  <tr>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">SKU</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">IMEI</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nom du produit</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Apparence</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fonctionnalité</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Couleur</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Emballage</th>
-                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Prix fourn.</th>
-                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Prix DBC</th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {imeiData.length > 0 ? (
-                    imeiData.map((imei: any) => (
-                      <tr key={imei.imei}>
-                        <td className="px-4 py-3 text-sm font-mono text-gray-900">{imei.sku}</td>
-                        <td className="px-4 py-3 text-sm font-mono text-blue-600">{imei.imei}</td>
-                        <td className="px-4 py-3 text-sm text-gray-900 font-medium">{imei.product_name}</td>
-                        <td className="px-4 py-3">
-                          <span className={`inline-flex px-2 py-1 text-xs font-medium rounded ${
-                            imei.appearance === 'Grade A+' ? 'bg-green-100 text-green-800' :
-                            imei.appearance === 'Grade A' ? 'bg-blue-100 text-blue-800' :
-                            'bg-yellow-100 text-yellow-800'
-                          }`}>
-                            {imei.appearance.replace('Grade ', '')}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className="inline-flex px-2 py-1 text-xs font-medium rounded bg-green-100 text-green-800">
-                            {imei.functionality}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-sm text-gray-900">
-                          <div className="flex items-center space-x-2">
-                            <div className={`w-3 h-3 rounded-full border ${getColorClass(imei.color)}`}></div>
-                            <span>{imei.color || '-'}</span>
+
+                          {/* Couleur */}
+                          {item.color && (
+                            <div className="flex items-center gap-1">
+                              <div className={`w-3 h-3 rounded border-2 border-gray-300 ${getColorClass(item.color)}`} title={item.color}></div>
+                              <span className="text-xs text-gray-600">{item.color}</span>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Prix et marge sur même ligne */}
+                        <div className="flex items-center justify-between pt-2 border-t border-gray-100 mb-2">
+                          <div className="text-sm space-x-2">
+                            {item.supplierPrice && (
+                              <>
+                                <span className="font-bold text-blue-600">{item.supplierPrice.toFixed(2)}€</span>
+                                <span className="text-xs text-gray-500">FX</span>
+                              </>
+                            )}
+                            <span className="font-bold text-gray-900">
+                              {isEditing ? (editablePrices[item.sku] || item.unitPrice).toFixed(2) : item.unitPrice.toFixed(2)}€
+                            </span>
+                            <span className="text-xs text-gray-500">DBC</span>
                           </div>
-                        </td>
-                        <td className="px-4 py-3 text-sm text-gray-900">{imei.boxed}</td>
-                        <td className="px-4 py-3 text-sm text-right font-medium text-gray-900">{imei.supplier_price.toFixed(2)}€</td>
-                        <td className="px-4 py-3 text-sm text-right font-semibold text-gray-900">{imei.dbc_price.toFixed(2)}€</td>
+                          <div className="text-right text-sm">
+                            {item.supplierPrice && item.unitPrice && (
+                              <>
+                                <span className="font-bold text-green-600">
+                                  +{((isEditing ? editablePrices[item.sku] || item.unitPrice : item.unitPrice) - item.supplierPrice).toFixed(2)}€
+                                </span>
+                                <span className="text-xs text-gray-500 ml-1">Marge</span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Total */}
+                        <div className="text-center">
+                          <div className="text-lg font-bold text-gray-900">
+                            {((isEditing ? editablePrices[item.sku] || item.unitPrice : item.unitPrice) * (isEditing ? editableQuantities[item.sku] : item.quantity)).toFixed(2)}€
+                          </div>
+                          <div className="text-xs text-gray-500">Total</div>
+                        </div>
+
+                        {/* Contrôles d'édition pour brouillons */}
+                        {(orderDetail.status === 'draft' || isEditing) && (
+                          <div className="mt-2 pt-2 border-t border-gray-100 space-y-2">
+                            {/* Contrôles quantité */}
+                            <div className="flex items-center justify-center gap-2">
+                              <button
+                                onClick={() => updateQuantity(item.sku, (isEditing ? editableQuantities[item.sku] : item.quantity) - 1)}
+                                className="flex items-center justify-center w-8 h-8 bg-red-500 text-white rounded hover:bg-red-600 transition-colors"
+                                disabled={(isEditing ? editableQuantities[item.sku] : item.quantity) <= 1}
+                              >
+                                <Minus className="h-3 w-3" />
+                              </button>
+                              <span className="mx-2 min-w-[2rem] text-center font-medium">
+                                {isEditing ? editableQuantities[item.sku] : item.quantity}
+                              </span>
+                              <button
+                                onClick={() => updateQuantity(item.sku, (isEditing ? editableQuantities[item.sku] : item.quantity) + 1)}
+                                className="flex items-center justify-center w-8 h-8 bg-green-500 text-white rounded hover:bg-green-600 transition-colors"
+                              >
+                                <Plus className="h-3 w-3" />
+                              </button>
+                            </div>
+
+                            {/* Contrôles prix */}
+                            <div className="grid grid-cols-2 gap-2">
+                              <div>
+                                <label className="block text-xs text-gray-600 mb-1">Prix DBC</label>
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  value={isEditing ? (editablePrices[item.sku] || item.unitPrice).toFixed(2) : item.unitPrice.toFixed(2)}
+                                  onChange={(e) => updatePrice(item.sku, parseFloat(e.target.value) || 0)}
+                                  className="w-full px-2 py-1 border border-gray-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                  disabled={!isEditing && orderDetail.status !== 'draft'}
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-xs text-gray-600 mb-1">Prix FX</label>
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  value={item.supplierPrice?.toFixed(2) || '0.00'}
+                                  className="w-full px-2 py-1 border border-gray-300 rounded text-xs bg-gray-50"
+                                  disabled
+                                />
+                              </div>
+                            </div>
+
+                            {/* Bouton supprimer pour brouillons */}
+                            {orderDetail.status === 'draft' && (
+                              <button
+                                onClick={() => removeItem(item.sku)}
+                                className="w-full flex items-center justify-center gap-2 px-3 py-1.5 bg-red-500 text-white rounded hover:bg-red-600 transition-colors text-xs"
+                              >
+                                <Trash2 className="h-3 w-3" />
+                                Supprimer
+                              </button>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Badge indisponible si nécessaire */}
+                        {item.isUnavailable && (
+                          <div className="mt-2 inline-flex items-center px-2 py-1 text-xs font-medium bg-red-100 text-red-800 rounded w-full justify-center">
+                            <AlertCircle className="h-3 w-3 mr-1" />
+                            Produit non disponible
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Vue Desktop - Tableau Responsive (≥1024px) */}
+                <div className="hidden lg:block">
+                  <table className="w-full">
+                    <thead className="bg-gray-50 border-b">
+                      <tr>
+                        <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Produit</th>
+                        <th className="hidden xl:table-cell px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">États</th>
+                        <th className="hidden 2xl:table-cell px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Couleur</th>
+                        <th className="hidden 2xl:table-cell px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Emballage</th>
+                        <th className="hidden 2xl:table-cell px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Infos</th>
+                        <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Qté</th>
+                        <th className="hidden xl:table-cell px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Prix fourn.</th>
+                        <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Prix DBC</th>
+                        <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Total</th>
+                        {orderDetail.status === 'draft' && (
+                          <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                        )}
                       </tr>
-                    ))
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {orderDetail.items.map((item: any) => (
+                        <tr key={item.sku} className="hover:bg-gray-50 transition-colors">
+                          {/* Produit - Toujours visible */}
+                          <td className="px-3 py-3">
+                            <div className="max-w-xs">
+                              <div className="text-xs font-mono text-blue-600 bg-blue-50 px-2 py-0.5 rounded inline-block mb-1">
+                                {item.sku}
+                              </div>
+                              <div className="text-sm font-medium text-gray-900 line-clamp-2">{item.name}</div>
+                              {/* États sur mobile et tablet */}
+                              <div className="xl:hidden flex flex-wrap gap-1 mt-1">
+                                <span className={`inline-flex px-1.5 py-0.5 text-xs font-medium rounded ${
+                                  item.appearance === 'Grade A+' ? 'bg-green-100 text-green-800' :
+                                  item.appearance === 'Grade A' ? 'bg-blue-100 text-blue-800' :
+                                  'bg-yellow-100 text-yellow-800'
+                                }`}>
+                                  {item.appearance?.replace('Grade ', '') || 'N/A'}
+                                </span>
+                                <span className="inline-flex px-1.5 py-0.5 text-xs font-medium rounded bg-green-100 text-green-800">
+                                  {item.functionality || 'N/A'}
+                                </span>
+                              </div>
+                            </div>
+                          </td>
+
+                          {/* États - Visible XL+ */}
+                          <td className="hidden xl:table-cell px-3 py-3">
+                            <div className="flex flex-wrap gap-1">
+                              <span className={`inline-flex px-2 py-1 text-xs font-medium rounded ${
+                                item.appearance === 'Grade A+' ? 'bg-green-100 text-green-800' :
+                                item.appearance === 'Grade A' ? 'bg-blue-100 text-blue-800' :
+                                'bg-yellow-100 text-yellow-800'
+                              }`}>
+                                {item.appearance?.replace('Grade ', '') || 'N/A'}
+                              </span>
+                              <span className="inline-flex px-2 py-1 text-xs font-medium rounded bg-green-100 text-green-800">
+                                {item.functionality || 'N/A'}
+                              </span>
+                            </div>
+                          </td>
+
+                          {/* Couleur - Visible 2XL+ */}
+                          <td className="hidden 2xl:table-cell px-3 py-3">
+                            <div className="flex items-center space-x-2">
+                              <div className={`w-3 h-3 rounded-full border ${getColorClass(item.color)}`}></div>
+                              <span className="text-sm text-gray-900">{item.color || 'N/A'}</span>
+                            </div>
+                          </td>
+
+                          {/* Emballage - Visible 2XL+ */}
+                          <td className="hidden 2xl:table-cell px-3 py-3 text-sm text-gray-900">
+                            {item.boxed || 'N/A'}
+                          </td>
+
+                          {/* Infos - Visible 2XL+ */}
+                          <td className="hidden 2xl:table-cell px-3 py-3 text-sm text-gray-800 max-w-32 truncate">
+                            {item.additional_info && item.additional_info !== '-' ? item.additional_info : 'N/A'}
+                          </td>
+
+                          {/* Quantité - Toujours visible */}
+                          <td className="px-3 py-3 text-center">
+                            {isEditing ? (
+                              <div className="flex items-center justify-center space-x-1">
+                                <button
+                                  onClick={() => updateQuantity(item.sku, editableQuantities[item.sku] - 1)}
+                                  className="p-1 text-gray-600 hover:text-gray-800"
+                                  disabled={editableQuantities[item.sku] <= 1}
+                                >
+                                  <Minus className="h-3 w-3" />
+                                </button>
+                                <span className="text-sm font-medium w-8 text-center text-gray-900">
+                                  {editableQuantities[item.sku]}
+                                </span>
+                                <button
+                                  onClick={() => updateQuantity(item.sku, editableQuantities[item.sku] + 1)}
+                                  className="p-1 text-gray-600 hover:text-gray-800"
+                                >
+                                  <Plus className="h-3 w-3" />
+                                </button>
+                              </div>
+                            ) : (
+                              <span className="text-sm font-medium text-gray-900 bg-gray-50 px-2 py-1 rounded">
+                                {item.quantity}
+                              </span>
+                            )}
+                          </td>
+
+                          {/* Prix fournisseur - Visible XL+ */}
+                          <td className="hidden xl:table-cell px-3 py-3 text-sm text-right font-medium text-gray-600">
+                            {item.supplierPrice?.toFixed(2) || '0.00'}€
+                          </td>
+
+                          {/* Prix DBC - Toujours visible */}
+                          <td className="px-3 py-3 text-right">
+                            {isEditing ? (
+                              <input
+                                type="number"
+                                step="0.01"
+                                value={editablePrices[item.sku]?.toFixed(2) || item.unitPrice.toFixed(2)}
+                                onChange={(e) => updatePrice(item.sku, parseFloat(e.target.value) || 0)}
+                                className="w-20 px-2 py-1 text-right border border-gray-300 rounded text-sm"
+                              />
+                            ) : (
+                              <div className="text-sm font-medium text-gray-900">
+                                {item.unitPrice.toFixed(2)}€
+                                {/* Prix fournisseur sur mobile et tablet */}
+                                <div className="xl:hidden text-xs text-gray-500 mt-1">
+                                  Fourn: {item.supplierPrice?.toFixed(2) || '0.00'}€
+                                </div>
+                              </div>
+                            )}
+                          </td>
+
+                          {/* Total - Toujours visible */}
+                          <td className="px-3 py-3 text-right text-sm font-semibold text-gray-900">
+                            {((editablePrices[item.sku] || item.unitPrice) * editableQuantities[item.sku]).toFixed(2)}€
+                          </td>
+
+                          {/* Actions - Si brouillon */}
+                          {orderDetail.status === 'draft' && (
+                            <td className="px-3 py-3 text-center">
+                              <button
+                                onClick={() => removeItem(item.sku)}
+                                className="p-1.5 text-red-600 hover:text-red-800 hover:bg-red-50 rounded-lg transition-colors"
+                                title="Supprimer ce produit"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            </td>
+                          )}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            ) : (
+                            // Vue IMEI - Version Responsive
+              <>
+                {/* Vue Mobile IMEI - Cards responsive */}
+                <div className="block lg:hidden">
+                  {imeiData.length > 0 ? (
+                    <div className="space-y-3 p-4">
+                      {imeiData.map((imei: any) => (
+                        <div key={imei.imei} className="bg-white rounded border shadow-sm p-3 transition-all duration-200">
+                          {/* Header avec SKU et IMEI */}
+                          <div className="flex items-start justify-between mb-2">
+                            <div className="flex-1 overflow-hidden">
+                              <div className="flex items-center gap-2 mb-1">
+                                <div className="text-sm font-mono text-blue-600 bg-blue-50 px-2 py-1 rounded">
+                                  {imei.sku}
+                                </div>
+                                <div className="text-sm font-mono text-purple-600 bg-purple-50 px-2 py-1 rounded">
+                                  {imei.imei}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Nom du produit */}
+                          <h3 className="text-sm font-medium text-gray-900 mb-2">
+                            {imei.product_name}
+                          </h3>
+
+                          {/* Ligne avec états et couleur */}
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              {/* Fonctionnalité */}
+                              <span className={`text-xs font-medium ${
+                                imei.functionality === 'Working' ? 'text-green-600' : 'text-amber-600'
+                              }`}>
+                                {imei.functionality === 'Working' ? 'Working' : 'Minor Fault'}
+                              </span>
+                              
+                              {/* Grade */}
+                              <span className={`text-xs font-medium px-1 py-0.5 rounded ${
+                                imei.appearance?.includes('A+') ? 'bg-green-100 text-green-800' :
+                                imei.appearance?.includes('A') && !imei.appearance?.includes('AB') ? 'bg-blue-100 text-blue-800' :
+                                imei.appearance?.includes('B') ? 'bg-yellow-100 text-yellow-800' :
+                                'bg-orange-100 text-orange-800'
+                              }`}>
+                                {imei.appearance?.replace('Grade ', '') || ''}
+                              </span>
+                            </div>
+
+                            {/* Couleur */}
+                            {imei.color && (
+                              <div className="flex items-center gap-1">
+                                <div className={`w-3 h-3 rounded border-2 border-gray-300 ${getColorClass(imei.color)}`} title={imei.color}></div>
+                                <span className="text-xs text-gray-600">{imei.color}</span>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Prix et marge sur même ligne */}
+                          <div className="flex items-center justify-between pt-2 border-t border-gray-100">
+                            <div className="text-sm space-x-2">
+                              <span className="font-bold text-blue-600">{imei.supplier_price.toFixed(2)}€</span>
+                              <span className="text-xs text-gray-500">FX</span>
+                              <span className="font-bold text-gray-900">{imei.dbc_price.toFixed(2)}€</span>
+                              <span className="text-xs text-gray-500">DBC</span>
+                            </div>
+                            <div className="text-right text-sm">
+                              <span className="font-bold text-green-600">+{(imei.dbc_price - imei.supplier_price).toFixed(2)}€</span>
+                              <span className="text-xs text-gray-500 ml-1">Marge</span>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   ) : (
-                    <tr>
-                      <td colSpan={9} className="px-4 py-8 text-center text-gray-500">
-                        Aucun IMEI trouvé pour cette commande.
-                        {orderDetail.status === 'pending_payment' && (
-                          <span> Importez les IMEI pour passer en livraison.</span>
-                        )}
-                      </td>
-                    </tr>
+                    <div className="p-8 text-center text-gray-500">
+                      <Package className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+                      <p>Aucun IMEI trouvé pour cette commande.</p>
+                      {orderDetail.status === 'pending_payment' && (
+                        <p className="text-sm mt-2">Importez les IMEI pour passer en livraison.</p>
+                      )}
+                    </div>
                   )}
-                </tbody>
-              </table>
+                </div>
+
+                {/* Vue Desktop IMEI - Tableau Responsive (≥1024px) */}
+                <div className="hidden lg:block">
+                  <table className="w-full">
+                    <thead className="bg-gray-50 border-b">
+                      <tr>
+                        <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">SKU</th>
+                        <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">IMEI</th>
+                        <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Produit</th>
+                        <th className="hidden xl:table-cell px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">États</th>
+                        <th className="hidden 2xl:table-cell px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Couleur</th>
+                        <th className="hidden 2xl:table-cell px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Emballage</th>
+                        <th className="hidden xl:table-cell px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Prix fourn.</th>
+                        <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Prix DBC</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {imeiData.length > 0 ? (
+                        imeiData.map((imei: any) => (
+                          <tr key={imei.imei} className="hover:bg-gray-50 transition-colors">
+                            <td className="px-3 py-3 text-sm font-mono text-blue-600">{imei.sku}</td>
+                            <td className="px-3 py-3 text-sm font-mono text-purple-600">{imei.imei}</td>
+                            <td className="px-3 py-3">
+                              <div className="text-sm text-gray-900 font-medium line-clamp-2">{imei.product_name}</div>
+                              {/* États sur mobile et tablet */}
+                              <div className="xl:hidden flex flex-wrap gap-1 mt-1">
+                                <span className={`inline-flex px-1.5 py-0.5 text-xs font-medium rounded ${
+                                  imei.appearance === 'Grade A+' ? 'bg-green-100 text-green-800' :
+                                  imei.appearance === 'Grade A' ? 'bg-blue-100 text-blue-800' :
+                                  'bg-yellow-100 text-yellow-800'
+                                }`}>
+                                  {imei.appearance.replace('Grade ', '')}
+                                </span>
+                                <span className="inline-flex px-1.5 py-0.5 text-xs font-medium rounded bg-green-100 text-green-800">
+                                  {imei.functionality}
+                                </span>
+                              </div>
+                            </td>
+                            <td className="hidden xl:table-cell px-3 py-3">
+                              <div className="flex flex-wrap gap-1">
+                                <span className={`inline-flex px-2 py-1 text-xs font-medium rounded ${
+                                  imei.appearance === 'Grade A+' ? 'bg-green-100 text-green-800' :
+                                  imei.appearance === 'Grade A' ? 'bg-blue-100 text-blue-800' :
+                                  'bg-yellow-100 text-yellow-800'
+                                }`}>
+                                  {imei.appearance.replace('Grade ', '')}
+                                </span>
+                                <span className="inline-flex px-2 py-1 text-xs font-medium rounded bg-green-100 text-green-800">
+                                  {imei.functionality}
+                                </span>
+                              </div>
+                            </td>
+                            <td className="hidden 2xl:table-cell px-3 py-3">
+                              <div className="flex items-center space-x-2">
+                                <div className={`w-3 h-3 rounded-full border ${getColorClass(imei.color)}`}></div>
+                                <span className="text-sm text-gray-900">{imei.color || '-'}</span>
+                              </div>
+                            </td>
+                            <td className="hidden 2xl:table-cell px-3 py-3 text-sm text-gray-900">{imei.boxed}</td>
+                            <td className="hidden xl:table-cell px-3 py-3 text-sm text-right font-medium text-gray-600">{imei.supplier_price.toFixed(2)}€</td>
+                            <td className="px-3 py-3 text-right">
+                              <div className="text-sm font-semibold text-gray-900">
+                                {imei.dbc_price.toFixed(2)}€
+                                {/* Prix fournisseur sur mobile et tablet */}
+                                <div className="xl:hidden text-xs text-gray-500 mt-1">
+                                  Fourn: {imei.supplier_price.toFixed(2)}€
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan={8} className="px-4 py-8 text-center text-gray-500">
+                            <Package className="h-8 w-8 mx-auto mb-2 text-gray-300" />
+                            <p>Aucun IMEI trouvé pour cette commande.</p>
+                            {orderDetail.status === 'pending_payment' && (
+                              <p className="text-sm mt-2">Importez les IMEI pour passer en livraison.</p>
+                            )}
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </>
             )}
           </div>
         </div>

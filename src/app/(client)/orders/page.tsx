@@ -285,7 +285,7 @@ function ClientOrdersPage() {
           hideClientFilter={true}
         />
 
-        {/* Tableau des commandes */}
+        {/* Tableau des commandes - Version Responsive */}
         <div className="bg-white rounded-lg shadow-sm border overflow-hidden">
           {loading ? (
             <div className="flex items-center justify-center py-12">
@@ -295,96 +295,189 @@ function ClientOrdersPage() {
               </div>
             </div>
           ) : (
-            <table className="w-full">
-              <thead className="bg-gray-50 border-b">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Numéro de commande
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Statut
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Date de création
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Nombre de produits
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Montant total
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
+            <>
+              {/* Vue Mobile - Cards (≤1023px) */}
+              <div className="lg:hidden">
                 {filteredOrders.map((order) => (
-                  <tr key={order.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div>
-                        <span className="text-sm font-medium text-gray-900">{order.id}</span>
-                        {order.name && (
-                          <div className="text-xs text-gray-500">{order.name}</div>
-                        )}
+                  <div key={order.id} className="border-b border-gray-200 last:border-b-0 p-4 hover:bg-gray-50 transition-colors">
+                    {/* Header - Statut principal */}
+                    <div className="flex items-center justify-between mb-3">
+                      <span className={`inline-flex items-center space-x-2 px-3 py-1.5 rounded-full text-sm font-medium ${getStatusColor(order.status)}`}>
+                        {getStatusIcon(order.status)}
+                        <span>{order.status_label}</span>
+                      </span>
+                      <div className="text-right">
+                        <div className="text-lg font-bold text-gray-900">
+                          {order.totalAmount?.toFixed(2)} €
+                        </div>
+                        <div className="text-xs text-gray-500">
+                          {order.totalItems} article{order.totalItems > 1 ? 's' : ''}
+                        </div>
                       </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex flex-col space-y-1">
-                        <span className={`inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(order.status)} w-fit`}>
-                          {getStatusIcon(order.status)}
-                          <span>{order.status_label}</span>
-                        </span>
-                        {order.tracking_number && (
-                          <div className="flex items-center space-x-1 text-xs text-blue-600">
-                            <Truck className="h-3 w-3" />
-                            <span>Tracking: {order.tracking_number}</span>
-                          </div>
-                        )}
+                    </div>
+
+                    {/* Infos principales */}
+                    <div className="space-y-2 mb-4">
+                      <div className="flex items-center text-sm text-gray-600">
+                        <Calendar className="h-4 w-4 mr-2 text-gray-400" />
+                        <span>{new Date(order.createdAt).toLocaleDateString('fr-FR')}</span>
                       </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center text-sm text-gray-900">
-                        <Calendar className="h-4 w-4 mr-1 text-gray-400" />
-                        {new Date(order.createdAt).toLocaleDateString('fr-FR')}
+                      
+                      {order.tracking_number && (
+                        <div className="flex items-center text-sm text-blue-600">
+                          <Truck className="h-4 w-4 mr-2" />
+                          <span>Tracking: {order.tracking_number}</span>
+                        </div>
+                      )}
+
+                      <div className="text-xs text-gray-500 font-mono bg-gray-50 px-2 py-1 rounded">
+                        {order.name || order.id}
                       </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center text-sm text-gray-900">
-                        <Package className="h-4 w-4 mr-1 text-gray-400" />
-                        {order.totalItems} article{order.totalItems > 1 ? 's' : ''}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center text-sm font-semibold text-gray-900">
-                        <Euro className="h-4 w-4 mr-1 text-gray-400" />
-                        {order.totalAmount?.toFixed(2)} €
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center space-x-2">
+                    </div>
+
+                    {/* Actions */}
+                    <div className="flex flex-col space-y-2">
+                      <button
+                        onClick={() => handleOrderClick(order.id)}
+                        className="w-full px-4 py-2 bg-gradient-to-r from-dbc-bright-green to-emerald-400 text-dbc-dark-green hover:from-emerald-300 hover:to-emerald-500 hover:text-white rounded-lg text-sm font-semibold transition-all duration-200 shadow-sm backdrop-blur-sm"
+                      >
+                        <Eye className="h-4 w-4 inline mr-2" />
+                        Voir les détails
+                      </button>
+                      {order.status === 'draft' && (
                         <button
-                          onClick={() => handleOrderClick(order.id)}
-                          className="px-3 py-1 bg-gradient-to-r from-dbc-bright-green to-emerald-400 text-dbc-dark-green hover:from-emerald-300 hover:to-emerald-500 hover:text-white rounded-lg text-sm font-semibold transition-all duration-200 shadow-sm backdrop-blur-sm"
+                          onClick={() => deleteOrder(order.id, order.name || order.id)}
+                          className="w-full px-4 py-2 bg-white border border-red-300 text-red-600 hover:bg-red-50 rounded-lg text-sm font-semibold transition-all duration-200 shadow-sm"
                         >
-                          <Eye className="h-4 w-4 inline mr-1" />
-                          Voir détails
+                          <Trash2 className="h-4 w-4 inline mr-2" />
+                          Supprimer la commande
                         </button>
-                        {order.status === 'draft' && (
-                          <button
-                            onClick={() => deleteOrder(order.id, order.name || order.id)}
-                            className="px-3 py-1 bg-white border border-red-300 text-red-600 hover:bg-red-50 rounded-lg text-sm font-semibold transition-all duration-200 shadow-sm"
-                          >
-                            <Trash2 className="h-4 w-4 inline mr-1" />
-                            Supprimer
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
+                      )}
+                    </div>
+                  </div>
                 ))}
-              </tbody>
-            </table>
+              </div>
+
+              {/* Vue Desktop - Tableau Responsive (≥1024px) */}
+              <div className="hidden lg:block overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-gray-50 border-b">
+                    <tr>
+                      {/* Colonnes visibles selon breakpoints */}
+                      <th className="hidden xl:table-cell px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Numéro
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Statut
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Date
+                      </th>
+                      <th className="hidden xl:table-cell px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Articles
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Montant
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Actions
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {filteredOrders.map((order) => (
+                      <tr key={order.id} className="hover:bg-gray-50 transition-colors">
+                        {/* Numéro - Visible XL+ */}
+                        <td className="hidden xl:table-cell px-4 py-3">
+                          <div className="max-w-xs">
+                            <div className="text-sm font-medium text-gray-900 truncate">{order.id}</div>
+                            {order.name && (
+                              <div className="text-xs text-gray-500 truncate">{order.name}</div>
+                            )}
+                          </div>
+                        </td>
+
+                        {/* Statut - Toujours visible */}
+                        <td className="px-4 py-3">
+                          <div className="flex flex-col space-y-1">
+                            <span className={`inline-flex items-center space-x-1 px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(order.status)} w-fit`}>
+                              {getStatusIcon(order.status)}
+                              <span className="hidden lg:inline">{order.status_label}</span>
+                            </span>
+                            {order.tracking_number && (
+                              <div className="flex items-center space-x-1 text-xs text-blue-600">
+                                <Truck className="h-3 w-3" />
+                                <span className="hidden xl:inline">Tracking: </span>
+                                <span className="truncate max-w-20">{order.tracking_number}</span>
+                              </div>
+                            )}
+                          </div>
+                        </td>
+
+                        {/* Date - Toujours visible */}
+                        <td className="px-4 py-3">
+                          <div className="flex items-center text-sm text-gray-900">
+                            <Calendar className="h-4 w-4 mr-1 text-gray-400" />
+                            <span className="hidden xl:inline">
+                              {new Date(order.createdAt).toLocaleDateString('fr-FR')}
+                            </span>
+                            <span className="xl:hidden">
+                              {new Date(order.createdAt).toLocaleDateString('fr-FR', { 
+                                day: '2-digit', 
+                                month: '2-digit' 
+                              })}
+                            </span>
+                          </div>
+                        </td>
+
+                        {/* Articles - Visible XL+ */}
+                        <td className="hidden xl:table-cell px-4 py-3">
+                          <div className="flex items-center text-sm text-gray-900">
+                            <Package className="h-4 w-4 mr-1 text-gray-400" />
+                            {order.totalItems} article{order.totalItems > 1 ? 's' : ''}
+                          </div>
+                        </td>
+
+                        {/* Montant - Toujours visible */}
+                        <td className="px-4 py-3">
+                          <div className="text-sm font-semibold text-gray-900">
+                            <div className="flex items-center">
+                              <Euro className="h-4 w-4 mr-1 text-gray-400" />
+                              {order.totalAmount?.toFixed(2)} €
+                            </div>
+                            <div className="xl:hidden text-xs text-gray-500 mt-1">
+                              {order.totalItems} article{order.totalItems > 1 ? 's' : ''}
+                            </div>
+                          </div>
+                        </td>
+
+                        {/* Actions - Toujours visible */}
+                        <td className="px-4 py-3">
+                          <div className="flex items-center space-x-2">
+                            <button
+                              onClick={() => handleOrderClick(order.id)}
+                              className="px-3 py-1.5 bg-gradient-to-r from-dbc-bright-green to-emerald-400 text-dbc-dark-green hover:from-emerald-300 hover:to-emerald-500 hover:text-white rounded-lg text-sm font-semibold transition-all duration-200 shadow-sm backdrop-blur-sm whitespace-nowrap"
+                            >
+                              <Eye className="h-4 w-4 inline mr-1" />
+                              <span className="hidden xl:inline">Détails</span>
+                            </button>
+                            {order.status === 'draft' && (
+                              <button
+                                onClick={() => deleteOrder(order.id, order.name || order.id)}
+                                className="p-1.5 text-red-600 hover:text-red-800 hover:bg-red-50 rounded-lg transition-colors"
+                                title="Supprimer"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
           )}
         </div>
 
