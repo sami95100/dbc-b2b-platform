@@ -1,17 +1,13 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import DBCLogo from '@/components/DBCLogo';
 import { CheckCircle, MessageCircle, Clock, Shield, Phone, Mail, ArrowRight, LogOut } from 'lucide-react';
 
-export default function PendingValidationPage() {
-  const router = useRouter();
+// Composant pour gérer les paramètres de recherche
+function SearchParamsWrapper({ onParamsLoaded }: { onParamsLoaded: (params: any) => void }) {
   const searchParams = useSearchParams();
-  const [userInfo, setUserInfo] = useState<any>(null);
-
-  const accountManagerPhone = "0768644427";
-  const accountManagerWhatsApp = `https://wa.me/33${accountManagerPhone.substring(1)}`;
 
   useEffect(() => {
     // Récupérer les informations utilisateur depuis les paramètres URL
@@ -20,9 +16,36 @@ export default function PendingValidationPage() {
     const contact = searchParams.get('contact');
     
     if (email && company && contact) {
-      setUserInfo({ email, company, contact });
+      onParamsLoaded({ email, company, contact });
     }
-  }, [searchParams]);
+  }, [searchParams, onParamsLoaded]);
+
+  return null;
+}
+
+// Loading component
+function LoadingFallback() {
+  return (
+    <div className="bg-white bg-opacity-10 backdrop-blur-sm rounded-2xl p-6 mb-8 border border-white border-opacity-20">
+      <div className="animate-pulse">
+        <div className="h-4 bg-white bg-opacity-20 rounded mb-2"></div>
+        <div className="h-4 bg-white bg-opacity-20 rounded mb-2"></div>
+        <div className="h-4 bg-white bg-opacity-20 rounded"></div>
+      </div>
+    </div>
+  );
+}
+
+export default function PendingValidationPage() {
+  const router = useRouter();
+  const [userInfo, setUserInfo] = useState<any>(null);
+
+  const accountManagerPhone = "0768644427";
+  const accountManagerWhatsApp = `https://wa.me/33${accountManagerPhone.substring(1)}`;
+
+  const handleParamsLoaded = (params: any) => {
+    setUserInfo(params);
+  };
 
   const handleWhatsAppContact = () => {
     const message = encodeURIComponent(
@@ -66,6 +89,11 @@ export default function PendingValidationPage() {
 
           {/* Carte principale */}
           <div className="bg-white bg-opacity-20 backdrop-blur-xl rounded-3xl shadow-2xl p-8 border border-white border-opacity-30">
+            
+            {/* Suspense wrapper pour les paramètres de recherche */}
+            <Suspense fallback={null}>
+              <SearchParamsWrapper onParamsLoaded={handleParamsLoaded} />
+            </Suspense>
 
             {/* Bouton de déconnexion */}
             <div className="flex justify-end mb-4">
@@ -92,19 +120,21 @@ export default function PendingValidationPage() {
             </div>
 
             {/* Informations utilisateur */}
-            {userInfo && (
-              <div className="bg-white bg-opacity-10 backdrop-blur-sm rounded-2xl p-6 mb-8 border border-white border-opacity-20">
-                <h3 className="text-lg font-semibold text-white mb-4 flex items-center">
-                  <Shield className="h-5 w-5 mr-2 text-dbc-bright-green" />
-                  Votre demande d'accès
-                </h3>
-                <div className="space-y-2 text-emerald-100">
-                  <p><span className="font-medium">Société :</span> {userInfo.company}</p>
-                  <p><span className="font-medium">Contact :</span> {userInfo.contact}</p>
-                  <p><span className="font-medium">Email :</span> {userInfo.email}</p>
+            <Suspense fallback={<LoadingFallback />}>
+              {userInfo && (
+                <div className="bg-white bg-opacity-10 backdrop-blur-sm rounded-2xl p-6 mb-8 border border-white border-opacity-20">
+                  <h3 className="text-lg font-semibold text-white mb-4 flex items-center">
+                    <Shield className="h-5 w-5 mr-2 text-dbc-bright-green" />
+                    Votre demande d'accès
+                  </h3>
+                  <div className="space-y-2 text-emerald-100">
+                    <p><span className="font-medium">Société :</span> {userInfo.company}</p>
+                    <p><span className="font-medium">Contact :</span> {userInfo.contact}</p>
+                    <p><span className="font-medium">Email :</span> {userInfo.email}</p>
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
+            </Suspense>
 
             {/* Étapes du processus */}
             <div className="mb-8">

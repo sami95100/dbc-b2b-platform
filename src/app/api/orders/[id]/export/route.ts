@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '../../../../../lib/supabase';
 import * as XLSX from 'xlsx';
 
+// Forcer le rendu dynamique pour cette API route
+export const dynamic = 'force-dynamic';
+
 // Fonction helper pour vérifier supabaseAdmin
 function getSupabaseAdmin() {
   if (!supabaseAdmin) {
@@ -16,9 +19,9 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
     
     console.log('📊 Export données commande:', params.id);
 
-    const url = new URL(request.url);
-    const type = url.searchParams.get('type'); // 'sku' ou 'imei'
-    const format = url.searchParams.get('format'); // 'csv' ou 'xlsx'
+    const searchParams = request.nextUrl.searchParams;
+    const type = searchParams.get('type'); // 'sku' ou 'imei'
+    const format = searchParams.get('format'); // 'csv' ou 'xlsx'
 
     if (!type || !['sku', 'imei'].includes(type)) {
       return NextResponse.json({ error: 'Type d\'export requis: sku ou imei' }, { status: 400 });

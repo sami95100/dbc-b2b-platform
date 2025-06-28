@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '../../../lib/supabase';
 
+// Forcer le rendu dynamique pour cette API route
+export const dynamic = 'force-dynamic';
+
 // Fonction helper pour vérifier supabaseAdmin
 function getSupabaseAdmin() {
   if (!supabaseAdmin) {
@@ -14,7 +17,7 @@ export async function GET(request: NextRequest) {
     const admin = getSupabaseAdmin();
     
     // Extraire les paramètres de l'URL
-    const { searchParams } = new URL(request.url);
+    const searchParams = request.nextUrl.searchParams;
     const userId = searchParams.get('userId');
     const statusFilter = searchParams.get('status');
     const clientFilter = searchParams.get('client');

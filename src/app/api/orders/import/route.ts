@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabase, supabaseAdmin } from '../../../../lib/supabase';
 import * as XLSX from 'xlsx';
 
+// Forcer le rendu dynamique pour cette API route
+export const dynamic = 'force-dynamic';
+
 interface ExcelProduct {
   sku: string;
   product_name?: string;
@@ -151,8 +154,8 @@ export async function PUT(request: NextRequest) {
       throw new Error('Configuration Supabase admin manquante');
     }
 
-    const url = new URL(request.url);
-    const orderId = url.searchParams.get('orderId');
+    const searchParams = request.nextUrl.searchParams;
+    const orderId = searchParams.get('orderId');
 
     if (!orderId) {
       return NextResponse.json({ error: 'ID de commande manquant' }, { status: 400 });
