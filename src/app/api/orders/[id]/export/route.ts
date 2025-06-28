@@ -43,7 +43,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
     }
 
     // Vérifier que la commande existe et a un statut approprié pour l'export
-    const allowedStatuses = ['shipping', 'completed'];
+    const allowedStatuses = ['pending_payment', 'shipping', 'completed'];
     if (!allowedStatuses.includes(order.status)) {
       return NextResponse.json({ 
         error: `Export non autorisé pour le statut ${order.status}. Statuts autorisés: ${allowedStatuses.join(', ')}` 
@@ -54,7 +54,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
     let filename = '';
 
     if (type === 'sku') {
-      // Export des SKU (order_items) avec headers compatibles import
+      // Export des SKU (order_items) avec leurs vraies données
       const { data: orderItems, error: itemsError } = await admin
         .from('order_items')
         .select('sku, product_name, quantity, unit_price, total_price')
@@ -65,19 +65,33 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
         return NextResponse.json({ error: 'Erreur récupération des articles' }, { status: 500 });
       }
 
-      // Transformer les données avec les en-têtes d'import standard
-      exportData = (orderItems || []).map(item => ({
-        'SKU': item.sku,
-        'Product Name': item.product_name,
-        'Quantity': item.quantity,
-        'Offered Price': item.unit_price,
-        'VAT Type': 'Non marginal', // Valeur par défaut
-        'Appearance': 'Grade A',    // Valeur par défaut
-        'Functionality': '100%',    // Valeur par défaut
-        'Color': '',               // Vide par défaut
-        'Boxed': 'Unboxed',       // Valeur par défaut
-        'Additional Info': ''      // Vide par défaut
-      }));
+      // Récupérer les détails complets des produits depuis le catalogue
+      const skus = orderItems?.map(item => item.sku) || [];
+      const { data: productDetails, error: productsError } = await admin
+        .from('products')
+        .select('sku, appearance, functionality, color, boxed, additional_info, price, price_dbc')
+        .in('sku', skus);
+
+      console.log('🔍 Debug productDetails pour export:', { productDetails, productsError });
+
+      // Transformer les données avec les vraies informations
+      exportData = (orderItems || []).map(item => {
+        const productDetail = productDetails?.find(p => p.sku === item.sku);
+        return {
+          'SKU': item.sku,
+          'Product Name': item.product_name,
+          'Quantity': item.quantity,
+          'Unit Price (DBC)': item.unit_price,
+          'Total Price': item.total_price,
+          'Supplier Price': productDetail?.price || 0,
+          'Catalog Price DBC': productDetail?.price_dbc || 0,
+          'Appearance': productDetail?.appearance || 'Grade A',
+          'Functionality': productDetail?.functionality || 'Working',
+          'Color': productDetail?.color || '',
+          'Boxed': productDetail?.boxed || 'Unboxed',
+          'Additional Info': productDetail?.additional_info || ''
+        };
+      });
 
       filename = `commande_${order.name}_sku_${new Date().toISOString().split('T')[0]}`;
 
@@ -125,7 +139,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
         return NextResponse.json({ error: 'Aucun IMEI trouvé pour cette commande' }, { status: 404 });
       }
 
-      // Transformer les données avec les en-têtes d'import IMEI standard
+      // Transformer les données avec les en-têtes d'import IMEI standard + prix fournisseur
       exportData = imeiData.map((item, index) => ({
         'SKU': item.sku,
         'Id': index + 1,                        // ID séquentiel
@@ -138,7 +152,8 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
         'Cloud Lock': item.cloud_lock || '',
         'Additional Info': item.additional_info || '',
         'Quantity': 1,                          // Toujours 1 pour les IMEI
-        'Price': item.dbc_price                 // Prix DBC (prix de vente, pas prix fournisseur)
+        'DBC Price': item.dbc_price,            // Prix DBC (prix de vente)
+        'Supplier Price': item.supplier_price   // Prix fournisseur
       }));
 
       filename = `commande_${order.name}_imei_${new Date().toISOString().split('T')[0]}`;

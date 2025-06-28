@@ -48,16 +48,47 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
       ? order.customer_ref.replace('TRACKING:', '') 
       : null;
 
-    // Récupérer les articles de la commande
+    // Récupérer les articles de la commande avec leurs détails complets
     const { data: orderItems, error: itemsError } = await admin
       .from('order_items')
       .select('sku, product_name, quantity, unit_price, total_price')
       .eq('order_id', params.id)
       .order('sku');
 
+    console.log('🔍 Debug orderItems récupérés:', { orderItems, itemsError, orderId: params.id });
+
     if (itemsError) {
+      console.error('❌ Erreur récupération articles:', itemsError);
       return NextResponse.json({ error: 'Erreur récupération des articles' }, { status: 500 });
     }
+
+    if (!orderItems || orderItems.length === 0) {
+      console.warn('⚠️ Aucun article trouvé pour la commande:', params.id);
+    }
+
+    // Récupérer les détails complets des produits depuis le catalogue
+    const skus = orderItems?.map(item => item.sku) || [];
+    const { data: productDetails, error: productsError } = await admin
+      .from('products')
+      .select('sku, appearance, functionality, color, boxed, additional_info, price, price_dbc')
+      .in('sku', skus);
+
+    console.log('🔍 Debug productDetails récupérés:', { productDetails, productsError });
+
+    // Combiner les données order_items avec les détails produits
+    const enrichedItems = orderItems?.map(orderItem => {
+      const productDetail = productDetails?.find(p => p.sku === orderItem.sku);
+      return {
+        ...orderItem,
+        appearance: productDetail?.appearance || 'Grade A',
+        functionality: productDetail?.functionality || 'Working',
+        color: productDetail?.color || '-',
+        boxed: productDetail?.boxed || 'Unboxed',
+        additional_info: productDetail?.additional_info || '-',
+        supplier_price: productDetail?.price || 0,
+        catalog_price_dbc: productDetail?.price_dbc || 0
+      };
+    }) || [];
 
     // Générer le HTML de la facture
     const invoiceHtml = `
@@ -336,16 +367,16 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
                 </tr>
             </thead>
             <tbody>
-                ${(orderItems || []).map(item => `
+                ${enrichedItems.map(item => `
                 <tr>
                     <td class="text-center">Mobiles</td>
                     <td>${item.product_name}</td>
-                    <td class="text-center">Grade A</td>
-                    <td class="text-center">Fonctionne</td>
-                    <td class="text-center">Déballé</td>
-                    <td class="text-center">-</td>
+                    <td class="text-center">${item.appearance.replace('Grade ', '')}</td>
+                    <td class="text-center">${item.functionality}</td>
+                    <td class="text-center">${item.boxed}</td>
+                    <td class="text-center">${item.color}</td>
                     <td class="text-center">CloudOFF</td>
-                    <td class="text-center">-</td>
+                    <td class="text-center">${item.additional_info}</td>
                     <td class="text-center">${item.quantity}</td>
                     <td class="text-right">${item.unit_price.toFixed(2)}</td>
                     <td class="text-right">${item.total_price.toFixed(2)}</td>
@@ -353,7 +384,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
                 `).join('')}
                 <tr>
                     <td colspan="9"></td>
-                    <td class="text-center"><strong>${(orderItems || []).reduce((sum, item) => sum + item.quantity, 0)}</strong></td>
+                    <td class="text-center"><strong>${enrichedItems.reduce((sum, item) => sum + item.quantity, 0)}</strong></td>
                     <td></td>
                 </tr>
             </tbody>

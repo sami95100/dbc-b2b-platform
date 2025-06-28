@@ -106,7 +106,8 @@ function AdminOrderDetailPage() {
             quantity: orderItem.quantity,
             unitPrice: orderItem.unit_price,
             totalPrice: orderItem.total_price,
-            currentStock: product.quantity // Ajouter le stock actuel
+            currentStock: product.quantity, // Ajouter le stock actuel
+            supplierPrice: product.price || 0 // Ajouter le prix fournisseur
           };
         } else {
           // Si le produit n'est pas dans le catalogue actuel, essayer de récupérer ses infos depuis Supabase
@@ -125,6 +126,7 @@ function AdminOrderDetailPage() {
             unitPrice: orderItem.unit_price,
             totalPrice: orderItem.total_price,
             currentStock: 0,
+            supplierPrice: 0,
             isUnavailable: true
           };
         }
@@ -686,9 +688,14 @@ function AdminOrderDetailPage() {
     }
   };
 
+  const downloadInvoice = () => {
+    // Ouvrir la facture dans un nouvel onglet (l'API génère du HTML avec auto-print)
+    window.open(`/api/orders/${orderDetail.id}/invoice`, '_blank');
+  };
+
   const exportToExcel = () => {
-    // Implementation manquante, ajoutée plus tard
-    console.log('Export Excel');
+    // Utiliser l'API export existante avec le mode SKU et format Excel
+    window.open(`/api/orders/${orderDetail.id}/export?type=sku&format=xlsx`, '_blank');
   };
 
   return (
@@ -783,6 +790,23 @@ function AdminOrderDetailPage() {
               
               {orderDetail.status !== 'draft' && (
                 <>
+                  {/* Boutons facture et export - disponibles pour toutes les commandes validées */}
+                  <button 
+                    onClick={downloadInvoice}
+                    className="flex items-center space-x-2 px-4 py-2 bg-white bg-opacity-80 backdrop-blur-sm border border-white border-opacity-30 rounded-xl hover:bg-opacity-90 hover:shadow-lg text-gray-700 text-sm transition-all duration-200"
+                  >
+                    <FileText className="h-4 w-4" />
+                    <span>Facture</span>
+                  </button>
+                  
+                  <button
+                    onClick={exportToExcel}
+                    className="flex items-center space-x-2 px-4 py-2 bg-white bg-opacity-80 backdrop-blur-sm border border-white border-opacity-30 rounded-xl hover:bg-opacity-90 hover:shadow-lg text-gray-700 transition-all duration-200"
+                  >
+                    <FileSpreadsheet className="h-4 w-4" />
+                    <span>Export Excel</span>
+                  </button>
+
                   {/* Boutons de progression du workflow */}
                   {orderDetail.status === 'pending_payment' && (
                     <div className="flex space-x-3">
@@ -842,19 +866,6 @@ function AdminOrderDetailPage() {
                       )}
                     </button>
                   )}
-
-                  <button className="flex items-center space-x-2 px-4 py-2 bg-white bg-opacity-80 backdrop-blur-sm border border-white border-opacity-30 rounded-xl hover:bg-opacity-90 hover:shadow-lg text-gray-700 text-sm transition-all duration-200">
-                    <FileText className="h-4 w-4" />
-                    <span>Facture</span>
-                  </button>
-                  
-                  <button
-                    onClick={exportToExcel}
-                    className="flex items-center space-x-2 px-4 py-2 bg-white bg-opacity-80 backdrop-blur-sm border border-white border-opacity-30 rounded-xl hover:bg-opacity-90 hover:shadow-lg text-gray-700 transition-all duration-200"
-                  >
-                    <FileSpreadsheet className="h-4 w-4" />
-                    <span>Export Excel</span>
-                  </button>
                 </>
               )}
             </div>
@@ -879,7 +890,7 @@ function AdminOrderDetailPage() {
             
             <div className="flex items-center space-x-4">
               {/* Switch vue SKU/IMEI */}
-              {(orderDetail.status === 'shipping' || orderDetail.status === 'completed') && (
+              {(orderDetail.status === 'pending_payment' || orderDetail.status === 'shipping' || orderDetail.status === 'completed') && (
                 <div className="flex items-center space-x-2">
                   <button
                     onClick={() => setViewMode('sku')}
@@ -905,7 +916,7 @@ function AdminOrderDetailPage() {
               )}
 
               {/* Boutons d'export */}
-              {(orderDetail.status === 'shipping' || orderDetail.status === 'completed') && (
+              {(orderDetail.status === 'pending_payment' || orderDetail.status === 'shipping' || orderDetail.status === 'completed') && (
                 <div className="flex items-center space-x-2">
                   <button
                     onClick={() => exportData(viewMode, 'csv')}
@@ -939,6 +950,7 @@ function AdminOrderDetailPage() {
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Couleur</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Emballage</th>
                     <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Qté</th>
+                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Prix fourn.</th>
                     <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Prix unit.</th>
                     <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Total</th>
                     {orderDetail.status === 'draft' && (
@@ -974,7 +986,7 @@ function AdminOrderDetailPage() {
                       </td>
                       <td className="px-4 py-3 text-sm text-gray-900">{item.boxed || 'N/A'}</td>
                       <td className="px-4 py-3 text-center">
-                        {(orderDetail.status === 'draft' || orderDetail.status === 'pending_payment' || isEditing) ? (
+                        {isEditing ? (
                           <div className="flex items-center justify-center space-x-1">
                             <button
                               onClick={() => updateQuantity(item.sku, editableQuantities[item.sku] - 1)}
@@ -997,6 +1009,9 @@ function AdminOrderDetailPage() {
                           <span className="text-sm font-medium text-gray-900">{item.quantity}</span>
                         )}
                       </td>
+                      <td className="px-4 py-3 text-sm text-right font-medium text-gray-600">
+                        {item.supplierPrice?.toFixed(2) || '0.00'}€
+                      </td>
                       <td className="px-4 py-3 text-sm text-right font-medium text-gray-900">
                         {isEditing ? (
                           <input
@@ -1013,7 +1028,7 @@ function AdminOrderDetailPage() {
                       <td className="px-4 py-3 text-sm text-right font-semibold text-gray-900">
                         {((editablePrices[item.sku] || item.unitPrice) * editableQuantities[item.sku]).toFixed(2)}€
                       </td>
-                      {(orderDetail.status === 'draft' || orderDetail.status === 'pending_payment' || isEditing) && (
+                      {orderDetail.status === 'draft' && (
                         <td className="px-4 py-3 text-center">
                           <button
                             onClick={() => removeItem(item.sku)}

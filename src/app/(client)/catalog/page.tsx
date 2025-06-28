@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth, withAuth } from '../../../lib/auth-context';
 import AppHeader from '@/components/AppHeader';
 import ClientSelector from '@/components/ClientSelector';
+import BackToTopButton from '@/components/BackToTopButton';
 import { supabase, Product } from '../../../lib/supabase';
 import { OrdersUtils } from '../../../lib/orders-utils';
 import { 
@@ -1952,6 +1953,9 @@ function ClientCatalogPage() {
           </div>
         )}
       </div>
+
+      {/* Bouton retour en haut */}
+      <BackToTopButton />
 
       {/* Popup création commande */}
       {showOrderNamePopup && (

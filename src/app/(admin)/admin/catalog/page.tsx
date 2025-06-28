@@ -6,6 +6,7 @@ import { useAuth, withAuth } from '../../../../lib/auth-context';
 import AppHeader from '@/components/AppHeader';
 import CatalogUpdateButton from '@/components/CatalogUpdateButton';
 import ClientSelector from '@/components/ClientSelector';
+import BackToTopButton from '@/components/BackToTopButton';
 import { supabase, Product } from '../../../../lib/supabase';
 import { OrdersUtils } from '../../../../lib/orders-utils';
 import { 
@@ -2069,6 +2070,9 @@ function AdminCatalogPage() {
           </div>
         )}
       </div>
+
+      {/* Bouton retour en haut */}
+      <BackToTopButton />
 
       {/* Popup création commande */}
       {showOrderNamePopup && (
