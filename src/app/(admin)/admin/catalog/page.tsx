@@ -36,7 +36,18 @@ const DiagnosticButton = () => {
           alert('✅ Diagnostic réussi ! Vérifiez la console.');
         } else {
           console.error('Détails erreur:', result);
-          alert(`❌ Diagnostic échoué: ${result.error}`);
+          
+          // Diagnostic plus détaillé des erreurs
+          let errorDetails = result.error || 'Erreur inconnue';
+          if (result.details) {
+            if (typeof result.details === 'object') {
+              errorDetails += `\n\nDétails: ${JSON.stringify(result.details, null, 2)}`;
+            } else {
+              errorDetails += `\n\nDétails: ${result.details}`;
+            }
+          }
+          
+          alert(`❌ Diagnostic échoué: ${errorDetails}\n\n💡 Utilisez l'import TypeScript comme alternative !`);
         }
       } catch (error) {
         console.error('Erreur diagnostic:', error);
@@ -71,7 +82,28 @@ const DiagnosticButton = () => {
         console.log('📊 Résultat import TS:', result);
         
         if (result.success) {
-          alert(`✅ Import TypeScript réussi ! ${result.summary?.importedProducts || 0} produits traités.`);
+          // Afficher le résumé détaillé comme avec Python
+          const summary = result.summary;
+          const message = `✅ Import TypeScript réussi !
+
+📊 Résumé de l'import :
+• Produits traités: ${summary?.importedProducts || 0}
+• Nouveaux SKU: ${summary?.newSkus || 0}
+• Produits actifs: ${summary?.stats?.active_products || 0}
+• En rupture: ${summary?.stats?.out_of_stock || 0}
+• Marginaux (1%): ${summary?.stats?.marginal || 0}
+• Non marginaux (11%): ${summary?.stats?.non_marginal || 0}
+
+🔄 La page va se recharger pour afficher les nouveaux produits.`;
+          
+          alert(message);
+          
+          // Sauvegarder les nouveaux SKU dans localStorage pour le filtre
+          if (summary?.all_new_skus && summary.all_new_skus.length > 0) {
+            localStorage.setItem('newProductsSKUs', JSON.stringify(summary.all_new_skus));
+            localStorage.setItem('lastImportDate', new Date().toISOString());
+          }
+          
           window.location.reload(); // Recharger la page pour voir les nouveaux produits
         } else {
           console.error('Détails erreur:', result);

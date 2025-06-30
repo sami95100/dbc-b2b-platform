@@ -90,8 +90,10 @@ export async function POST(request: NextRequest) {
       
       try {
         // Fallback: Utiliser le processeur TypeScript
+        console.log('🚀 Activation du fallback TypeScript...');
         const processor = new CatalogProcessorTS();
         const resultData = await processor.processAndImport(buffer);
+        console.log('✅ Fallback TypeScript réussi:', resultData);
         
         console.log('✅ Succès avec le processeur TypeScript');
         

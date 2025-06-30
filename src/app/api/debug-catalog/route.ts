@@ -185,10 +185,30 @@ export async function POST(request: NextRequest) {
 
   } catch (error) {
     console.error('Erreur debug:', error);
+    
+    // Diagnostic plus détaillé des erreurs
+    let errorDetails = error instanceof Error ? error.message : String(error);
+    let errorType = 'Erreur générale';
+    
+    if (error instanceof Error) {
+      if (error.message.includes('SUPABASE')) {
+        errorType = 'Erreur de connexion Supabase';
+      } else if (error.message.includes('spawn')) {
+        errorType = 'Erreur de lancement Python';
+      } else if (error.message.includes('timeout')) {
+        errorType = 'Timeout';
+      } else if (error.message.includes('file')) {
+        errorType = 'Erreur de fichier';
+      }
+    }
+    
     return NextResponse.json({
       success: false,
-      error: 'Erreur lors du debug',
-      details: error instanceof Error ? error.message : String(error)
+      error: errorType,
+      details: errorDetails,
+      recommendation: errorType === 'Erreur de lancement Python' 
+        ? 'Utilisez l\'import TypeScript comme alternative' 
+        : 'Vérifiez les variables d\'environnement et la connexion réseau'
     }, { status: 500 });
   }
 } 
