@@ -3,6 +3,7 @@ import { writeFile, mkdir } from 'fs/promises';
 import { join } from 'path';
 import { spawn } from 'child_process';
 import { supabaseAdmin } from '../../../../lib/supabase';
+import { CatalogProcessorTS } from '../../../../lib/catalog-processor-ts';
 
 // Fonction helper pour vérifier supabaseAdmin
 function getSupabaseAdmin() {
@@ -81,17 +82,68 @@ export async function POST(request: NextRequest) {
     }
 
     if (exitCode !== 0) {
-      console.error('=== ERREUR SCRIPT PYTHON ===');
+      console.error('=== ERREUR SCRIPT PYTHON - FALLBACK TYPESCRIPT ===');
       console.error('Exit code:', exitCode);
       console.error('STDERR:', errorOutput);
       console.error('STDOUT:', output);
-      console.error('===============================');
+      console.log('Tentative avec le processeur TypeScript...');
       
-      return NextResponse.json({ 
-        error: 'Erreur lors du traitement du catalogue',
-        details: errorOutput || output,
-        exitCode
-      }, { status: 500 });
+      try {
+        // Fallback: Utiliser le processeur TypeScript
+        const processor = new CatalogProcessorTS();
+        const resultData = await processor.processAndImport(buffer);
+        
+        console.log('✅ Succès avec le processeur TypeScript');
+        
+        // Continuer avec la logique normale
+        const { count: newCount } = await admin
+          .from('products')
+          .select('*', { count: 'exact', head: true });
+
+        let newProducts: Array<{sku: string, product_name: string, price_dbc: number, quantity: number}> = [];
+        if (resultData.new_skus && resultData.new_skus.length > 0) {
+          const { data: newProductsData } = await admin
+            .from('products')
+            .select('sku, product_name, price_dbc, quantity')
+            .in('sku', resultData.new_skus)
+            .limit(50);
+          
+          newProducts = newProductsData || [];
+        }
+
+        const summary = {
+          oldProductCount: oldCount || 0,
+          newProductCount: newCount || 0,
+          importedProducts: resultData.imported_count || 0,
+          newSkus: resultData.new_skus_count || 0,
+          stats: resultData.stats,
+          processedAt: new Date().toISOString(),
+          newProducts: newProducts,
+          all_new_skus: resultData.all_new_skus || [],
+          processingMethod: 'TypeScript (fallback)'
+        };
+
+        return NextResponse.json({ 
+          success: true, 
+          message: `Catalogue mis à jour avec succès (TypeScript): ${resultData.imported_count} produits traités`,
+          summary,
+          filename: file.name,
+          size: file.size
+        });
+        
+      } catch (tsError) {
+        console.error('=== ERREUR TYPESCRIPT FALLBACK ===');
+        console.error(tsError);
+        
+        return NextResponse.json({ 
+          error: 'Erreur lors du traitement du catalogue (Python et TypeScript échoués)',
+          details: {
+            python: errorOutput || output,
+            typescript: tsError instanceof Error ? tsError.message : String(tsError)
+          },
+          exitCode
+        }, { status: 500 });
+      }
     }
 
     // Parser le résultat JSON de la sortie Python
