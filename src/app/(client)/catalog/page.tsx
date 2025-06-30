@@ -1684,22 +1684,23 @@ function ClientCatalogPage() {
                 {!includeZeroStock && filteredZeroStockProducts.length > 0 && ` (${filteredZeroStockProducts.length})`}
               </button>
               
-              {/* Toggle pour les nouveaux produits */}
-              {newProductsSKUs.length > 0 && (
-                <button
-                  onClick={toggleNewProductsFilter}
-                  className={`text-xs px-2 py-1 rounded-md border transition-colors ${
-                    showNewProductsOnly 
+              {/* Toggle pour les nouveaux produits - toujours visible */}
+              <button
+                onClick={toggleNewProductsFilter}
+                disabled={newProductsSKUs.length === 0}
+                className={`text-xs px-2 py-1 rounded-md border transition-colors ${
+                  newProductsSKUs.length === 0
+                    ? 'bg-gray-100 text-gray-400 border-gray-300 cursor-not-allowed'
+                    : showNewProductsOnly 
                       ? 'bg-green-100 text-green-800 border-green-300 hover:bg-green-200' 
                       : 'bg-blue-100 text-blue-800 border-blue-300 hover:bg-blue-200'
-                  }`}
-                >
-                  {showNewProductsOnly ? '✓ ' : ''}✨ {newProductsSKUs.length} nouveaux
-                  {lastImportDate && (
-                    <span className="hidden sm:inline"> ({lastImportDate.toLocaleDateString('fr-FR')})</span>
-                  )}
-                </button>
-              )}
+                }`}
+              >
+                {showNewProductsOnly ? '✓ ' : ''}✨ {newProductsSKUs.length > 0 ? `${newProductsSKUs.length} nouveaux` : 'Aucun nouveau'}
+                {lastImportDate && newProductsSKUs.length > 0 && (
+                  <span className="hidden sm:inline"> ({lastImportDate.toLocaleDateString('fr-FR')})</span>
+                )}
+              </button>
               
               {/* Toggle pour les capacités standard Apple/Samsung */}
               <button

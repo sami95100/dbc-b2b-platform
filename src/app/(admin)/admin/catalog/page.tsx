@@ -4,7 +4,6 @@ import { useState, useMemo, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth, withAuth } from '../../../../lib/auth-context';
 import AppHeader from '@/components/AppHeader';
-import CatalogUpdateButton from '@/components/CatalogUpdateButton';
 
 // Modal de résumé d'import
 const ImportSummaryModal = ({ isOpen, onClose, summary }: { 
@@ -36,7 +35,17 @@ const ImportSummaryModal = ({ isOpen, onClose, summary }: {
               </div>
               <div className="flex justify-between">
                 <span>Nouveaux SKU:</span>
-                <span className="font-medium text-blue-600">{summary?.newSkus || 0}</span>
+                <span className="font-medium text-blue-600">
+                  {(() => {
+                    // Calculer les VRAIS nouveaux SKU
+                    if (!summary?.all_new_skus) return 0;
+                    const existingNewSkus = JSON.parse(localStorage.getItem('newProductsSKUs') || '[]');
+                    const reallyNewSkus = summary.all_new_skus.filter((sku: string) => 
+                      !existingNewSkus.includes(sku)
+                    );
+                    return reallyNewSkus.length;
+                  })()}
+                </span>
               </div>
               <div className="flex justify-between">
                 <span>Produits actifs:</span>
@@ -72,7 +81,7 @@ const ImportSummaryModal = ({ isOpen, onClose, summary }: {
             }}
             className="flex-1 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition-colors"
           >
-            🔄 Recharger la page
+            🔄 Voir les nouveaux produits
           </button>
           <button
             onClick={onClose}
@@ -91,6 +100,7 @@ const ImportTools = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [showSummary, setShowSummary] = useState(false);
   const [importSummary, setImportSummary] = useState<any>(null);
+  const [showDiagnostic, setShowDiagnostic] = useState(false);
 
   const handleDiagnostic = async () => {
     const input = document.createElement('input');
@@ -134,7 +144,7 @@ const ImportTools = () => {
     input.click();
   };
 
-  const handleTypescriptImport = async () => {
+  const handleCatalogImport = async () => {
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = '.xlsx,.xls';
@@ -147,7 +157,7 @@ const ImportTools = () => {
       formData.append('catalog', file);
       
       try {
-        console.log('🚀 Import TypeScript en cours...');
+        console.log('📂 Import catalogue en cours...');
         const response = await fetch('/api/catalog/update-ts', {
           method: 'POST',
           body: formData,
@@ -157,10 +167,23 @@ const ImportTools = () => {
         console.log('📊 Résultat import:', result);
         
         if (result.success) {
-          // Sauvegarder les nouveaux SKU dans localStorage pour le filtre
+          // Sauvegarder SEULEMENT les VRAIS nouveaux SKU
           if (result.summary?.all_new_skus && result.summary.all_new_skus.length > 0) {
-            localStorage.setItem('newProductsSKUs', JSON.stringify(result.summary.all_new_skus));
-            localStorage.setItem('lastImportDate', new Date().toISOString());
+            // Vérifier si c'est vraiment de nouveaux SKU ou juste une réimportation
+            const existingNewSkus = JSON.parse(localStorage.getItem('newProductsSKUs') || '[]');
+            const reallyNewSkus = result.summary.all_new_skus.filter((sku: string) => 
+              !existingNewSkus.includes(sku)
+            );
+            
+            if (reallyNewSkus.length > 0) {
+              // Ajouter les nouveaux SKU aux existants
+              const allNewSkus = [...existingNewSkus, ...reallyNewSkus];
+              localStorage.setItem('newProductsSKUs', JSON.stringify(allNewSkus));
+              localStorage.setItem('lastImportDate', new Date().toISOString());
+              console.log('✨ Nouveaux SKU ajoutés:', reallyNewSkus.length);
+            } else {
+              console.log('🔄 Réimportation - aucun nouveau SKU');
+            }
           }
           
           setImportSummary(result.summary);
@@ -181,20 +204,31 @@ const ImportTools = () => {
 
   return (
     <>
-      <div className="flex gap-2 flex-wrap">
+      <div className="flex gap-2 flex-wrap items-center">
         <button
-          onClick={handleDiagnostic}
+          onClick={handleCatalogImport}
           disabled={isProcessing}
-          className="inline-flex items-center px-3 py-1.5 border border-orange-300 text-sm font-medium rounded-md text-orange-700 bg-orange-50 hover:bg-orange-100 disabled:opacity-50 transition-colors"
+          className="inline-flex items-center px-4 py-2 border border-blue-300 text-sm font-medium rounded-md text-blue-700 bg-blue-50 hover:bg-blue-100 disabled:opacity-50 transition-colors"
         >
-          {isProcessing ? '🔧 Diagnostic...' : '🔧 Diagnostic'}
+          {isProcessing ? '📂 Import...' : '📂 Import Catalogue'}
         </button>
+        
+        {/* Diagnostic caché par défaut */}
+        {showDiagnostic && (
+          <button
+            onClick={handleDiagnostic}
+            disabled={isProcessing}
+            className="inline-flex items-center px-3 py-1.5 border border-orange-300 text-xs font-medium rounded-md text-orange-700 bg-orange-50 hover:bg-orange-100 disabled:opacity-50 transition-colors"
+          >
+            {isProcessing ? '🔧 Diagnostic...' : '🔧 Diagnostic'}
+          </button>
+        )}
+        
         <button
-          onClick={handleTypescriptImport}
-          disabled={isProcessing}
-          className="inline-flex items-center px-3 py-1.5 border border-blue-300 text-sm font-medium rounded-md text-blue-700 bg-blue-50 hover:bg-blue-100 disabled:opacity-50 transition-colors"
+          onClick={() => setShowDiagnostic(!showDiagnostic)}
+          className="text-xs text-gray-500 hover:text-gray-700 underline"
         >
-          {isProcessing ? '🚀 Import...' : '🚀 Import TypeScript'}
+          {showDiagnostic ? 'Masquer diagnostic' : 'Afficher diagnostic'}
         </button>
       </div>
       
@@ -1902,8 +1936,6 @@ function AdminCatalogPage() {
                 <span className="sm:hidden">Reset</span>
               </button>
               
-              <CatalogUpdateButton onUpdateComplete={refreshProducts} />
-              
               <ImportTools />
               
               {/* Dropdown Export Catalogue */}
@@ -2054,22 +2086,23 @@ function AdminCatalogPage() {
                 {!includeZeroStock && filteredZeroStockProducts.length > 0 && ` (${filteredZeroStockProducts.length})`}
               </button>
               
-              {/* Toggle pour les nouveaux produits */}
-              {newProductsSKUs.length > 0 && (
-                <button
-                  onClick={toggleNewProductsFilter}
-                  className={`text-xs px-2 py-1 rounded-md border transition-colors ${
-                    showNewProductsOnly 
+              {/* Toggle pour les nouveaux produits - toujours visible */}
+              <button
+                onClick={toggleNewProductsFilter}
+                disabled={newProductsSKUs.length === 0}
+                className={`text-xs px-2 py-1 rounded-md border transition-colors ${
+                  newProductsSKUs.length === 0
+                    ? 'bg-gray-100 text-gray-400 border-gray-300 cursor-not-allowed'
+                    : showNewProductsOnly 
                       ? 'bg-green-100 text-green-800 border-green-300 hover:bg-green-200' 
                       : 'bg-blue-100 text-blue-800 border-blue-300 hover:bg-blue-200'
-                  }`}
-                >
-                  {showNewProductsOnly ? '✓ ' : ''}✨ {newProductsSKUs.length} nouveaux
-                  {lastImportDate && (
-                    <span className="hidden sm:inline"> ({lastImportDate.toLocaleDateString('fr-FR')})</span>
-                  )}
-                </button>
-              )}
+                }`}
+              >
+                {showNewProductsOnly ? '✓ ' : ''}✨ {newProductsSKUs.length > 0 ? `${newProductsSKUs.length} nouveaux` : 'Aucun nouveau'}
+                {lastImportDate && newProductsSKUs.length > 0 && (
+                  <span className="hidden sm:inline"> ({lastImportDate.toLocaleDateString('fr-FR')})</span>
+                )}
+              </button>
               
               {/* Toggle pour les capacités standard Apple/Samsung */}
               <button
