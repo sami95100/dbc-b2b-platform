@@ -6,9 +6,91 @@ import { useAuth, withAuth } from '../../../../lib/auth-context';
 import AppHeader from '@/components/AppHeader';
 import CatalogUpdateButton from '@/components/CatalogUpdateButton';
 
-// Composant de diagnostic temporaire
-const DiagnosticButton = () => {
-  const [debugging, setDebugging] = useState(false);
+// Modal de résumé d'import
+const ImportSummaryModal = ({ isOpen, onClose, summary }: { 
+  isOpen: boolean; 
+  onClose: () => void; 
+  summary: any; 
+}) => {
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4 shadow-xl">
+        <div className="text-center mb-4">
+          <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-3">
+            <Check className="w-8 h-8 text-green-600" />
+          </div>
+          <h3 className="text-lg font-semibold text-gray-900">
+            ✅ Import réussi !
+          </h3>
+        </div>
+        
+        <div className="space-y-3 mb-6">
+          <div className="bg-gray-50 rounded-lg p-4">
+            <h4 className="font-semibold text-gray-800 mb-2">📊 Résumé de l'import</h4>
+            <div className="space-y-1 text-sm text-gray-600">
+              <div className="flex justify-between">
+                <span>Produits traités:</span>
+                <span className="font-medium">{summary?.importedProducts || 0}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Nouveaux SKU:</span>
+                <span className="font-medium text-blue-600">{summary?.newSkus || 0}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Produits actifs:</span>
+                <span className="font-medium text-green-600">{summary?.stats?.active_products || 0}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>En rupture:</span>
+                <span className="font-medium text-red-600">{summary?.stats?.out_of_stock || 0}</span>
+              </div>
+            </div>
+          </div>
+          
+          <div className="bg-blue-50 rounded-lg p-4">
+            <h4 className="font-semibold text-blue-800 mb-2">💰 Répartition des marges</h4>
+            <div className="space-y-1 text-sm text-blue-700">
+              <div className="flex justify-between">
+                <span>Marginaux (1%):</span>
+                <span className="font-medium">{summary?.stats?.marginal || 0}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Non marginaux (11%):</span>
+                <span className="font-medium">{summary?.stats?.non_marginal || 0}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <div className="flex gap-3">
+          <button
+            onClick={() => {
+              onClose();
+              window.location.reload();
+            }}
+            className="flex-1 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition-colors"
+          >
+            🔄 Recharger la page
+          </button>
+          <button
+            onClick={onClose}
+            className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 transition-colors"
+          >
+            Fermer
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Composant pour les outils d'import
+const ImportTools = () => {
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [showSummary, setShowSummary] = useState(false);
+  const [importSummary, setImportSummary] = useState<any>(null);
 
   const handleDiagnostic = async () => {
     const input = document.createElement('input');
@@ -18,12 +100,12 @@ const DiagnosticButton = () => {
       const file = (e.target as HTMLInputElement).files?.[0];
       if (!file) return;
       
-      setDebugging(true);
+      setIsProcessing(true);
       const formData = new FormData();
       formData.append('catalog', file);
       
       try {
-        console.log('🔧 Test avec diagnostic...');
+        console.log('🔧 Diagnostic en cours...');
         const response = await fetch('/api/debug-catalog', {
           method: 'POST',
           body: formData,
@@ -33,27 +115,20 @@ const DiagnosticButton = () => {
         console.log('📊 Résultat diagnostic:', result);
         
         if (result.success) {
-          alert('✅ Diagnostic réussi ! Vérifiez la console.');
+          alert('✅ Diagnostic réussi ! Vérifiez la console pour les détails.');
         } else {
           console.error('Détails erreur:', result);
-          
-          // Diagnostic plus détaillé des erreurs
-          let errorDetails = result.error || 'Erreur inconnue';
-          if (result.details) {
-            if (typeof result.details === 'object') {
-              errorDetails += `\n\nDétails: ${JSON.stringify(result.details, null, 2)}`;
-            } else {
-              errorDetails += `\n\nDétails: ${result.details}`;
-            }
+          let errorMessage = `❌ Diagnostic échoué: ${result.error || 'Erreur inconnue'}`;
+          if (result.recommendation) {
+            errorMessage += `\n\n💡 ${result.recommendation}`;
           }
-          
-          alert(`❌ Diagnostic échoué: ${errorDetails}\n\n💡 Utilisez l'import TypeScript comme alternative !`);
+          alert(errorMessage);
         }
       } catch (error) {
         console.error('Erreur diagnostic:', error);
         alert('❌ Erreur réseau lors du diagnostic.');
       } finally {
-        setDebugging(false);
+        setIsProcessing(false);
       }
     };
     input.click();
@@ -67,83 +142,68 @@ const DiagnosticButton = () => {
       const file = (e.target as HTMLInputElement).files?.[0];
       if (!file) return;
       
-      setDebugging(true);
+      setIsProcessing(true);
       const formData = new FormData();
       formData.append('catalog', file);
       
       try {
-        console.log('🚀 Import TypeScript direct...');
+        console.log('🚀 Import TypeScript en cours...');
         const response = await fetch('/api/catalog/update-ts', {
           method: 'POST',
           body: formData,
         });
         
         const result = await response.json();
-        console.log('📊 Résultat import TS:', result);
+        console.log('📊 Résultat import:', result);
         
         if (result.success) {
-          // Afficher le résumé détaillé comme avec Python
-          const summary = result.summary;
-          const message = `✅ Import TypeScript réussi !
-
-📊 Résumé de l'import :
-• Produits traités: ${summary?.importedProducts || 0}
-• Nouveaux SKU: ${summary?.newSkus || 0}
-• Produits actifs: ${summary?.stats?.active_products || 0}
-• En rupture: ${summary?.stats?.out_of_stock || 0}
-• Marginaux (1%): ${summary?.stats?.marginal || 0}
-• Non marginaux (11%): ${summary?.stats?.non_marginal || 0}
-
-🔄 La page va se recharger pour afficher les nouveaux produits.`;
-          
-          alert(message);
-          
           // Sauvegarder les nouveaux SKU dans localStorage pour le filtre
-          if (summary?.all_new_skus && summary.all_new_skus.length > 0) {
-            localStorage.setItem('newProductsSKUs', JSON.stringify(summary.all_new_skus));
+          if (result.summary?.all_new_skus && result.summary.all_new_skus.length > 0) {
+            localStorage.setItem('newProductsSKUs', JSON.stringify(result.summary.all_new_skus));
             localStorage.setItem('lastImportDate', new Date().toISOString());
           }
           
-          window.location.reload(); // Recharger la page pour voir les nouveaux produits
+          setImportSummary(result.summary);
+          setShowSummary(true);
         } else {
           console.error('Détails erreur:', result);
-          alert(`❌ Import TypeScript échoué: ${result.error}`);
+          alert(`❌ Import échoué: ${result.error}`);
         }
       } catch (error) {
-        console.error('Erreur import TS:', error);
-        alert('❌ Erreur réseau lors de l\'import TypeScript.');
+        console.error('Erreur import:', error);
+        alert('❌ Erreur réseau lors de l\'import.');
       } finally {
-        setDebugging(false);
+        setIsProcessing(false);
       }
     };
     input.click();
   };
 
   return (
-    <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
-      <h3 className="text-lg font-semibold text-red-800 mb-2">
-        🚨 Import Alternative (Temporaire)
-      </h3>
-      <p className="text-red-700 mb-4">
-        Si l'import normal échoue, utilisez ces boutons pour diagnostiquer ou importer directement :
-      </p>
-      <div className="flex gap-3">
+    <>
+      <div className="flex gap-2 flex-wrap">
         <button
           onClick={handleDiagnostic}
-          disabled={debugging}
-          className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-red-600 hover:bg-red-700 disabled:opacity-50"
+          disabled={isProcessing}
+          className="inline-flex items-center px-3 py-1.5 border border-orange-300 text-sm font-medium rounded-md text-orange-700 bg-orange-50 hover:bg-orange-100 disabled:opacity-50 transition-colors"
         >
-          {debugging ? '🔧 Diagnostic...' : '🔧 Diagnostic'}
+          {isProcessing ? '🔧 Diagnostic...' : '🔧 Diagnostic'}
         </button>
         <button
           onClick={handleTypescriptImport}
-          disabled={debugging}
-          className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
+          disabled={isProcessing}
+          className="inline-flex items-center px-3 py-1.5 border border-blue-300 text-sm font-medium rounded-md text-blue-700 bg-blue-50 hover:bg-blue-100 disabled:opacity-50 transition-colors"
         >
-          {debugging ? '🚀 Import...' : '🚀 Import TypeScript'}
+          {isProcessing ? '🚀 Import...' : '🚀 Import TypeScript'}
         </button>
       </div>
-    </div>
+      
+      <ImportSummaryModal 
+        isOpen={showSummary}
+        onClose={() => setShowSummary(false)}
+        summary={importSummary}
+      />
+    </>
   );
 };
 import ClientSelector from '@/components/ClientSelector';
@@ -1844,7 +1904,7 @@ function AdminCatalogPage() {
               
               <CatalogUpdateButton onUpdateComplete={refreshProducts} />
               
-              <DiagnosticButton />
+              <ImportTools />
               
               {/* Dropdown Export Catalogue */}
               <div className="relative dropdown-container">
