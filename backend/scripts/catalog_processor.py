@@ -11,18 +11,27 @@ from datetime import datetime
 from dotenv import load_dotenv
 from supabase import create_client, Client
 
-# Charger les variables d'environnement depuis .env.local
-load_dotenv('.env.local')
+# Charger les variables d'environnement
+# En local : depuis .env.local
+# En production : depuis l'environnement système
+load_dotenv('.env.local')  # Ignore l'erreur si le fichier n'existe pas
+load_dotenv()  # Charger depuis l'environnement système aussi
 
 def init_supabase() -> Client:
     """Initialise le client Supabase"""
     SUPABASE_URL = os.getenv('NEXT_PUBLIC_SUPABASE_URL')
     SUPABASE_KEY = os.getenv('SUPABASE_SERVICE_ROLE_KEY')
     
-    if not SUPABASE_URL or not SUPABASE_KEY:
-        raise Exception("Variables d'environnement Supabase manquantes")
+    if not SUPABASE_URL:
+        raise Exception("Variable d'environnement NEXT_PUBLIC_SUPABASE_URL manquante")
     
-    return create_client(SUPABASE_URL, SUPABASE_KEY)
+    if not SUPABASE_KEY:
+        raise Exception("Variable d'environnement SUPABASE_SERVICE_ROLE_KEY manquante")
+    
+    try:
+        return create_client(SUPABASE_URL, SUPABASE_KEY)
+    except Exception as e:
+        raise Exception(f"Erreur connexion Supabase: {str(e)}")
 
 def apply_dbc_margins(row):
     """Applique les marges DBC selon les règles"""

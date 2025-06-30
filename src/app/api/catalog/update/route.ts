@@ -81,10 +81,16 @@ export async function POST(request: NextRequest) {
     }
 
     if (exitCode !== 0) {
-      console.error('Erreur Python:', errorOutput);
+      console.error('=== ERREUR SCRIPT PYTHON ===');
+      console.error('Exit code:', exitCode);
+      console.error('STDERR:', errorOutput);
+      console.error('STDOUT:', output);
+      console.error('===============================');
+      
       return NextResponse.json({ 
         error: 'Erreur lors du traitement du catalogue',
-        details: errorOutput
+        details: errorOutput || output,
+        exitCode
       }, { status: 500 });
     }
 
