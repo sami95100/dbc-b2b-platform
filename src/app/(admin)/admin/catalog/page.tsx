@@ -5,6 +5,115 @@ import { useRouter } from 'next/navigation';
 import { useAuth, withAuth } from '../../../../lib/auth-context';
 import AppHeader from '@/components/AppHeader';
 import CatalogUpdateButton from '@/components/CatalogUpdateButton';
+
+// Composant de diagnostic temporaire
+const DiagnosticButton = () => {
+  const [debugging, setDebugging] = useState(false);
+
+  const handleDiagnostic = async () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.xlsx,.xls';
+    input.onchange = async (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (!file) return;
+      
+      setDebugging(true);
+      const formData = new FormData();
+      formData.append('catalog', file);
+      
+      try {
+        console.log('🔧 Test avec diagnostic...');
+        const response = await fetch('/api/debug-catalog', {
+          method: 'POST',
+          body: formData,
+        });
+        
+        const result = await response.json();
+        console.log('📊 Résultat diagnostic:', result);
+        
+        if (result.success) {
+          alert('✅ Diagnostic réussi ! Vérifiez la console.');
+        } else {
+          console.error('Détails erreur:', result);
+          alert(`❌ Diagnostic échoué: ${result.error}`);
+        }
+      } catch (error) {
+        console.error('Erreur diagnostic:', error);
+        alert('❌ Erreur réseau lors du diagnostic.');
+      } finally {
+        setDebugging(false);
+      }
+    };
+    input.click();
+  };
+
+  const handleTypescriptImport = async () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.xlsx,.xls';
+    input.onchange = async (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (!file) return;
+      
+      setDebugging(true);
+      const formData = new FormData();
+      formData.append('catalog', file);
+      
+      try {
+        console.log('🚀 Import TypeScript direct...');
+        const response = await fetch('/api/catalog/update-ts', {
+          method: 'POST',
+          body: formData,
+        });
+        
+        const result = await response.json();
+        console.log('📊 Résultat import TS:', result);
+        
+        if (result.success) {
+          alert(`✅ Import TypeScript réussi ! ${result.summary?.importedProducts || 0} produits traités.`);
+          window.location.reload(); // Recharger la page pour voir les nouveaux produits
+        } else {
+          console.error('Détails erreur:', result);
+          alert(`❌ Import TypeScript échoué: ${result.error}`);
+        }
+      } catch (error) {
+        console.error('Erreur import TS:', error);
+        alert('❌ Erreur réseau lors de l\'import TypeScript.');
+      } finally {
+        setDebugging(false);
+      }
+    };
+    input.click();
+  };
+
+  return (
+    <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+      <h3 className="text-lg font-semibold text-red-800 mb-2">
+        🚨 Import Alternative (Temporaire)
+      </h3>
+      <p className="text-red-700 mb-4">
+        Si l'import normal échoue, utilisez ces boutons pour diagnostiquer ou importer directement :
+      </p>
+      <div className="flex gap-3">
+        <button
+          onClick={handleDiagnostic}
+          disabled={debugging}
+          className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-red-600 hover:bg-red-700 disabled:opacity-50"
+        >
+          {debugging ? '🔧 Diagnostic...' : '🔧 Diagnostic'}
+        </button>
+        <button
+          onClick={handleTypescriptImport}
+          disabled={debugging}
+          className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
+        >
+          {debugging ? '🚀 Import...' : '🚀 Import TypeScript'}
+        </button>
+      </div>
+    </div>
+  );
+};
 import ClientSelector from '@/components/ClientSelector';
 import BackToTopButton from '@/components/BackToTopButton';
 import { supabase, Product } from '../../../../lib/supabase';
@@ -1549,6 +1658,55 @@ function AdminCatalogPage() {
     );
   };
 
+  // Ajout du bouton de debug en haut de la page
+  <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
+    <h3 className="text-lg font-semibold text-red-800 mb-2">
+      🚨 Debug Import (Temporaire)
+    </h3>
+    <p className="text-red-700 mb-4">
+      Si l'import normal échoue, utilisez ce bouton pour diagnostiquer le problème :
+    </p>
+    <button
+      onClick={() => {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.xlsx,.xls';
+        input.onchange = async (e) => {
+          const file = (e.target as HTMLInputElement).files?.[0];
+          if (!file) return;
+          
+          const formData = new FormData();
+          formData.append('catalog', file);
+          
+          try {
+            console.log('🔧 Démarrage diagnostic...');
+            const response = await fetch('/api/debug-catalog', {
+              method: 'POST',
+              body: formData,
+            });
+            
+            const result = await response.json();
+            console.log('📊 Résultat diagnostic:', result);
+            
+            // Afficher les résultats dans une alerte
+            if (result.success) {
+              alert('✅ Diagnostic réussi ! Vérifiez la console pour les détails.');
+            } else {
+              alert(`❌ Diagnostic échoué: ${result.error}\n\nVérifiez la console pour plus de détails.`);
+            }
+          } catch (error) {
+            console.error('Erreur diagnostic:', error);
+            alert('❌ Erreur lors du diagnostic. Vérifiez la console.');
+          }
+        };
+        input.click();
+      }}
+      className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-red-600 hover:bg-red-700"
+    >
+      🔧 Diagnostic Import
+    </button>
+  </div>
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-gray-50 to-emerald-50">
       {/* Header */}
@@ -1653,6 +1811,8 @@ function AdminCatalogPage() {
               </button>
               
               <CatalogUpdateButton onUpdateComplete={refreshProducts} />
+              
+              <DiagnosticButton />
               
               {/* Dropdown Export Catalogue */}
               <div className="relative dropdown-container">
