@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "build:analyze": "ANALYZE=true next build",
     "start": "next start",
     "lint": "next lint"
   },
@@ -31,5 +32,8 @@
     "xlsx": "^0.18.5",
     "zod": "^3.22.0",
     "zustand": "^4.4.0"
+  },
+  "devDependencies": {
+    "@next/bundle-analyzer": "^15.3.4"
   }
 }

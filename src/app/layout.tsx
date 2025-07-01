@@ -3,14 +3,15 @@ import { Inter } from 'next/font/google'
 import './globals.css'
 import { AuthProvider } from '../lib/auth-context'
 import PWAInstallPrompt from '../components/PWAInstallPrompt'
+import ClientOnly from '../lib/client-only'
 
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
+  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'),
   title: 'DBC B2B Platform',
   description: 'Plateforme B2B pour la gestion des commandes DBC',
   manifest: '/manifest.json',
-  themeColor: '#10B981',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
@@ -30,6 +31,14 @@ export const metadata: Metadata = {
     title: 'DBC B2B Platform',
     description: 'Plateforme B2B pour la gestion des commandes DBC',
   },
+}
+
+export function generateViewport() {
+  return {
+    themeColor: '#10B981',
+    width: 'device-width',
+    initialScale: 1,
+  }
 }
 
 export default function RootLayout({
@@ -67,7 +76,9 @@ export default function RootLayout({
       <body className={inter.className}>
         <AuthProvider>
           {children}
-          <PWAInstallPrompt />
+          <ClientOnly>
+            <PWAInstallPrompt />
+          </ClientOnly>
         </AuthProvider>
       </body>
     </html>

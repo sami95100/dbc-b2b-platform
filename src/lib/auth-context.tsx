@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { supabase } from './supabase';
 import { User } from './supabase';
+import { useIsClient } from './client-only';
 
 interface AuthContextType {
   user: User | null;
@@ -67,9 +68,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
     try {
       await supabase.auth.signOut();
       setUser(null);
-      // Nettoyer le localStorage
-      localStorage.removeItem('currentDraftOrder');
-      localStorage.removeItem('draftOrders');
+      // Nettoyer le localStorage (seulement côté client)
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('currentDraftOrder');
+        localStorage.removeItem('draftOrders');
+      }
     } catch (error) {
       console.error('Erreur signOut:', error);
     }

@@ -1,3 +1,8 @@
+// Bundle analyzer
+const withBundleAnalyzer = require('@next/bundle-analyzer')({
+  enabled: process.env.ANALYZE === 'true',
+});
+
 const withPWA = require('next-pwa')({
   dest: 'public',
   register: true,
@@ -54,7 +59,55 @@ const withPWA = require('next-pwa')({
 
 /** @type {import('next').NextConfig} */
 const nextConfig = withPWA({
-  // Supprimé appDir: true car obsolète dans Next.js 14+
+  // Performance optimizations
+  experimental: {
+    optimizePackageImports: ['@supabase/supabase-js', 'lucide-react', 'xlsx'],
+  },
+  
+  // Bundle optimization
+  webpack: (config, { isServer }) => {
+    // Optimize bundle splitting
+    if (!isServer) {
+      config.optimization.splitChunks = {
+        chunks: 'all',
+        cacheGroups: {
+          vendor: {
+            test: /[\\/]node_modules[\\/]/,
+            name: 'vendors',
+            priority: 10,
+            enforce: true,
+          },
+          supabase: {
+            test: /[\\/]node_modules[\\/]@supabase[\\/]/,
+            name: 'supabase',
+            priority: 20,
+            enforce: true,
+          },
+          xlsx: {
+            test: /[\\/]node_modules[\\/]xlsx[\\/]/,
+            name: 'xlsx',
+            priority: 20,
+            enforce: true,
+          },
+        },
+      };
+    }
+    
+    return config;
+  },
+  
+  // Image optimization
+  images: {
+    formats: ['image/webp', 'image/avif'],
+    minimumCacheTTL: 60,
+  },
+  
+  // Compression
+  compress: true,
+  
+  // Output optimization
+  output: 'standalone',
+  
   typescript: {
     // ⚠️ Désactiver la vérification TypeScript pour ce build de déploiement
     ignoreBuildErrors: true,
@@ -65,4 +118,4 @@ const nextConfig = withPWA({
   },
 });
 
-module.exports = nextConfig 
+module.exports = withBundleAnalyzer(nextConfig) 
