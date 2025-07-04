@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 144 144">
+  <!-- Fond vert DBC -->
+  <rect width="144" height="144" fill="#034638" rx="25" ry="25"/>
+  
+  <!-- Logo DBC centré -->
+  <g transform="translate(72, 72)">
+    <!-- Rectangle logo -->
+    <rect x="-33.839999999999996" y="-16.560000000000002" width="67.67999999999999" height="33.120000000000005" fill="#00BF6F" rx="5" ry="5"/>
+    
+    <!-- Texte DBC -->
+    <text x="0" y="7" text-anchor="middle" font-family="Arial, sans-serif" font-size="20" font-weight="bold" fill="#034638">DBC</text>
+    
+    <!-- Accent -->
+    <rect x="-22.6728" y="12.560000000000002" width="45.3456" height="2" fill="#D8E142" rx="1" ry="1"/>
+  </g>
+</svg>

@@ -32,7 +32,7 @@ export const metadata: Metadata = {
 }
 
 export const viewport: Viewport = {
-  themeColor: '#10B981',
+  themeColor: '#034638',
   width: 'device-width',
   initialScale: 1,
   maximumScale: 1,
@@ -58,20 +58,20 @@ export default function RootLayout({
         <meta name="format-detection" content="telephone=no" />
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="msapplication-config" content="/icons/browserconfig.xml" />
-        <meta name="msapplication-TileColor" content="#10B981" />
+        <meta name="msapplication-TileColor" content="#034638" />
         <meta name="msapplication-tap-highlight" content="no" />
-        <meta name="theme-color" content="#10B981" />
+        <meta name="theme-color" content="#034638" />
 
-        {/* Apple Touch Icons */}
-        <link rel="apple-touch-icon" href="/icons/icon-152x152.png" />
+        {/* Apple Touch Icons - Nouvelles icônes DBC */}
+        <link rel="apple-touch-icon" href="/icons/icon-180x180.png" />
         <link rel="apple-touch-icon" sizes="152x152" href="/icons/icon-152x152.png" />
-        <link rel="apple-touch-icon" sizes="180x180" href="/icons/icon-192x192.png" />
+        <link rel="apple-touch-icon" sizes="180x180" href="/icons/icon-180x180.png" />
 
         {/* General Icons */}
         <link rel="icon" type="image/png" sizes="32x32" href="/icons/icon-32x32.png" />
         <link rel="icon" type="image/png" sizes="16x16" href="/icons/icon-16x16.png" />
         <link rel="manifest" href="/manifest.json" />
-        <link rel="mask-icon" href="/icons/icon-512x512.png" color="#10B981" />
+        <link rel="mask-icon" href="/icons/icon-512x512.png" color="#034638" />
         <link rel="shortcut icon" href="/favicon.ico" />
       </head>
       <body className={inter.className}>
