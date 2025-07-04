@@ -18,6 +18,7 @@ export default function PWAInstallPrompt() {
   const [isInstalled, setIsInstalled] = useState(false);
   const [isIOS, setIsIOS] = useState(false);
   const [showIOSInstructions, setShowIOSInstructions] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
 
   useEffect(() => {
     // Vérifier si l'app est déjà installée
@@ -26,6 +27,14 @@ export default function PWAInstallPrompt() {
       setIsInstalled(true);
       return;
     }
+
+    // Détecter la taille d'écran (mobile/tablette seulement)
+    const checkIsMobile = () => {
+      setIsMobile(window.innerWidth <= 1024); // Jusqu'à 1024px (tablette incluse)
+    };
+    
+    checkIsMobile();
+    window.addEventListener('resize', checkIsMobile);
 
     // Détecter iOS
     const iOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
@@ -37,9 +46,12 @@ export default function PWAInstallPrompt() {
       setDeferredPrompt(e as BeforeInstallPromptEvent);
       
       // Attendre un peu avant de montrer le prompt (pour ne pas être intrusif)
-      setTimeout(() => {
-        setShowPrompt(true);
-      }, 10000); // 10 secondes après le chargement
+      // ET seulement sur mobile/tablette
+      if (window.innerWidth <= 1024) {
+        setTimeout(() => {
+          setShowPrompt(true);
+        }, 10000); // 10 secondes après le chargement
+      }
     };
 
     // Gestionnaire pour l'installation réussie
@@ -55,6 +67,7 @@ export default function PWAInstallPrompt() {
     return () => {
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
       window.removeEventListener('appinstalled', handleAppInstalled);
+      window.removeEventListener('resize', checkIsMobile);
     };
   }, []);
 
@@ -82,14 +95,19 @@ export default function PWAInstallPrompt() {
     }
   };
 
-  // Ne rien afficher si l'app est installée ou si l'utilisateur a dismissé
-  if (isInstalled || (typeof window !== 'undefined' && localStorage.getItem('pwa-install-dismissed'))) {
+  // Ne rien afficher si :
+  // - L'app est installée
+  // - L'utilisateur a dismissé le prompt
+  // - On est sur desktop (écran > 1024px)
+  if (isInstalled || 
+      !isMobile || 
+      (typeof window !== 'undefined' && localStorage.getItem('pwa-install-dismissed'))) {
     return null;
   }
 
   if (showIOSInstructions && isIOS) {
     return (
-      <div className="fixed bottom-4 right-4 bg-white border border-gray-200 rounded-lg shadow-lg p-4 max-w-sm z-50">
+      <div className="fixed bottom-4 right-4 bg-white/80 backdrop-blur-md border border-white/60 rounded-xl shadow-xl p-4 max-w-sm z-50">
         <div className="flex justify-between items-start mb-3">
           <h3 className="font-semibold text-gray-900 flex items-center">
             <Smartphone className="h-5 w-5 mr-2 text-blue-600" />
@@ -97,7 +115,7 @@ export default function PWAInstallPrompt() {
           </h3>
           <button
             onClick={() => setShowIOSInstructions(false)}
-            className="text-gray-400 hover:text-gray-600"
+            className="text-gray-400 hover:text-gray-600 transition-colors"
           >
             <X className="h-4 w-4" />
           </button>
@@ -117,7 +135,7 @@ export default function PWAInstallPrompt() {
 
   if (showPrompt && (deferredPrompt || isIOS)) {
     return (
-      <div className="fixed bottom-4 right-4 bg-white border border-gray-200 rounded-lg shadow-lg p-4 max-w-sm z-50">
+      <div className="fixed bottom-4 right-4 bg-white/80 backdrop-blur-md border border-white/60 rounded-xl shadow-xl p-4 max-w-sm z-50">
         <div className="flex justify-between items-start mb-3">
           <h3 className="font-semibold text-gray-900 flex items-center">
             <Download className="h-5 w-5 mr-2 text-blue-600" />
@@ -125,7 +143,7 @@ export default function PWAInstallPrompt() {
           </h3>
           <button
             onClick={handleDismiss}
-            className="text-gray-400 hover:text-gray-600"
+            className="text-gray-400 hover:text-gray-600 transition-colors"
           >
             <X className="h-4 w-4" />
           </button>
@@ -139,9 +157,9 @@ export default function PWAInstallPrompt() {
           {deferredPrompt && (
             <button
               onClick={handleInstallClick}
-              className="flex-1 bg-blue-600 text-white px-3 py-2 rounded-md text-sm hover:bg-blue-700 transition-colors flex items-center justify-center"
+              className="flex-1 bg-blue-600 text-white px-3 py-2 rounded-lg text-sm hover:bg-blue-700 transition-colors flex items-center justify-center"
             >
-              <Monitor className="h-4 w-4 mr-1" />
+              <Smartphone className="h-4 w-4 mr-1" />
               Installer
             </button>
           )}
@@ -149,7 +167,7 @@ export default function PWAInstallPrompt() {
           {isIOS && (
             <button
               onClick={handleIOSInstall}
-              className="flex-1 bg-blue-600 text-white px-3 py-2 rounded-md text-sm hover:bg-blue-700 transition-colors flex items-center justify-center"
+              className="flex-1 bg-blue-600 text-white px-3 py-2 rounded-lg text-sm hover:bg-blue-700 transition-colors flex items-center justify-center"
             >
               <Smartphone className="h-4 w-4 mr-1" />
               Guide iOS
