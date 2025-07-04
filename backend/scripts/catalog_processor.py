@@ -152,6 +152,42 @@ def process_catalog_file(file_path):
     except Exception as e:
         raise Exception(f"Erreur traitement catalogue: {str(e)}")
 
+def save_import_to_database(supabase, new_skus, restocked_skus, missing_skus, total_imported, stats):
+    """Sauvegarde les données d'import dans la table catalog_imports"""
+    try:
+        # Identifier les SKU qui sont passés de 0 à en stock
+        # Cette logique est déjà gérée dans import_to_supabase mais on peut l'améliorer
+        
+        import_data = {
+            'import_date': datetime.now().isoformat(),
+            'total_imported': total_imported,
+            'total_updated': len(new_skus) + len(restocked_skus),
+            'new_skus': new_skus,
+            'restocked_skus': restocked_skus,
+            'missing_skus': missing_skus,
+            'import_summary': {
+                'stats': stats,
+                'new_skus_count': len(new_skus),
+                'restocked_skus_count': len(restocked_skus),
+                'missing_skus_count': len(missing_skus),
+                'total_new_products': len(new_skus) + len(restocked_skus)
+            }
+        }
+        
+        # Insérer dans la table catalog_imports
+        result = supabase.table('catalog_imports').insert(import_data).execute()
+        
+        if result.data:
+            print(f"✅ Données d'import sauvegardées en base (ID: {result.data[0]['id']})")
+            return result.data[0]['id']
+        else:
+            print("⚠️ Aucune donnée retournée lors de la sauvegarde d'import")
+            return None
+            
+    except Exception as e:
+        print(f"⚠️ Erreur sauvegarde import en base: {e}")
+        return None
+
 def import_to_supabase(products):
     """Importe les produits dans Supabase selon les règles métier DBC"""
     try:
@@ -179,20 +215,37 @@ def import_to_supabase(products):
                 offset += page_size
             
             print(f"📊 Produits existants en base: {len(existing_products)}")
+            
+            # DEBUG: Afficher quelques SKU existants pour vérifier le format
+            if existing_products:
+                sample_existing = list(existing_products.keys())[:5]
+                print(f"🔍 Échantillon SKU existants: {sample_existing}")
+            else:
+                print("⚠️ ATTENTION: Aucun produit existant trouvé en base ! Tous seront considérés comme nouveaux.")
+                
         except Exception as e:
             print(f"⚠️ Impossible de récupérer les stocks existants: {e}")
+            print("⚠️ TOUS les produits seront considérés comme nouveaux !")
             # Continuer sans préservation de stock si erreur
+        
+        # DEBUG: Afficher quelques SKU du catalogue pour comparaison
+        if products:
+            sample_catalog = [p['sku'] for p in products[:5]]
+            print(f"🔍 Échantillon SKU catalogue: {sample_catalog}")
         
         # Identifier les nouveaux SKU et gérer les stocks selon les règles métier
         new_skus = []
+        restocked_skus = []  # SKU qui passent de 0 à en stock
         out_of_stock_skus = []  # SKU qui passent à 0 (retirés du catalogue)
         updated_products = []
+        exact_matches = 0  # Compteur pour diagnostiquer les correspondances
         
         for product in products:
             sku = product['sku']
             new_quantity = product['quantity']
             
             if sku in existing_products:
+                exact_matches += 1
                 # Produit existant : mettre à jour avec le nouveau stock du catalogue
                 old_quantity = existing_products[sku]
                 
@@ -202,25 +255,98 @@ def import_to_supabase(products):
                     product['is_active'] = False
                     print(f"📦 {sku}: retiré du catalogue ({old_quantity} → 0)")
                 elif new_quantity > 0:
-                    # Réapprovisionner le stock avec le nouveau catalogue
+                    # Produit avec stock
                     product['is_active'] = True
-                    if old_quantity != new_quantity:
-                        print(f"🔄 {sku}: stock mis à jour ({old_quantity} → {new_quantity})")
+                    if old_quantity == 0:
+                        # SKU qui passe de 0 à en stock = restocké
+                        restocked_skus.append(sku)
+                        print(f"🔄 {sku}: restocké ({old_quantity} → {new_quantity})")
+                    elif old_quantity != new_quantity:
+                        if len(new_skus) < 3:  # Log seulement les premiers pour éviter le spam
+                            print(f"🔄 {sku}: stock mis à jour ({old_quantity} → {new_quantity})")
                     # Si même quantité, pas de log (import identique)
                 # Note: On utilise TOUJOURS les nouvelles quantités du catalogue
             else:
-                # Nouveau produit : SKU qui n'existait pas avant OU qui était à 0
-                old_quantity = 0  # Par défaut si vraiment nouveau
-                
+                # Nouveau produit : SKU qui n'existait pas avant
                 if new_quantity > 0:
                     new_skus.append(sku)
                     product['is_active'] = True
-                    print(f"✨ {sku}: nouveau produit avec stock {new_quantity}")
+                    if len(new_skus) <= 10:  # Log seulement les 10 premiers
+                        print(f"✨ {sku}: nouveau produit avec stock {new_quantity}")
                 else:
                     # Nouveau produit mais en rupture dans le catalogue
                     product['is_active'] = False
             
             updated_products.append(product)
+        
+        # DIAGNOSTIC IMPORTANT
+        print(f"\n🔍 DIAGNOSTIC D'IMPORT:")
+        print(f"  - Produits dans catalogue: {len(products)}")
+        print(f"  - Produits existants en base: {len(existing_products)}")
+        print(f"  - Correspondances exactes trouvées: {exact_matches}")
+        print(f"  - Nouveaux SKU détectés: {len(new_skus)}")
+        
+        # Calculer le pourcentage de nouveaux SKU
+        new_sku_percentage = (len(new_skus) / len(products)) * 100 if len(products) > 0 else 0
+        
+        if len(new_skus) > len(products) * 0.9:  # Plus de 90% considérés comme nouveaux
+            print(f"\n❌ ERREUR CRITIQUE: {len(new_skus)} nouveaux SKU sur {len(products)} total ({new_sku_percentage:.1f}%)")
+            print(f"❌ Cela indique un problème majeur :")
+            
+            if len(existing_products) == 0:
+                print(f"❌ La base de données products est VIDE !")
+                print(f"❌ Tous les produits sont considérés comme nouveaux")
+            else:
+                print(f"❌ Problème de correspondance des SKU")
+                
+                # Analyser les différences de format
+                existing_sample = list(existing_products.keys())[0]
+                catalog_sample = products[0]['sku']
+                print(f"❌ Exemple SKU base: '{existing_sample}' (type: {type(existing_sample)}, longueur: {len(str(existing_sample))})")
+                print(f"❌ Exemple SKU catalogue: '{catalog_sample}' (type: {type(catalog_sample)}, longueur: {len(str(catalog_sample))})")
+                
+                # Vérifier si les SKU du catalogue sont présents en base avec des variantes
+                catalog_sample_variants = [
+                    str(catalog_sample).strip(),
+                    str(catalog_sample).strip().upper(),
+                    str(catalog_sample).strip().lower(),
+                    str(catalog_sample).replace(' ', ''),
+                    str(catalog_sample).replace('-', ''),
+                ]
+                
+                found_variants = []
+                for variant in catalog_sample_variants:
+                    if variant in existing_products:
+                        found_variants.append(variant)
+                
+                if found_variants:
+                    print(f"❌ Variantes trouvées en base: {found_variants}")
+                    print(f"❌ Problème de normalisation des SKU détecté !")
+                else:
+                    print(f"❌ Aucune variante du SKU catalogue trouvée en base")
+            
+            print(f"\n❌ IMPORT ANNULÉ - INTERVENTION MANUELLE REQUISE")
+            print(f"❌ Veuillez vérifier :")
+            print(f"❌ 1. Que la base de données products contient bien des données")
+            print(f"❌ 2. Que le format des SKU est cohérent")
+            print(f"❌ 3. Que le fichier catalogue est correct")
+            
+            # Annuler l'import et retourner une erreur
+            raise Exception(f"Import annulé : {new_sku_percentage:.1f}% de nouveaux SKU détectés (seuil: 90%). Problème de correspondance des données.")
+        
+        elif len(new_skus) > len(products) * 0.5:  # Plus de 50% considérés comme nouveaux
+            print(f"\n⚠️ AVERTISSEMENT: {len(new_skus)} nouveaux SKU sur {len(products)} total ({new_sku_percentage:.1f}%)")
+            print(f"⚠️ Pourcentage élevé de nouveaux produits. Vérifiez que c'est normal.")
+            
+            # Afficher quelques exemples pour diagnostic
+            if existing_products and products:
+                print(f"⚠️ Exemples de comparaison :")
+                sample_existing = list(existing_products.keys())[:3]
+                sample_catalog = [p['sku'] for p in products[:3]]
+                print(f"⚠️ SKU en base: {sample_existing}")
+                print(f"⚠️ SKU catalogue: {sample_catalog}")
+        else:
+            print(f"✅ Pourcentage de nouveaux SKU normal: {new_sku_percentage:.1f}%")
         
         # Marquer comme en rupture les SKU qui étaient en base mais absents du nouveau catalogue
         catalog_skus = set(product['sku'] for product in products)
@@ -231,14 +357,6 @@ def import_to_supabase(products):
                 # Ce SKU n'est plus dans le nouveau catalogue mais était actif
                 missing_skus.append(existing_sku)
                 
-                # Créer un produit virtuel pour le marquer en rupture
-                missing_product = {
-                    'sku': existing_sku,
-                    'quantity': 0,
-                    'is_active': False
-                    # Les autres champs restent inchangés dans la DB
-                }
-                
                 # Mettre à jour uniquement quantity et is_active
                 try:
                     supabase.table('products').update({
@@ -246,13 +364,15 @@ def import_to_supabase(products):
                         'is_active': False
                     }).eq('sku', existing_sku).execute()
                     
-                    print(f"🚫 {existing_sku}: marqué en rupture (absent du nouveau catalogue)")
+                    if len(missing_skus) <= 5:  # Log seulement les premiers
+                        print(f"🚫 {existing_sku}: marqué en rupture (absent du nouveau catalogue)")
                     out_of_stock_skus.append(existing_sku)
                 except Exception as e:
                     print(f"⚠️ Erreur mise à jour rupture {existing_sku}: {e}")
         
         print(f"\n📊 Résumé de l'import:")
         print(f"  - Nouveaux SKU: {len(new_skus)}")
+        print(f"  - SKU restockés: {len(restocked_skus)}")
         print(f"  - SKU mis en rupture: {len(out_of_stock_skus)}")
         print(f"  - SKU manquants du catalogue: {len(missing_skus)}")
         print(f"  - Total à traiter: {len(updated_products)}")
@@ -277,7 +397,18 @@ def import_to_supabase(products):
         # Calculer les vraies statistiques finales
         total_out_of_stock = len(out_of_stock_skus)  # Inclut les SKU du catalogue + les SKU manquants
         
-        return total_imported, new_skus, total_out_of_stock
+        # Sauvegarder les données d'import en base de données
+        import_id = save_import_to_database(supabase, new_skus, restocked_skus, missing_skus, total_imported, {
+            'total': len(updated_products),
+            'new_skus': len(new_skus),
+            'restocked_skus': len(restocked_skus),
+            'out_of_stock': total_out_of_stock,
+            'missing_skus': len(missing_skus),
+            'existing_in_db': len(existing_products),
+            'exact_matches': exact_matches
+        })
+        
+        return total_imported, new_skus, restocked_skus, total_out_of_stock
         
     except Exception as e:
         raise Exception(f"Erreur import Supabase: {str(e)}")
@@ -304,7 +435,7 @@ def main():
         
         # Importer dans Supabase
         print(f"\n=== IMPORT SUPABASE ===")
-        imported_count, new_skus, actual_out_of_stock = import_to_supabase(products)
+        imported_count, new_skus, restocked_skus, actual_out_of_stock = import_to_supabase(products)
         print(f"✅ {imported_count} produits importés/mis à jour dans Supabase")
         print(f"✅ {len(new_skus)} nouveaux SKU ajoutés")
         print(f"✅ {actual_out_of_stock} produits passés en rupture")
@@ -319,7 +450,8 @@ def main():
             'imported_count': imported_count,
             'new_skus_count': len(new_skus),  # Nombre total réel
             'new_skus': new_skus[:50],  # Liste limitée pour l'aperçu seulement
-            'all_new_skus': new_skus  # Liste complète pour le filtre
+            'all_new_skus': new_skus,  # Liste complète pour le filtre
+            'restocked_skus': restocked_skus
         }
         print("\n" + json.dumps(result))
         

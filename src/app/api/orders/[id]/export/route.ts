@@ -69,12 +69,12 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
       const skus = orderItems?.map(item => item.sku) || [];
       const { data: productDetails, error: productsError } = await admin
         .from('products')
-        .select('sku, appearance, functionality, color, boxed, additional_info, price, price_dbc')
+        .select('sku, appearance, functionality, color, boxed, additional_info, price_dbc')
         .in('sku', skus);
 
       console.log('🔍 Debug productDetails pour export:', { productDetails, productsError });
 
-      // Transformer les données avec les vraies informations
+      // Transformer les données avec les vraies informations (SANS prix fournisseur pour sécurité)
       exportData = (orderItems || []).map(item => {
         const productDetail = productDetails?.find(p => p.sku === item.sku);
         return {
@@ -83,7 +83,6 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
           'Quantity': item.quantity,
           'Unit Price (DBC)': item.unit_price,
           'Total Price': item.total_price,
-          'Supplier Price': productDetail?.price || 0,
           'Catalog Price DBC': productDetail?.price_dbc || 0,
           'Appearance': productDetail?.appearance || 'Grade A',
           'Functionality': productDetail?.functionality || 'Working',
@@ -125,7 +124,6 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
           color,
           cloud_lock,
           additional_info,
-          supplier_price,
           dbc_price
         `)
         .in('order_item_id', orderItemIds)
@@ -139,7 +137,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
         return NextResponse.json({ error: 'Aucun IMEI trouvé pour cette commande' }, { status: 404 });
       }
 
-      // Transformer les données avec les en-têtes d'import IMEI standard + prix fournisseur
+      // Transformer les données avec les en-têtes d'import IMEI standard (SANS prix fournisseur pour sécurité)
       exportData = imeiData.map((item, index) => ({
         'SKU': item.sku,
         'Id': index + 1,                        // ID séquentiel
@@ -152,8 +150,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
         'Cloud Lock': item.cloud_lock || '',
         'Additional Info': item.additional_info || '',
         'Quantity': 1,                          // Toujours 1 pour les IMEI
-        'DBC Price': item.dbc_price,            // Prix DBC (prix de vente)
-        'Supplier Price': item.supplier_price   // Prix fournisseur
+        'DBC Price': item.dbc_price             // Prix DBC (prix de vente) seulement
       }));
 
       filename = `commande_${order.name}_imei_${new Date().toISOString().split('T')[0]}`;

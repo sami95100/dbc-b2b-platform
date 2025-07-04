@@ -18,10 +18,276 @@ body {
   color: var(--foreground);
   background: var(--background);
   font-family: Arial, Helvetica, sans-serif;
+  /* Optimisations Safari */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  /* Comportement de scroll natif sans saccade */
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
 }
 
-@layer utilities {
-  .text-balance {
-    text-wrap: balance;
+/* Désactiver la sélection uniquement sur les éléments interactifs */
+button, .button, .product-card {
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+/* Permettre la sélection de texte pour les inputs et zones de texte */
+input, textarea, [contenteditable], p, span, div, h1, h2, h3, h4, h5, h6 {
+  -webkit-user-select: text;
+  -moz-user-select: text;
+  -ms-user-select: text;
+  user-select: text;
+}
+
+/* Améliorer les interactions tactiles */
+.touch-manipulation {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Désactiver le zoom double-tap sur les boutons et éléments interactifs */
+button, [role="button"], .cursor-pointer {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Optimisations spécifiques pour les cartes produits - Simplifié */
+.product-card {
+  /* Retirer will-change et contain pour éviter les problèmes */
+  transition: transform 0.1s ease-out, box-shadow 0.1s ease-out;
+}
+
+.product-card:active {
+  transform: scale(0.98);
+}
+
+/* État pressé pour feedback immédiat */
+.product-card.pressed {
+  transform: scale(0.98);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+}
+
+/* Améliorer les transitions lors des ajouts au panier */
+.product-card[data-in-cart="true"] {
+  transition: all 0.2s ease;
+}
+
+/* Optimisations pour iOS Safari - Simplifiées */
+@supports (-webkit-touch-callout: none) {
+  /* iOS Safari only */
+  .product-card {
+    -webkit-backface-visibility: hidden;
+    backface-visibility: hidden;
   }
+  
+  /* Améliorer le touch sur iOS */
+  input[type="number"]::-webkit-inner-spin-button,
+  input[type="number"]::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  
+  /* Forcer le clavier numérique */
+  input[type="number"] {
+    -moz-appearance: textfield;
+  }
+}
+
+/* Optimisation pour les champs de quantité */
+input[type="tel"], input[inputmode="numeric"] {
+  -webkit-appearance: none;
+  appearance: none;
+  border-radius: 8px;
+  font-size: 16px !important; /* Force la taille pour éviter le zoom iOS */
+  -webkit-tap-highlight-color: rgba(16, 185, 129, 0.2);
+}
+
+input[type="tel"]:focus, input[inputmode="numeric"]:focus {
+  outline: none;
+  border-color: #10B981;
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.1);
+  -webkit-tap-highlight-color: rgba(16, 185, 129, 0.2);
+}
+
+/* Container stable pour éviter les saccades */
+.catalog-container {
+  /* Éviter les reflows pendant les mises à jour */
+  contain: layout;
+  /* Permettre le scroll natif */
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Grille de produits optimisée */
+.products-grid {
+  /* Éviter les reflows */
+  contain: layout;
+  /* Améliorer le rendu */
+  will-change: contents;
+}
+
+/* Optimisations pendant les interactions tactiles - Simplifiées */
+body.touching {
+  /* Retirer les optimisations qui causent des problèmes */
+}
+
+body.touching .product-card {
+  transition: transform 0.05s ease-out;
+}
+
+body.touching button {
+  transition: transform 0.05s ease-out;
+}
+
+/* Amélioration des couleurs pour Safari et meilleure lisibilité */
+@layer components {
+  /* Remplacer les textes gris trop clairs par des versions plus contrastées */
+  .text-gray-400 {
+    color: #6B7280 !important; /* Plus sombre que la valeur par défaut */
+  }
+  
+  .text-gray-500 {
+    color: #4B5563 !important; /* Plus sombre pour meilleure lisibilité */
+  }
+  
+  .text-gray-600 {
+    color: #374151 !important; /* Assurer un bon contraste */
+  }
+  
+  /* Classes spéciales pour Safari avec meilleur contraste */
+  .text-safari-gray {
+    color: #374151;
+    -webkit-font-smoothing: antialiased;
+  }
+  
+  .text-safari-light {
+    color: #4B5563;
+    -webkit-font-smoothing: antialiased;
+  }
+  
+  /* Améliorer les inputs pour Safari */
+  input, textarea, select {
+    -webkit-font-smoothing: antialiased;
+    -webkit-appearance: none;
+  }
+  
+  /* Boutons avec meilleur contraste */
+  .btn-safari-friendly {
+    color: #1F2937;
+    border-color: #D1D5DB;
+    -webkit-font-smoothing: antialiased;
+  }
+  
+  .btn-safari-friendly:hover {
+    color: #111827;
+    border-color: #9CA3AF;
+  }
+  
+  /* Classe pour les éléments interactifs tactiles - Zones tactiles plus grandes */
+  .touch-target {
+    min-height: 48px; /* Augmenté de 44px à 48px */
+    min-width: 48px; /* Augmenté de 44px à 48px */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+  
+  /* Bouton tactile optimisé */
+  .touch-button {
+    position: relative;
+    overflow: hidden;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    cursor: pointer;
+    /* Zone tactile étendue */
+    padding: 12px;
+    margin: -4px;
+  }
+  
+  .touch-button::before {
+    content: '';
+    position: absolute;
+    top: -4px;
+    left: -4px;
+    right: -4px;
+    bottom: -4px;
+    z-index: 1;
+  }
+  
+  /* Améliorer la visibilité des champs de formulaire */
+  .form-input-mobile {
+    background-color: #ffffff;
+    border: 2px solid #d1d5db;
+    border-radius: 8px;
+    font-size: 16px;
+    padding: 12px 16px;
+    transition: border-color 0.2s ease;
+    -webkit-appearance: none;
+    appearance: none;
+    will-change: auto;
+    transform: translateZ(0);
+  }
+  
+  .form-input-mobile:focus {
+    outline: none;
+    border-color: #10B981;
+    box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.1);
+    background-color: #ffffff;
+    transform: translateZ(0);
+  }
+  
+  /* Optimisation spéciale pour les champs de quantité */
+  .quantity-input {
+    background-color: #ffffff !important;
+    border: 2px solid #d1d5db !important;
+    border-radius: 8px !important;
+    font-size: 16px !important;
+    text-align: center !important;
+    touch-action: manipulation !important;
+    -webkit-tap-highlight-color: rgba(16, 185, 129, 0.2) !important;
+  }
+  
+  .quantity-input:focus {
+    outline: none !important;
+    border-color: #10B981 !important;
+    box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.1) !important;
+    -webkit-tap-highlight-color: rgba(16, 185, 129, 0.3) !important;
+  }
+  
+  /* Améliorer les zones cliquables du header */
+  .header-button {
+    position: relative;
+    padding: 8px;
+    /* Zone tactile étendue invisible */
+  }
+  
+  .header-button::after {
+    content: '';
+    position: absolute;
+    top: -8px;
+    left: -8px;
+    right: -8px;
+    bottom: -8px;
+  }
+}
+
+/* Animation pour le clavier numérique */
+@keyframes slide-up {
+  from {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.animate-slide-up {
+  animation: slide-up 0.3s ease-out;
 } 

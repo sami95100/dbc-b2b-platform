@@ -440,3 +440,80 @@ const { data: publicURL } = supabase.storage
 - **Alertes** : Notifications automatiques
 
 Supabase nous permet de nous concentrer sur la logique métier plutôt que sur l'infrastructure !
+
+## 9. Mise à jour pour le suivi des imports
+
+### Table pour l'historique des imports de catalogue
+
+Exécutez ce SQL dans l'éditeur SQL de Supabase :
+
+```sql
+-- Table pour l'historique des imports de catalogue
+CREATE TABLE IF NOT EXISTS catalog_imports (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  import_date TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  total_imported INTEGER DEFAULT 0,
+  total_updated INTEGER DEFAULT 0,
+  new_skus TEXT[] DEFAULT '{}', -- Liste des nouveaux SKU
+  restocked_skus TEXT[] DEFAULT '{}', -- Liste des SKU remis en stock
+  import_summary JSONB, -- Résumé complet de l'import
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Index pour optimiser les requêtes
+CREATE INDEX IF NOT EXISTS idx_catalog_imports_date ON catalog_imports(import_date DESC);
+
+-- Fonction pour récupérer le dernier import
+CREATE OR REPLACE FUNCTION get_latest_import_info()
+RETURNS TABLE (
+  import_date TIMESTAMP WITH TIME ZONE,
+  total_new_products INTEGER,
+  new_skus TEXT[],
+  restocked_skus TEXT[]
+)
+LANGUAGE SQL
+STABLE
+AS $$
+  SELECT
+    ci.import_date,
+    (array_length(ci.new_skus, 1) + array_length(ci.restocked_skus, 1)) as total_new_products,
+    ci.new_skus,
+    ci.restocked_skus
+  FROM catalog_imports ci
+  ORDER BY ci.import_date DESC
+  LIMIT 1;
+$$;
+
+-- Activer RLS sur la table catalog_imports
+ALTER TABLE catalog_imports ENABLE ROW LEVEL SECURITY;
+
+-- Politique : Seuls les admins peuvent voir les imports
+CREATE POLICY "Admins can view import history" ON catalog_imports
+  FOR SELECT USING (
+    EXISTS (
+      SELECT 1 FROM users
+      WHERE users.id = auth.uid()
+      AND users.role = 'admin'
+    )
+  );
+```
+
+### Fonctionnalité
+
+Cette mise à jour permet :
+
+- **Persistance des données** : Les informations d'import sont sauvegardées en base
+- **Partage entre utilisateurs** : Tous voient les mêmes données d'import
+- **Historique complet** : Suivi de tous les imports avec dates
+- **Nouveaux produits intelligents** :
+  - SKU vraiment nouveaux (n'existaient pas)
+  - SKU restockés (passés de 0 à en stock)
+- **Sécurité** : Seuls les admins peuvent voir l'historique
+
+Le bouton "Nouveaux" affiche maintenant :
+
+- Nombre total de nouveaux produits depuis le dernier import
+- Date et heure du dernier import
+- Informations persistantes même après déconnexion
+
+Supabase nous permet de nous concentrer sur la logique métier plutôt que sur l'infrastructure !

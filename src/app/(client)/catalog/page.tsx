@@ -1,37 +1,28 @@
 'use client';
 
-import { useState, useMemo, useEffect, useRef } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { useAuth, withAuth } from '../../../lib/auth-context';
+import { useAuth, withAuth } from '@/lib/auth-context';
 import AppHeader from '@/components/AppHeader';
-import ClientSelector from '@/components/ClientSelector';
-import BackToTopButton from '@/components/BackToTopButton';
-import { supabase, Product } from '../../../lib/supabase';
-import { OrdersUtils } from '../../../lib/orders-utils';
+import { supabase, Product } from '@/lib/supabase';
+import { OrdersUtils } from '@/lib/orders-utils';
 import { 
-  Search, 
-  Filter, 
-  Download, 
-  ShoppingCart, 
-  User, 
-  LogOut, 
-  ChevronDown,
-  ChevronUp,
-  Check,
-  Plus,
-  Minus,
-  ArrowUpDown,
-  FileSpreadsheet,
-  Package,
-  ChevronLeft,
-  ChevronRight
-} from 'lucide-react';
+  translateCatalogTerm, 
+  translateInterfaceLabel,
+  MANUFACTURERS,
+  APPEARANCES_EN,
+  APPEARANCES_FR,
+  BOXED_OPTIONS_EN,
+  BOXED_OPTIONS_FR,
+  frenchToEnglishValue
+} from '@/lib/catalog-translations';
+import MobileQuantityInput from '@/components/MobileQuantityInput';
+import CatalogUpdateButton from '@/components/CatalogUpdateButton';
+import { Download, Filter, Search, ChevronDown, ChevronUp, ShoppingCart, X, Plus, Minus, Zap, TrendingUp, ChevronLeft, ChevronRight, Check, AlertCircle, Package, Clock, Loader2, RefreshCw, ArrowUpDown, FileSpreadsheet } from 'lucide-react';
+import * as XLSX from 'xlsx';
+import BackToTopButton from '@/components/BackToTopButton';
 
 // Valeurs de filtres basées sur l'analyse du vrai catalogue
-const MANUFACTURERS = ['Apple', 'Samsung', 'Xiaomi', 'Google', 'Huawei', 'OnePlus', 'Motorola', 'Honor', 'Oppo', 'Realme', 'Sony', 'LG', 'TCL', 'Nokia', 'Vivo', 'Asus', 'ZTE', 'Nothing', 'Gigaset', 'HTC'];
-const APPEARANCES = ['Brand New', 'Grade A+', 'Grade A', 'Grade AB', 'Grade B', 'Grade BC', 'Grade C', 'Grade C+'];
-const FUNCTIONALITIES = ['Minor Fault', 'Working'];
-const BOXED_OPTIONS = ['Original Box', 'Premium Unboxed', 'Unboxed'];
 const ADDITIONAL_INFO_OPTIONS = ['AS-IS', 'Brand New Battery', 'Chip/Crack', 'Discoloration', 'Engraving', 'Engraving Removed', 'Heavy cosmetic wear', 'Other', 'Premium Refurbished', 'Reduced Battery Performance'];
 
 // Type pour les options de tri
@@ -44,9 +35,9 @@ function ClientCatalogPage() {
   
   // États des filtres avec valeurs par défaut
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
   const [selectedManufacturers, setSelectedManufacturers] = useState<string[]>(['Apple']); // Apple par défaut
-  const [selectedAppearances, setSelectedAppearances] = useState<string[]>(['Grade C', 'Grade BC']); // Grade C et BC par défaut
-  const [selectedFunctionalities, setSelectedFunctionalities] = useState<string[]>([]);
+  const [selectedAppearances, setSelectedAppearances] = useState<string[]>(['Grade C', 'Grade BC']); // Grade C et BC par défaut (valeurs françaises)
   const [selectedColors, setSelectedColors] = useState<string[]>([]);
   const [selectedBoxedOptions, setSelectedBoxedOptions] = useState<string[]>([]);
   const [selectedAdditionalInfo, setSelectedAdditionalInfo] = useState<string[]>([]);
@@ -57,6 +48,7 @@ function ClientCatalogPage() {
   const [showNewProductsOnly, setShowNewProductsOnly] = useState(false);
   const [includeZeroStock, setIncludeZeroStock] = useState(false);
   const [showStandardCapacityOnly, setShowStandardCapacityOnly] = useState(false);
+  const [importInfo, setImportInfo] = useState<{ importDate: string; totalNewProducts: number; newSkus: string[]; restockedSkus: string[]; missingSkus: string[]; totalMissingProducts: number } | null>(null);
   
   // États de tri et pagination
   const [sortField, setSortField] = useState<SortField>('product_name');
@@ -100,13 +92,12 @@ function ClientCatalogPage() {
   const [creatingOrder, setCreatingOrder] = useState(false);
   const [newProductsSKUs, setNewProductsSKUs] = useState<string[]>([]);
   const [lastImportDate, setLastImportDate] = useState<Date | null>(null);
-  const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
+  const [totalNewProducts, setTotalNewProducts] = useState<number>(0);
 
   // États de dropdowns avec timer pour fermeture
   const [dropdownOpen, setDropdownOpen] = useState<{[key: string]: boolean}>({
     manufacturer: false,
     appearance: false,
-    functionality: false,
     boxed: false,
     additionalInfo: false,
     color: false
@@ -115,6 +106,152 @@ function ClientCatalogPage() {
 
   // État pour gérer l'affichage des filtres sur mobile
   const [showMobileFilters, setShowMobileFilters] = useState(false);
+
+  // États pour les suggestions de recherche
+  const [searchSuggestions, setSearchSuggestions] = useState<string[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+
+  // Debounce pour la recherche
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchTerm(searchTerm);
+    }, 300); // Attendre 300ms après la dernière frappe
+
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
+
+  // Charger les informations d'import au chargement
+  useEffect(() => {
+    const loadImportInfo = async () => {
+      try {
+        const response = await fetch('/api/catalog/import-info');
+        if (response.ok) {
+          const result = await response.json();
+          if (result.data) {
+            setImportInfo(result.data);
+          }
+        }
+      } catch (error) {
+        console.error('Erreur chargement import info:', error);
+      }
+    };
+
+    if (products.length > 0) {
+      loadImportInfo();
+    }
+  }, [products.length]);
+
+  // Fonction temporaire pour estimer les nouveaux produits
+  const estimateNewProducts = () => {
+    if (!products.length) return 0;
+    const activeProducts = products.filter(p => p.quantity > 0).length;
+    return Math.min(Math.floor(activeProducts * 0.05), 50);
+  };
+
+  // Fonction pour vérifier si un produit est "nouveau"
+  const isNewProduct = (product: Product) => {
+    if (importInfo && importInfo.newSkus && importInfo.restockedSkus) {
+      return importInfo.newSkus.includes(product.sku) || importInfo.restockedSkus.includes(product.sku);
+    } else {
+      // Heuristique temporaire plus restrictive
+      if (product.quantity === 0) return false;
+      
+      // Considérer comme "nouveaux" les produits avec stock > 50
+      // ou qui ont certaines caractéristiques récentes
+      const hasHighStock = product.quantity > 50;
+      const hasRecentFeatures = product.additional_info && 
+        (product.additional_info.includes('2024') || 
+         product.additional_info.includes('new') ||
+         product.additional_info.includes('récent'));
+      
+      return hasHighStock || hasRecentFeatures || false;
+    }
+  };
+
+  const getDisplayAppearance = (appearance: string, functionality: string) => {
+    if (functionality === 'Minor Fault') {
+      // Ajouter 'x' minuscule après le grade pour les Minor Fault
+      // Grade C → Grade Cx, Grade BC → Grade BCx, Grade C+ → Grade Cx+
+      const gradeMatch = appearance.match(/^(Grade [A-Z]+)(\+?)/i);
+      if (gradeMatch) {
+        const grade = gradeMatch[1]; // "Grade C"
+        const plus = gradeMatch[2] || ''; // "+" ou ""
+        const rest = appearance.substring(grade.length + plus.length).trim();
+        return rest ? `${grade}x${plus} ${rest}` : `${grade}x${plus}`;
+      }
+    }
+    // Pour Working ou si pas de grade détecté, retourner tel quel
+    return appearance;
+  };
+
+  // Calculer le nombre total de nouveaux produits (nouveaux SKU + passés de 0 à en stock)
+  const calculateNewProducts = async () => {
+    try {
+      // Récupérer les données depuis l'API route
+      const response = await fetch('/api/catalog/import-info');
+      const result = await response.json();
+      
+      if (!response.ok) {
+        console.error('Erreur récupération import (client):', result.error);
+        setTotalNewProducts(0);
+        setNewProductsSKUs([]);
+        setLastImportDate(null);
+        return;
+      }
+
+      if (!result.data) {
+        // Aucun import trouvé
+        setTotalNewProducts(0);
+        setNewProductsSKUs([]);
+        setLastImportDate(null);
+        return;
+      }
+
+      // Combiner les nouveaux SKU et les restockés
+      const allNewSKUs = [...(result.data.newSkus || []), ...(result.data.restockedSkus || [])];
+      
+      setNewProductsSKUs(allNewSKUs);
+      setTotalNewProducts(result.data.totalNewProducts);
+      setLastImportDate(result.data.importDate ? new Date(result.data.importDate) : null);
+      
+      // Stocker toutes les informations d'import dans importInfo
+      setImportInfo({
+        importDate: result.data.importDate,
+        totalNewProducts: result.data.totalNewProducts,
+        newSkus: result.data.newSkus || [],
+        restockedSkus: result.data.restockedSkus || [],
+        missingSkus: result.data.missingSkus || [],
+        totalMissingProducts: result.data.totalMissingProducts || 0
+      });
+      
+      console.log('📊 Informations d\'import récupérées depuis l\'API (client):', {
+        newSKUs: result.data.newSkus?.length || 0,
+        restockedSKUs: result.data.restockedSkus?.length || 0,
+        missingSKUs: result.data.missingSkus?.length || 0,
+        totalNew: result.data.totalNewProducts,
+        totalMissing: result.data.totalMissingProducts,
+        date: result.data.importDate
+      });
+      
+    } catch (error) {
+      console.error('Erreur calcul nouveaux produits:', error);
+      setTotalNewProducts(0);
+      setNewProductsSKUs([]);
+      setLastImportDate(null);
+    }
+  };
+
+  // Charger les données des nouveaux produits au montage
+  useEffect(() => {
+    calculateNewProducts();
+  }, []);
+
+  // Recalculer quand les produits changent (après un import)
+  useEffect(() => {
+    if (products.length > 0) {
+      calculateNewProducts();
+    }
+  }, [products]);
 
   // Fonction pour synchroniser les commandes brouillon avec Supabase
   const syncDraftOrdersWithSupabase = async () => {
@@ -246,8 +383,12 @@ function ClientCatalogPage() {
 
   // Fonction pour sauvegarder immédiatement dans localStorage et Supabase avec debounce
   const saveDraftOrdersToLocalStorage = async (orders: any) => {
-    // Sauvegarder immédiatement dans localStorage
-    localStorage.setItem('draftOrders', JSON.stringify(orders));
+    // Sauvegarder immédiatement dans localStorage (synchrone et rapide)
+    try {
+      localStorage.setItem('draftOrders', JSON.stringify(orders));
+    } catch (error) {
+      console.warn('⚠️ Erreur sauvegarde localStorage:', error);
+    }
     
     // Debounce la synchronisation Supabase pour éviter les doublons
     if (saveTimeoutRef.current) {
@@ -273,7 +414,7 @@ function ClientCatalogPage() {
       } finally {
         setIsSaving(false);
       }
-    }, 500); // Debounce de 500ms
+    }, 800); // Debounce plus long pour éviter les appels trop fréquents
   };
 
   // Fonction pour synchroniser une commande avec Supabase
@@ -560,24 +701,37 @@ function ClientCatalogPage() {
   // Filtrage et tri des produits
   const filteredAndSortedProducts = useMemo(() => {
     let filtered = products.filter(product => {
-      const matchesSearch = !searchTerm || 
-        product.product_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        product.sku.toLowerCase().includes(searchTerm.toLowerCase());
+      // Filtre nouveaux produits
+      if (showNewProductsOnly && !isNewProduct(product)) return false;
       
+      // Filtre de recherche
+      const matchesSearch = !debouncedSearchTerm || 
+        product.product_name.toLowerCase().includes(debouncedSearchTerm.toLowerCase()) ||
+        product.sku.toLowerCase().includes(debouncedSearchTerm.toLowerCase()) ||
+        product.item_group.toLowerCase().includes(debouncedSearchTerm.toLowerCase()) ||
+        (product.color && product.color.toLowerCase().includes(debouncedSearchTerm.toLowerCase())) ||
+        (product.additional_info && product.additional_info.toLowerCase().includes(debouncedSearchTerm.toLowerCase()));
+      
+      // Filtres existants restaurés
       const matchesManufacturer = selectedManufacturers.length === 0 || 
         productContainsManufacturer(product.product_name, selectedManufacturers);
       
       const matchesAppearance = selectedAppearances.length === 0 || 
-        selectedAppearances.includes(product.appearance);
-      
-      const matchesFunctionality = selectedFunctionalities.length === 0 || 
-        selectedFunctionalities.includes(product.functionality);
+        selectedAppearances.some(selectedApp => {
+          // Convertir la valeur française sélectionnée vers l'anglais pour comparer avec la DB
+          const englishValue = frenchToEnglishValue(selectedApp, 'appearance');
+          return product.appearance === englishValue || product.appearance === selectedApp;
+        });
       
       const matchesColor = selectedColors.length === 0 || 
         selectedColors.includes(product.color);
       
       const matchesBoxed = selectedBoxedOptions.length === 0 || 
-        selectedBoxedOptions.includes(product.boxed);
+        selectedBoxedOptions.some(selectedBoxed => {
+          // Convertir la valeur française sélectionnée vers l'anglais pour comparer avec la DB
+          const englishValue = frenchToEnglishValue(selectedBoxed, 'boxed');
+          return product.boxed === englishValue || product.boxed === selectedBoxed;
+        });
       
       const matchesAdditionalInfo = selectedAdditionalInfo.length === 0 || 
         (product.additional_info && selectedAdditionalInfo.includes(product.additional_info));
@@ -587,55 +741,52 @@ function ClientCatalogPage() {
       const matchesQuantityMin = !quantityMin || product.quantity >= parseInt(quantityMin);
       const matchesQuantityMax = !quantityMax || product.quantity <= parseInt(quantityMax);
       
-              const matchesNewProducts = !showNewProductsOnly || newProductsSKUs.includes(product.sku);
-        const matchesStandardCapacity = !showStandardCapacityOnly || (() => {
-          // Vérifier si c'est Apple ou Samsung
-          const isAppleOrSamsung = product.product_name.toLowerCase().includes('apple') || 
-                                   product.product_name.toLowerCase().includes('samsung');
-          
-          if (!isAppleOrSamsung) {
-            return true; // Afficher tous les autres produits si le filtre est actif
-          }
-          
-          // Pour Apple/Samsung, vérifier si c'est la capacité standard
-          const parsed = parseProductInfo(product.product_name);
-          if (!parsed) return false;
-          
-          const standardCapacities = getStandardCapacities;
-          const standardCapacity = standardCapacities[parsed.baseModel];
-          return standardCapacity && parsed.capacity === standardCapacity;
-        })();
+      const matchesStandardCapacity = !showStandardCapacityOnly || (() => {
+        // Vérifier si c'est Apple ou Samsung
+        const isAppleOrSamsung = product.product_name.toLowerCase().includes('apple') || 
+                                 product.product_name.toLowerCase().includes('samsung');
+        
+        if (!isAppleOrSamsung) {
+          return true; // Afficher tous les autres produits si le filtre est actif
+        }
+        
+        // Pour Apple/Samsung, vérifier si c'est la capacité standard
+        const parsed = parseProductInfo(product.product_name);
+        if (!parsed) return false;
+        
+        const standardCapacities = getStandardCapacities;
+        const standardCapacity = standardCapacities[parsed.baseModel];
+        return standardCapacity && parsed.capacity === standardCapacity;
+      })();
       
-      // Gestion du stock: distinguer recherche explicite de filtrage passif
-      const hasSearch = searchTerm.trim().length > 0;
-      const hasStock = product.quantity > 0;
-      const allowZeroQuantity = quantityMin === '0' || (quantityMin !== '' && parseInt(quantityMin) === 0);
-      
-      // CORRECTION: Ne pas afficher les produits à quantité 0 sauf si explicitement demandé
-      // Filtrer les produits inactifs SAUF si recherche active ou filtre quantité explicite
-      const isActiveOrSearched = product.is_active || hasSearch || allowZeroQuantity || includeZeroStock;
-      
-      // CORRECTION STRICTE: Produits à stock 0 UNIQUEMENT si toggle activé
-      // La recherche et les filtres ne doivent pas forcer l'affichage des produits à stock 0
-      const matchesStock = hasStock || includeZeroStock;
+      // Gestion de la rupture de stock : afficher les produits avec quantité 0
+      const matchesStock = includeZeroStock 
+        ? product.quantity === 0  // Afficher tous les produits avec quantité 0
+        : product.quantity > 0;   // Afficher seulement les produits avec stock > 0
       
       return matchesSearch && matchesManufacturer && matchesAppearance && 
-             matchesFunctionality && matchesColor && matchesBoxed &&
+             matchesColor && matchesBoxed &&
              matchesAdditionalInfo && matchesPriceMin && matchesPriceMax && 
-             matchesQuantityMin && matchesQuantityMax && matchesNewProducts && 
-             matchesStandardCapacity && matchesStock && isActiveOrSearched;
+             matchesQuantityMin && matchesQuantityMax && 
+             matchesStandardCapacity && matchesStock;
     });
 
-    // Tri avec priorisation ABSOLUE Minor Fault > Working
+    // Tri avec groupement par product_name puis Minor Fault > Working par produit
     filtered.sort((a, b) => {
-      // TRI PRIMAIRE OBLIGATOIRE : Minor Fault en premier, TOUJOURS
-      if (a.functionality === 'Minor Fault' && b.functionality === 'Working') {
-        return -1; // Minor Fault avant Working
-      } else if (a.functionality === 'Working' && b.functionality === 'Minor Fault') {
-        return 1; // Working après Minor Fault
+      // TRI PRIMAIRE : Par nom de produit
+      const productNameComparison = a.product_name.localeCompare(b.product_name);
+      if (productNameComparison !== 0) {
+        return productNameComparison; // Grouper par product_name d'abord
       }
 
-      // TRI SECONDAIRE : selon le champ sélectionné (seulement si même fonctionnalité)
+      // TRI SECONDAIRE : Pour le même produit, Minor Fault avant Working
+      if (a.functionality === 'Minor Fault' && b.functionality === 'Working') {
+        return -1; // Minor Fault avant Working pour le même produit
+      } else if (a.functionality === 'Working' && b.functionality === 'Minor Fault') {
+        return 1; // Working après Minor Fault pour le même produit
+      }
+
+      // TRI TERTIAIRE : Si même produit et même functionality, selon le champ sélectionné
       let aValue = a[sortField];
       let bValue = b[sortField];
       
@@ -650,35 +801,56 @@ function ClientCatalogPage() {
         return aValue > bValue ? -1 : aValue < bValue ? 1 : 0;
       }
     });
-    
-    return filtered;
-  }, [searchTerm, selectedManufacturers, selectedAppearances, selectedFunctionalities, 
-      selectedColors, selectedBoxedOptions, selectedAdditionalInfo, priceMin, priceMax, 
-      quantityMin, quantityMax, sortField, sortDirection, products, showNewProductsOnly, 
-      newProductsSKUs, includeZeroStock, showStandardCapacityOnly, getStandardCapacities]);
 
-  // Calculer les statistiques des produits filtrés mais masqués
-  const filteredZeroStockProducts = useMemo(() => {
+    return filtered;
+  }, [
+    products, 
+    includeZeroStock, 
+    showNewProductsOnly, 
+    importInfo,
+    debouncedSearchTerm,
+    selectedManufacturers,
+    selectedAppearances,
+    selectedColors,
+    selectedBoxedOptions,
+    selectedAdditionalInfo,
+    priceMin,
+    priceMax,
+    quantityMin,
+    quantityMax,
+    showStandardCapacityOnly,
+    sortField,
+    sortDirection,
+    getStandardCapacities
+  ]);
+
+  // Calculer les statistiques des produits en rupture de stock (quantité 0)
+  const filteredOutOfStockProducts = useMemo(() => {
     return products.filter(product => {
       // Appliquer tous les filtres sauf le filtre de stock
-      const matchesSearch = !searchTerm || 
-        product.product_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        product.sku.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesSearch = !debouncedSearchTerm || 
+        product.product_name.toLowerCase().includes(debouncedSearchTerm.toLowerCase()) ||
+        product.sku.toLowerCase().includes(debouncedSearchTerm.toLowerCase());
       
       const matchesManufacturer = selectedManufacturers.length === 0 || 
         productContainsManufacturer(product.product_name, selectedManufacturers);
       
       const matchesAppearance = selectedAppearances.length === 0 || 
-        selectedAppearances.includes(product.appearance);
-      
-      const matchesFunctionality = selectedFunctionalities.length === 0 || 
-        selectedFunctionalities.includes(product.functionality);
+        selectedAppearances.some(selectedApp => {
+          // Convertir la valeur française sélectionnée vers l'anglais pour comparer avec la DB
+          const englishValue = frenchToEnglishValue(selectedApp, 'appearance');
+          return product.appearance === englishValue || product.appearance === selectedApp;
+        });
       
       const matchesColor = selectedColors.length === 0 || 
         selectedColors.includes(product.color);
       
       const matchesBoxed = selectedBoxedOptions.length === 0 || 
-        selectedBoxedOptions.includes(product.boxed);
+        selectedBoxedOptions.some(selectedBoxed => {
+          // Convertir la valeur française sélectionnée vers l'anglais pour comparer avec la DB
+          const englishValue = frenchToEnglishValue(selectedBoxed, 'boxed');
+          return product.boxed === englishValue || product.boxed === selectedBoxed;
+        });
       
       const matchesAdditionalInfo = selectedAdditionalInfo.length === 0 || 
         (product.additional_info && selectedAdditionalInfo.includes(product.additional_info));
@@ -686,15 +858,15 @@ function ClientCatalogPage() {
       const matchesPriceMin = !priceMin || product.price_dbc >= parseFloat(priceMin);
       const matchesPriceMax = !priceMax || product.price_dbc <= parseFloat(priceMax);
       
-      // Inclure seulement les produits à quantité 0 qui matchent les autres filtres
-      const isZeroStock = product.quantity === 0;
+      // Vérifier si ce produit est en rupture de stock (quantité 0)
+      const isOutOfStock = product.quantity === 0;
       const matchesQuantityMax = !quantityMax || product.quantity <= parseInt(quantityMax);
       
-      return isZeroStock && matchesSearch && matchesManufacturer && matchesAppearance && 
-             matchesFunctionality && matchesColor && matchesBoxed &&
+      return isOutOfStock && matchesSearch && matchesManufacturer && matchesAppearance && 
+             matchesColor && matchesBoxed &&
              matchesAdditionalInfo && matchesPriceMin && matchesPriceMax && matchesQuantityMax;
     });
-  }, [searchTerm, selectedManufacturers, selectedAppearances, selectedFunctionalities, 
+  }, [debouncedSearchTerm, selectedManufacturers, selectedAppearances, 
       selectedColors, selectedBoxedOptions, selectedAdditionalInfo, priceMin, priceMax, 
       quantityMax, products]);
 
@@ -740,13 +912,22 @@ function ClientCatalogPage() {
   };
 
   const handleMouseLeaveDropdown = (key: string) => {
+    // Augmenter le délai à 1000ms pour laisser le temps de faire les sélections
     const timeout = setTimeout(() => {
       setDropdownOpen(prev => ({
         ...prev,
         [key]: false
       }));
-    }, 200); // 200ms de délai
+    }, 1000); // 1 seconde au lieu de 200ms
     setCloseTimeout(timeout);
+  };
+
+  // Annuler la fermeture automatique quand on interagit avec le dropdown
+  const handleDropdownInteraction = () => {
+    if (closeTimeout) {
+      clearTimeout(closeTimeout);
+      setCloseTimeout(null);
+    }
   };
 
   // Fermer tous les dropdowns quand on clique ailleurs
@@ -836,104 +1017,74 @@ function ClientCatalogPage() {
   };
 
   const addToCartWithQuantity = async (sku: string, quantity: number, replace: boolean = false) => {
+    // Si pas de commande active, sauvegarder le produit et ouvrir la popup
+    if (!currentDraftOrder || !draftOrders[currentDraftOrder]) {
+      console.log('Pas de commande active - ouverture popup création');
+      
+      // Sauvegarder le produit en attente
+      sessionStorage.setItem('pendingProduct', JSON.stringify({ sku, quantity, replace }));
+      
+      // Ouvrir la popup de création de commande
+      setShowOrderNamePopup(true);
+      return;
+    }
     
-    // Si pas de commande active, chercher d'abord s'il y a une commande brouillon existante
-    if (!currentDraftOrder) {
+    // Sauvegarder la position de scroll actuelle
+    const scrollPosition = window.pageYOffset || document.documentElement.scrollTop;
+    
+    // Empêcher le body de bouger pendant la mise à jour
+    document.body.style.position = 'fixed';
+    document.body.style.top = `-${scrollPosition}px`;
+    document.body.style.width = '100%';
+    
+    try {
+      const currentQuantity = typeof quantities[sku] === 'number' 
+        ? quantities[sku] as number
+        : parseInt(quantities[sku] as string) || 0;
       
-      // Chercher une commande brouillon existante
-      const existingDrafts = Object.values(draftOrders).filter((order: any) => order.status === 'draft');
+      const newQuantity = replace ? quantity : currentQuantity + quantity;
       
-      if (existingDrafts.length > 0) {
-        // Utiliser la dernière commande brouillon
-        const lastDraft = existingDrafts.sort((a: any, b: any) => 
-          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-        )[0] as any;
-        
-        setCurrentDraftOrder(lastDraft.id);
-        saveCurrentOrderToLocalStorage(lastDraft.id);
-        
-        // Continuer avec cette commande
-        const currentQuantity = lastDraft.items?.[sku] || 0;
-        const newQuantity = replace ? quantity : currentQuantity + quantity;
-        
-        
-        const newDraftOrders = {
-          ...draftOrders,
-          [lastDraft.id]: {
-            ...lastDraft,
-            items: {
-              ...lastDraft.items,
-              [sku]: newQuantity
-            }
-          }
-        };
-        
-        setDraftOrders(newDraftOrders);
-        setQuantities(prev => ({ ...prev, [sku]: newQuantity }));
-        setSelectedProducts(prev => ({ ...prev, [sku]: true }));
-        
-        // Sauvegarder avec sync Supabase
-        await saveDraftOrdersToLocalStorage(newDraftOrders);
-        
+      // Vérifier le stock disponible
+      const product = filteredAndSortedProducts.find((p: Product) => p.sku === sku);
+      if (!product) return;
+      
+      if (newQuantity > product.quantity) {
+        alert(`Stock insuffisant. Stock disponible: ${product.quantity}`);
         return;
       }
       
-      // Vérifier s'il existe une commande brouillon dans Supabase
-      try {
-        const response = await fetch('/api/orders/draft', {
-          method: 'GET'
-        });
-        
-        if (response.ok) {
-          const result = await response.json();
-          if (result.draftOrders && result.draftOrders.length > 0) {
-            const existingDraft = result.draftOrders[0];
-            alert(`⚠️ Une commande en brouillon existe déjà: "${existingDraft.name}"\n\nVeuillez d'abord la supprimer ou la finaliser avant d'en créer une nouvelle.\n\nVous pouvez gérer vos commandes depuis la page "Commandes".`);
-            return;
-          }
-        }
-      } catch (error) {
-        console.warn('⚠️ Erreur vérification commandes brouillon:', error);
-        // Continuer en mode dégradé en cas d'erreur réseau
-      }
+      // Mettre à jour l'état local immédiatement
+      const newQuantities = { ...quantities, [sku]: newQuantity };
+      setQuantities(newQuantities);
       
-      // Si vraiment aucune commande brouillon, alors demander un nom
-      setShowOrderNamePopup(true);
-      sessionStorage.setItem('pendingProduct', JSON.stringify({ sku, quantity, replace }));
-      return;
-    }
-
-    const currentQuantity = draftOrders[currentDraftOrder]?.items?.[sku] || 0;
-    const newQuantity = replace ? quantity : currentQuantity + quantity;
-    
-    
-    const newDraftOrders = {
-      ...draftOrders,
-      [currentDraftOrder]: {
-        ...draftOrders[currentDraftOrder],
-        items: {
-          ...draftOrders[currentDraftOrder]?.items,
-          [sku]: newQuantity
+      // Mettre à jour dans draftOrders
+      const newDraftOrders = {
+        ...draftOrders,
+        [currentDraftOrder]: {
+          ...draftOrders[currentDraftOrder],
+          items: { ...draftOrders[currentDraftOrder].items, [sku]: newQuantity }
         }
-      }
-    };
-    
-    
-    setDraftOrders(newDraftOrders);
-    setQuantities(prev => ({ ...prev, [sku]: newQuantity }));
-    
-    // Mettre à jour visuellement la case cochée
-    setSelectedProducts(prev => ({ ...prev, [sku]: true }));
-    
-    // Sauvegarder avec sync Supabase
-    await saveDraftOrdersToLocalStorage(newDraftOrders);
-    
+      };
+      
+      setDraftOrders(newDraftOrders);
+      
+      // Sauvegarder de manière asynchrone
+      await saveDraftOrdersToLocalStorage(newDraftOrders);
+    } finally {
+      // Restaurer la position de scroll
+      document.body.style.position = '';
+      document.body.style.top = '';
+      document.body.style.width = '';
+      window.scrollTo(0, scrollPosition);
+    }
   };
 
   // Fonction pour sélectionner toute la quantité disponible (case à cocher)
   const selectFullQuantity = async (sku: string, productQuantity: number) => {
     await addToCartWithQuantity(sku, productQuantity, true); // Replace avec toute la quantité
   };
+
+
 
   const createNewOrder = async () => {
     // Protection contre les double-clics
@@ -966,7 +1117,7 @@ function ClientCatalogPage() {
           name: finalOrderName,
           items: initialItems,
           totalItems: totalItems,
-          userId: isAdmin ? selectedClientId : user?.id // Utiliser l'ID du client sélectionné si admin, sinon l'utilisateur connecté
+          userId: user?.id // Utiliser l'ID du client connecté
         })
       });
 
@@ -1009,9 +1160,6 @@ function ClientCatalogPage() {
       setCurrentDraftOrder(supabaseOrder.id);
       setShowOrderNamePopup(false);
       setOrderName('');
-      if (isAdmin) {
-        setSelectedClientId(null);
-      }
       
       // Sauvegarder dans localStorage avec l'UUID Supabase
       saveDraftOrdersToLocalStorage(newDraftOrders);
@@ -1022,9 +1170,13 @@ function ClientCatalogPage() {
 
       // Traiter le produit en attente
       if (pendingProduct) {
-        const { sku, quantity } = JSON.parse(pendingProduct);
+        const { sku, quantity, replace } = JSON.parse(pendingProduct);
         
-        setQuantities(prev => ({ ...prev, [sku]: quantity }));
+        if (replace) {
+          setQuantities(prev => ({ ...prev, [sku]: quantity }));
+        } else {
+          setQuantities(prev => ({ ...prev, [sku]: (prev[sku] || 0) + quantity }));
+        }
         setSelectedProducts(prev => ({ ...prev, [sku]: true }));
         sessionStorage.removeItem('pendingProduct');
       }
@@ -1059,11 +1211,16 @@ function ClientCatalogPage() {
       // Traiter le produit en attente
       const pendingProduct = sessionStorage.getItem('pendingProduct');
       if (pendingProduct) {
-        const { sku, quantity } = JSON.parse(pendingProduct);
+        const { sku, quantity, replace } = JSON.parse(pendingProduct);
         
         newDraftOrders[orderId].items = { [sku]: quantity };
         setDraftOrders(newDraftOrders);
-        setQuantities(prev => ({ ...prev, [sku]: quantity }));
+        
+        if (replace) {
+          setQuantities(prev => ({ ...prev, [sku]: quantity }));
+        } else {
+          setQuantities(prev => ({ ...prev, [sku]: (prev[sku] || 0) + quantity }));
+        }
         setSelectedProducts(prev => ({ ...prev, [sku]: true }));
         sessionStorage.removeItem('pendingProduct');
         
@@ -1094,7 +1251,6 @@ function ClientCatalogPage() {
     setSearchTerm('');
     setSelectedManufacturers([]);
     setSelectedAppearances([]);
-    setSelectedFunctionalities([]);
     setSelectedColors([]);
     setSelectedBoxedOptions([]);
     setSelectedAdditionalInfo([]);
@@ -1123,34 +1279,88 @@ function ClientCatalogPage() {
   const toggleStandardCapacityFilter = () => {
     setShowStandardCapacityOnly(!showStandardCapacityOnly);
     setCurrentPage(1);
-    console.log('Toggle capacités standard:', !showStandardCapacityOnly);
-  };
-
-  // Charger les SKU des nouveaux produits depuis localStorage
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const savedNewSKUs = localStorage.getItem('lastImportNewSKUs');
-      const savedImportDate = localStorage.getItem('lastImportDate');
-      
-      if (savedNewSKUs) {
-        try {
-          setNewProductsSKUs(JSON.parse(savedNewSKUs));
-        } catch (e) {
-          console.error('Erreur parsing nouveaux SKU:', e);
-        }
-      }
-      
-      if (savedImportDate) {
-        try {
-          setLastImportDate(new Date(savedImportDate));
-        } catch (e) {
-          console.error('Erreur parsing date import:', e);
-        }
+    
+    // Gérer la logique de filtrage
+    if (!showStandardCapacityOnly) {
+      // S'assurer qu'on a Apple ou Samsung sélectionné pour les capacités standard
+      if (!selectedManufacturers.includes('Apple') && !selectedManufacturers.includes('Samsung')) {
+        setSelectedManufacturers(['Apple', 'Samsung']);
       }
     }
-  }, []);
+  };
 
+  // Fonction d'export
+  const exportCatalog = (format: 'xlsx' | 'csv') => {
+    
+    // Préparer les données pour l'export
+    const exportData = filteredAndSortedProducts.map(product => {
+      const manufacturer = MANUFACTURERS.find(m => 
+        product.product_name.toLowerCase().includes(m.toLowerCase())
+      ) || '-';
+      
+      return {
+        'SKU': product.sku,
+        'Nom du produit': product.product_name,
+        'Marque': manufacturer,
+        'Apparence': product.appearance,
+        'Fonction.': product.functionality,
+        'Couleur': product.color || '-',
+        'Emballage': product.boxed,
+        'Informations': product.additional_info || '-',
+        'Stock': product.quantity,
+        'Prix DBC': product.price_dbc,
+        'TVA Marginale': product.vat_type === 'Marginal' ? 'Oui' : 'Non'
+      };
+    });
 
+    if (format === 'xlsx') {
+      // Import dynamique de xlsx
+      import('xlsx').then((XLSX) => {
+        const worksheet = XLSX.utils.json_to_sheet(exportData);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, 'Catalogue DBC');
+        
+        // Télécharger
+        const fileName = `catalogue_dbc_${new Date().toISOString().split('T')[0]}.xlsx`;
+        XLSX.writeFile(workbook, fileName);
+        
+      }).catch(err => {
+        console.error('Erreur export Excel:', err);
+        alert('Erreur lors de l\'export Excel');
+      });
+    } else if (format === 'csv') {
+      // Export CSV manuel
+      const headers = Object.keys(exportData[0] || {});
+      const csvContent = [
+        headers.join(';'),
+        ...exportData.map(row => 
+          headers.map(header => {
+            const value = (row as any)[header];
+            // Échapper les valeurs contenant des points-virgules ou des guillemets
+            if (typeof value === 'string' && (value.includes(';') || value.includes('"'))) {
+              return `"${value.replace(/"/g, '""')}"`;
+            }
+            return value;
+          }).join(';')
+        )
+      ].join('\n');
+      
+      // Créer un blob avec BOM UTF-8
+      const BOM = '\uFEFF';
+      const blob = new Blob([BOM + csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      
+      // Télécharger
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `catalogue_dbc_${new Date().toISOString().split('T')[0]}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      
+    }
+  };
 
   // Fonction pour décrémenter la quantité
   const decrementQuantity = async (sku: string) => {
@@ -1215,9 +1425,15 @@ function ClientCatalogPage() {
     switch (colorLower) {
       case 'black':
       case 'space black':
-      case 'space gray':
+      case 'titane noir':
+      case 'titan black':
         return 'bg-zinc-800'; // Apple Space Gray authentique
+      case 'space gray':
+      case 'gris sidéral':
+        return 'bg-zinc-600'; // Apple Space Gray authentique
       case 'white':
+      case 'titane blanc':
+      case 'titan white':
         return 'bg-gray-50 border-gray-200'; // Apple White authentique
       case 'red':
       case 'product red':
@@ -1226,36 +1442,177 @@ function ClientCatalogPage() {
       case 'pacific blue':
       case 'sierra blue':
         return 'bg-blue-600'; // Apple Blue authentique
+      case 'bleu intense':
+        return 'bg-blue-700'; // Bleu intense
+      case 'alpine blue':
+      case 'bleu alpine':
+        return 'bg-sky-500'; // Bleu Alpine
+      case 'titane bleu':
+      case 'titan blue':
+        return 'bg-blue-800'; // Titane Bleu
       case 'green':
       case 'alpine green':
-      case 'midnight green':
+      case 'vert alpine':
         return 'bg-emerald-700'; // Apple Green authentique
+      case 'midnight green':
+      case 'vert nuit':
+        return 'bg-emerald-900'; // Apple Green nuit
       case 'yellow':
+      case 'jaune':
         return 'bg-amber-400'; // Apple Yellow authentique
       case 'purple':
-      case 'deep purple':
         return 'bg-purple-600'; // Apple Purple authentique
+      case 'deep purple':
+      case 'violet intense':
+        return 'bg-purple-700'; // Violet intense
+      case 'mauve':
+        return 'bg-purple-300'; // Mauve
       case 'pink':
       case 'rose':
+        return 'bg-rose-400'; // Apple Pink authentique
       case 'rose gold':
-        return 'bg-rose-400'; // Apple Pink/Rose Gold authentique
+      case 'or rose':
+        return 'bg-rose-300'; // Apple Rose Gold authentique
       case 'orange':
         return 'bg-orange-500';
       case 'gray':
       case 'grey':
+      case 'gris':
         return 'bg-gray-500';
       case 'silver':
+      case 'argent':
         return 'bg-gray-200'; // Apple Silver authentique
       case 'gold':
+      case 'or':
         return 'bg-amber-300'; // Apple Gold authentique
       case 'coral':
-        return 'bg-coral-500';
+      case 'corail':
+        return 'bg-orange-400'; // Coral
       case 'midnight':
+      case 'minuit':
         return 'bg-slate-900'; // Apple Midnight authentique
       case 'graphite':
         return 'bg-zinc-700'; // Apple Graphite authentique
+      case 'starlight':
+      case 'lumière stellaire':
+        return 'bg-yellow-50 border-amber-200'; // Starlight
+      case 'teal':
+      case 'sarcelle':
+        return 'bg-teal-500'; // Sarcelle
+      case 'ultramarine':
+      case 'outremer':
+        return 'bg-indigo-600'; // Outremer
+      case 'titane sable':
+      case 'titan sand':
+        return 'bg-amber-100 border-amber-300'; // Titane sable
+      case 'titane naturel':
+      case 'titan natural':
+        return 'bg-stone-200 border-stone-300'; // Titane naturel
       default:
         return 'bg-gray-200';
+    }
+  };
+
+  // Fonction pour obtenir le nom de la couleur en français
+  const getColorName = (color: string | null) => {
+    if (!color) return '';
+    
+    const colorLower = color.toLowerCase();
+    
+    switch (colorLower) {
+      case 'black':
+        return 'Noir';
+      case 'space black':
+        return 'Noir sidéral';
+      case 'space gray':
+        return 'Gris sidéral';
+      case 'white':
+        return 'Blanc';
+      case 'red':
+        return 'Rouge';
+      case 'product red':
+        return 'Rouge';
+      case 'blue':
+        return 'Bleu';
+      case 'pacific blue':
+        return 'Bleu Pacifique';
+      case 'sierra blue':
+        return 'Bleu Sierra';
+      case 'bleu intense':
+        return 'Bleu intense';
+      case 'alpine blue':
+      case 'bleu alpine':
+        return 'Bleu Alpine';
+      case 'green':
+        return 'Vert';
+      case 'alpine green':
+      case 'vert alpine':
+        return 'Vert alpin';
+      case 'midnight green':
+      case 'vert nuit':
+        return 'Vert nuit';
+      case 'yellow':
+      case 'jaune':
+        return 'Jaune';
+      case 'purple':
+        return 'Violet';
+      case 'deep purple':
+      case 'violet intense':
+        return 'Violet intense';
+      case 'pink':
+      case 'rose':
+        return 'Rose';
+      case 'rose gold':
+      case 'or rose':
+        return 'Or rose';
+      case 'orange':
+        return 'Orange';
+      case 'gray':
+      case 'grey':
+      case 'gris':
+        return 'Gris';
+      case 'silver':
+      case 'argent':
+        return 'Argent';
+      case 'gold':
+      case 'or':
+        return 'Or';
+      case 'coral':
+      case 'corail':
+        return 'Corail';
+      case 'midnight':
+      case 'minuit':
+        return 'Minuit';
+      case 'graphite':
+        return 'Graphite';
+      case 'starlight':
+      case 'lumière stellaire':
+        return 'Lumière stellaire';
+      case 'mauve':
+        return 'Mauve';
+      case 'titan blue':
+      case 'titane bleu':
+        return 'Titane Bleu';
+      case 'teal':
+      case 'sarcelle':
+        return 'Sarcelle';
+      case 'ultramarine':
+      case 'outremer':
+        return 'Outremer';
+      case 'titan sand':
+      case 'titane sable':
+        return 'Titane sable';
+      case 'titan white':
+      case 'titane blanc':
+        return 'Titane blanc';
+      case 'titan black':
+      case 'titane noir':
+        return 'Titane noir';
+      case 'titan natural':
+      case 'titane naturel':
+        return 'Titane naturel';
+      default:
+        return color; // Retourne la couleur originale si pas de traduction
     }
   };
 
@@ -1321,160 +1678,287 @@ function ClientCatalogPage() {
 
   // Composant ProductCard intégré pour la vue mobile
   const ProductCard = ({ product }: { product: Product }) => {
-    const quantityInCart = currentDraftOrder && draftOrders[currentDraftOrder]?.items?.[product.sku] || 0;
-    const isChecked = quantityInCart === product.quantity && quantityInCart > 0;
+    const quantityInCart: number = typeof quantities[product.sku] === 'number' 
+      ? quantities[product.sku] as number
+      : parseInt(quantities[product.sku] as string) || 0;
+    const isChecked = selectedProducts[product.sku] || false;
     const isHighlighted = quantityInCart > 0;
+    const [isPressed, setIsPressed] = useState(false);
+    const [isProcessing, setIsProcessing] = useState(false);
+
+    const handleCardClick = useCallback(async (e: React.MouseEvent | React.TouchEvent) => {
+      // Empêcher le traitement si déjà en cours
+      if (isProcessing) return;
+      
+      // Ne pas ajouter si on clique sur des boutons, inputs ou leurs conteneurs
+      if (e.target instanceof HTMLElement && 
+          (e.target.tagName === 'BUTTON' || 
+           e.target.tagName === 'INPUT' || 
+           e.target.closest('button') || 
+           e.target.closest('input') ||
+           e.target.closest('.quantity-controls'))) {
+        return;
+      }
+      
+      e.preventDefault();
+      e.stopPropagation();
+      
+      // Empêcher les clics multiples
+      setIsProcessing(true);
+      
+      try {
+        // Feedback immédiat
+        setIsPressed(true);
+        
+        // Haptic feedback sur iOS si disponible
+        if ('vibrate' in navigator) {
+          navigator.vibrate(10);
+        }
+        
+        // Ajouter le produit
+        await addToCartWithQuantity(product.sku, 1, false);
+      } finally {
+        setTimeout(() => {
+          setIsPressed(false);
+          setIsProcessing(false);
+        }, 150);
+      }
+    }, [product.sku, isProcessing]);
 
     return (
-      <div className={`
-        bg-white rounded border shadow-sm p-2 transition-all duration-200
-        ${isHighlighted ? 'ring-1 ring-dbc-light-green bg-green-50/20' : 'hover:shadow-md'}
-      `}>
-        {/* Header compact avec checkbox et SKU */}
-        <div className="flex items-center justify-between mb-1">
-          <div className="flex items-center gap-1">
-            <input
-              type="checkbox"
-              checked={isChecked}
-              onChange={async (e) => {
-                const isChecked = e.target.checked;
-                
-                if (isChecked) {
-                  await selectFullQuantity(product.sku, product.quantity);
-                  setSelectedProducts(prev => ({ ...prev, [product.sku]: true }));
-                } else {
-                  if (currentDraftOrder && draftOrders[currentDraftOrder]) {
-                    const newItems = { ...draftOrders[currentDraftOrder].items };
-                    delete newItems[product.sku];
-                    
-                    const newDraftOrders = {
-                      ...draftOrders,
-                      [currentDraftOrder]: {
-                        ...draftOrders[currentDraftOrder],
-                        items: newItems
-                      }
-                    };
-                    
-                    setDraftOrders(newDraftOrders);
-                    
-                    setQuantities(prev => {
-                      const newQuantities = { ...prev };
-                      delete newQuantities[product.sku];
-                      return newQuantities;
-                    });
-                    
-                    await saveDraftOrdersToLocalStorage(newDraftOrders);
+      <>
+        <div 
+          className={`
+            product-card bg-white rounded-lg border shadow-sm p-2 transition-all duration-100 cursor-pointer touch-manipulation
+            ${isPressed ? 'pressed scale-[0.98] shadow-lg bg-gray-50' : ''}
+            ${isHighlighted ? 'ring-2 ring-dbc-light-green bg-green-50/30 shadow-md' : 'hover:shadow-md hover:border-dbc-light-green/50'}
+            ${isProcessing ? 'opacity-80' : ''}
+          `}
+          onClick={handleCardClick}
+          onTouchStart={(e) => {
+            // Optimisation pour le tactile
+            e.currentTarget.classList.add('active');
+          }}
+          onTouchEnd={(e) => {
+            e.currentTarget.classList.remove('active');
+          }}
+          data-in-cart={isHighlighted}
+        >
+          {/* Header avec checkbox et indicateur */}
+          <div className="flex items-center justify-between mb-1.5">
+            <div className="flex items-center gap-1.5">
+              <input
+                type="checkbox"
+                checked={isChecked}
+                onChange={async (e) => {
+                  e.stopPropagation();
+                  const isChecked = e.target.checked;
+                  
+                  if (isChecked) {
+                    await selectFullQuantity(product.sku, product.quantity);
+                    setSelectedProducts(prev => ({ ...prev, [product.sku]: true }));
+                  } else {
+                    if (currentDraftOrder && draftOrders[currentDraftOrder]) {
+                      const newItems = { ...draftOrders[currentDraftOrder].items };
+                      delete newItems[product.sku];
+                      
+                      const newDraftOrders = {
+                        ...draftOrders,
+                        [currentDraftOrder]: {
+                          ...draftOrders[currentDraftOrder],
+                          items: newItems
+                        }
+                      };
+                      
+                      setDraftOrders(newDraftOrders);
+                      
+                      setQuantities(prev => {
+                        const newQuantities = { ...prev };
+                        delete newQuantities[product.sku];
+                        return newQuantities;
+                      });
+                      
+                      await saveDraftOrdersToLocalStorage(newDraftOrders);
+                    }
+                    setSelectedProducts(prev => ({ ...prev, [product.sku]: false }));
                   }
-                  setSelectedProducts(prev => ({ ...prev, [product.sku]: false }));
-                }
-              }}
-              className="scale-75 rounded border-gray-300 text-dbc-light-green focus:ring-dbc-light-green"
-            />
-            <span className="text-xs font-mono text-gray-500 truncate">{product.sku}</span>
+                }}
+                className="scale-75 rounded border-gray-300 text-dbc-light-green focus:ring-dbc-light-green touch-manipulation"
+                onClick={(e) => e.stopPropagation()}
+              />
+              <span className="text-xs font-mono text-gray-600 bg-gray-100 px-1.5 py-0.5 rounded">{product.sku}</span>
+            </div>
+            {isHighlighted && (
+              <div className="flex items-center gap-1">
+                <div className="w-1.5 h-1.5 bg-green-500 rounded-full"></div>
+                <span className="text-xs font-medium text-green-700">Ajouté</span>
+              </div>
+            )}
           </div>
-          {isHighlighted && (
-            <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-          )}
-        </div>
 
-        {/* Nom du produit */}
-        <h3 className="text-sm font-medium text-gray-900 mb-2 line-clamp-1">
-          {shortenProductName(product.product_name)}
-        </h3>
+          {/* Nom du produit */}
+          <h3 className="text-sm font-medium text-gray-900 mb-1.5 line-clamp-2 min-h-[2.2rem]">
+            {shortenProductName(product.product_name)}
+          </h3>
 
-        {/* Ligne avec Working/Grade, Additional Info et Couleur */}
-        <div className="flex items-center justify-between mb-2">
-          <div className="flex items-center gap-2 flex-wrap">
-            {/* Fonctionnalité */}
-            <span className={`text-sm font-medium ${
-              product.functionality === 'Working' ? 'text-green-600' : 'text-amber-600'
-            }`}>
-              {product.functionality === 'Working' ? 'Working' : 'Minor Fault'}
-            </span>
-            
+          {/* Tags d'informations */}
+          <div className="flex flex-wrap gap-1 mb-2">
             {/* Grade */}
-            <span className={`text-sm font-medium px-1 py-0.5 rounded ${
+            <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${
               product.appearance.includes('A+') ? 'bg-green-100 text-green-800' :
               product.appearance.includes('A') && !product.appearance.includes('AB') ? 'bg-blue-100 text-blue-800' :
               product.appearance.includes('B') ? 'bg-yellow-100 text-yellow-800' :
               'bg-orange-100 text-orange-800'
             }`}>
-              {product.appearance.replace('Grade ', '')}
+              {translateCatalogTerm('appearance', getDisplayAppearance(product.appearance, product.functionality))}
             </span>
 
-            {/* Additional Info */}
-            {product.additional_info && (
-              <span className="text-xs px-1 py-0.5 bg-gray-100 text-gray-700 rounded border">
-                {product.additional_info}
-              </span>
-            )}
+            {/* Additional Info et Couleur côte à côte */}
+            <div className="flex items-center gap-2">
+              {/* Additional Info */}
+              {product.additional_info && (
+                <span className="text-xs px-1.5 py-0.5 rounded-full bg-purple-100 text-purple-800 font-medium">
+                  {translateCatalogTerm('additional_info', product.additional_info)}
+                </span>
+              )}
+
+              {/* Couleur - Pastille colorée avec nom */}
+              {product.color && product.color.trim() !== '' && (
+                <div className="flex items-center gap-1.5 bg-gray-100 px-1.5 py-0.5 rounded-full">
+                  <div className={`w-3 h-3 rounded-full border ${getColorClass(product.color)}`}></div>
+                  <span className="text-xs text-gray-700">{getColorName(product.color)}</span>
+                </div>
+              )}
+            </div>
           </div>
 
-          {/* Couleur à droite */}
-          {product.color && (
-            <div className={`w-8 h-4 rounded border-2 border-gray-300 ${getColorClass(product.color)}`} title={product.color} />
-          )}
-        </div>
+          {/* Prix et contrôles de quantité optimisés B2B */}
+          <div className="flex items-center justify-between gap-3">
+            {/* Prix avec stock */}
+            <div className="flex-1">
+              <div className="text-lg font-bold text-gray-900">
+                {product.price_dbc.toFixed(2)}€
+              </div>
+              <div className="text-xs text-gray-500">
+                Stock: {product.quantity}
+              </div>
+            </div>
 
-        {/* Prix en bas, centré, juste au-dessus de la quantité */}
-        <div className="text-center mb-2">
-          <div className="text-sm font-bold text-gray-900">
-            {product.price_dbc.toFixed(2)}€
+            {/* Contrôles de quantité ultra-compacts et tactiles */}
+            <div className="flex items-center gap-1.5 quantity-controls">
+              {/* Bouton décrémenter */}
+              {quantityInCart > 0 && (
+                <button
+                  onClick={async (e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    await decrementQuantity(product.sku);
+                  }}
+                  onTouchStart={(e) => e.stopPropagation()}
+                  className="w-10 h-10 flex items-center justify-center bg-red-100 text-red-600 rounded-full hover:bg-red-200 active:scale-95 transition-transform duration-100 touch-manipulation touch-target"
+                >
+                  <Minus className="h-3 w-3" />
+                </button>
+              )}
+              
+              {/* Nouveau composant de quantité optimisé pour mobile */}
+              <MobileQuantityInput
+                value={quantityInCart}
+                onChange={async (value) => {
+                  const numValue = parseInt(value) || 0;
+                  if (numValue > 0) {
+                    await addToCartWithQuantity(product.sku, numValue, true);
+                  } else {
+                    await updateQuantity(product.sku, value);
+                  }
+                }}
+                max={product.quantity}
+                sku={product.sku}
+              />
+              
+              {/* Bouton ajouter principal */}
+              <button
+                onClick={async (e) => {
+                  e.stopPropagation();
+                  e.preventDefault();
+                  await addToCart(product.sku);
+                }}
+                onTouchStart={(e) => e.stopPropagation()}
+                disabled={quantityInCart >= product.quantity}
+                className={`w-10 h-10 flex items-center justify-center rounded-full transition-all duration-100 touch-manipulation touch-target ${
+                  quantityInCart >= product.quantity 
+                    ? 'bg-gray-200 text-gray-400 cursor-not-allowed' 
+                    : 'bg-gradient-to-r from-dbc-bright-green to-emerald-400 text-white hover:from-emerald-400 hover:to-emerald-500 active:scale-95 shadow-md'
+                }`}
+              >
+                <Plus className="h-3 w-3" />
+              </button>
+            </div>
           </div>
         </div>
-
-        {/* Contrôles de quantité ultra-compacts */}
-        <div className="flex items-center gap-1">
-          <button
-            onClick={async () => await decrementQuantity(product.sku)}
-            disabled={!quantityInCart || quantityInCart === 0}
-            className={`p-1 rounded text-xs ${
-              !quantityInCart || quantityInCart === 0
-                ? 'bg-gray-100 text-gray-400 cursor-not-allowed' 
-                : 'bg-red-500 text-white hover:bg-red-600'
-            }`}
-          >
-            <Minus className="h-3 w-3" />
-          </button>
-          
-          <div className="flex-1 relative">
-            <input
-              type="number"
-              min="0"
-              max={product.quantity}
-              value={quantityInCart || ''}
-              onChange={async (e) => {
-                const newValue = e.target.value;
-                const numValue = parseInt(newValue);
-                
-                if (newValue === '' || (numValue >= 0 && numValue <= product.quantity)) {
-                  await updateQuantity(product.sku, newValue);
-                }
-              }}
-              placeholder="0"
-              className={`w-full px-1 py-1 pr-6 text-xs text-center border rounded focus:outline-none focus:ring-1 focus:ring-dbc-light-green ${
-                isHighlighted ? 'border-dbc-light-green bg-green-50' : 'border-gray-300'
-              }`}
-            />
-            <span className="absolute right-1 top-1/2 transform -translate-y-1/2 text-xs text-gray-500">
-              /{product.quantity}
-            </span>
-          </div>
-          
-          <button
-            onClick={async () => await addToCart(product.sku)}
-            disabled={quantityInCart >= product.quantity}
-            className={`p-1 rounded text-xs transition-all duration-200 ${
-              quantityInCart >= product.quantity 
-                ? 'bg-gray-400 cursor-not-allowed text-white' 
-                : 'bg-gradient-to-r from-dbc-bright-green to-emerald-400 hover:from-emerald-300 hover:to-emerald-500 text-dbc-dark-green hover:text-white'
-            }`}
-          >
-            <Plus className="h-3 w-3" />
-          </button>
-        </div>
-      </div>
+      </>
     );
+  };
+
+  // Fonction pour générer des suggestions de recherche intelligente
+  const generateSearchSuggestions = (term: string) => {
+    if (!term || term.length < 2) {
+      setSearchSuggestions([]);
+      setShowSuggestions(false);
+      return;
+    }
+
+    const lowerTerm = term.toLowerCase();
+    const suggestions = new Set<string>();
+    
+    // Rechercher dans les noms de produits
+    products.forEach(product => {
+      const productName = product.product_name.toLowerCase();
+      const sku = product.sku.toLowerCase();
+      
+      // Correspondance exacte ou partielle
+      if (productName.includes(lowerTerm) || sku.includes(lowerTerm)) {
+        // Extraire le modèle principal (ex: "iPhone 12", "Galaxy S21")
+        const matches = product.product_name.match(/^([A-Za-z\s]+\d+[A-Za-z]*)/);
+        if (matches) {
+          suggestions.add(matches[1].trim());
+        }
+        
+        // Ajouter aussi le nom complet s'il est différent
+        if (product.product_name.length < 50) {
+          suggestions.add(product.product_name);
+        }
+      }
+    });
+    
+    // Suggestions pour des termes populaires
+    const popularTerms = [
+      'iPhone 12', 'iPhone 13', 'iPhone 14', 'iPhone 15',
+      'Galaxy S21', 'Galaxy S22', 'Galaxy S23', 'Galaxy S24',
+      'Pixel 6', 'Pixel 7', 'Pixel 8',
+      'Xiaomi 12', 'Xiaomi 13', 'OnePlus'
+    ];
+    
+    popularTerms.forEach(term => {
+      if (term.toLowerCase().includes(lowerTerm)) {
+        suggestions.add(term);
+      }
+    });
+
+    setSearchSuggestions(Array.from(suggestions).slice(0, 8));
+    setShowSuggestions(true);
+  };
+
+  // Gérer la recherche avec suggestions
+  const handleSearchChange = (value: string) => {
+    setSearchTerm(value);
+    generateSearchSuggestions(value);
+  };
+
+  const selectSuggestion = (suggestion: string) => {
+    setSearchTerm(suggestion);
+    setShowSuggestions(false);
+    setSearchSuggestions([]);
   };
 
   return (
@@ -1487,6 +1971,8 @@ function ClientCatalogPage() {
           totalItems: getTotalCartItems(),
           totalAmount: getTotalCartAmount()
         } : undefined}
+        onCartClick={() => router.push('/orders?refresh=' + Date.now())}
+        onLogoClick={() => router.push('/')}
       />
 
       {/* Zone d'information pour les commandes en brouillon */}
@@ -1541,198 +2027,186 @@ function ClientCatalogPage() {
       )}
 
       {/* Conteneur principal avec plus d'espace et centrage */}
-      <div className="max-w-[2000px] mx-auto px-4 py-6">
-        {/* Barre d'outils principale */}
-        <div className="bg-white rounded-lg shadow-sm border p-4 md:p-6 mb-6">
-          {/* Recherche et actions */}
-          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-6">
-            <div className="flex-1 max-w-full lg:max-w-md">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
-                <input
-                  type="text"
-                  placeholder="Rechercher par nom, SKU..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-dbc-light-green focus:border-transparent text-gray-900"
-                />
+      <div className="max-w-[2000px] mx-auto px-4 py-6 catalog-container">
+        {/* Barre d'outils principale - Design épuré et élégant */}
+        <div className="bg-gradient-to-r from-slate-50 via-blue-50 to-slate-50 rounded-2xl p-6 mb-8 shadow-sm border border-gray-100">
+          {/* Ligne 1: Recherche centrée */}
+          <div className="mb-8">
+            <div className="relative max-w-3xl mx-auto">
+              <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                <Search className="h-5 w-5 text-gray-400" />
               </div>
+              <input
+                type="text"
+                placeholder="Rechercher par nom, SKU, modèle... (ex: iPhone 15 Pro Max)"
+                value={searchTerm}
+                onChange={(e) => handleSearchChange(e.target.value)}
+                onFocus={() => searchTerm.length >= 2 && setShowSuggestions(true)}
+                onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+                className="block w-full pl-12 pr-6 py-4 text-base border border-gray-200 rounded-2xl bg-white bg-opacity-80 backdrop-blur-sm focus:ring-2 focus:ring-dbc-light-green focus:border-transparent placeholder-gray-500 shadow-sm transition-all duration-200"
+              />
+              
+              {/* Suggestions de recherche */}
+              {showSuggestions && searchSuggestions.length > 0 && (
+                <div className="absolute z-30 w-full mt-2 bg-white border border-gray-200 rounded-xl shadow-lg">
+                  <div className="py-2">
+                    <div className="px-4 py-2 text-xs text-gray-500 font-medium border-b">Suggestions :</div>
+                    {searchSuggestions.map((suggestion, index) => (
+                      <button
+                        key={index}
+                        onClick={() => selectSuggestion(suggestion)}
+                        className="w-full text-left px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-3 transition-colors"
+                      >
+                        <Search className="h-4 w-4 text-gray-400" />
+                        {suggestion}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
-            
-            <div className="flex items-center justify-between lg:justify-start gap-2 lg:gap-3">
-              {/* Bouton filtres mobile */}
+          </div>
+
+          {/* Ligne 2: Actions principales - Centré et espacé */}
+          <div className="flex flex-wrap items-center justify-center gap-6 mb-8">
+            {/* Groupe Filtres + Reset */}
+            <div className="flex items-center gap-3 bg-white bg-opacity-60 backdrop-blur-sm rounded-2xl p-3 shadow-sm border border-white border-opacity-40">
               <button
                 onClick={() => setShowMobileFilters(!showMobileFilters)}
-                className="lg:hidden px-4 py-2 bg-white bg-opacity-80 backdrop-blur-sm border border-white border-opacity-30 rounded-xl hover:bg-opacity-90 hover:shadow-lg text-sm text-gray-700 transition-all duration-200 shadow-md flex items-center gap-2"
+                className="lg:hidden px-5 py-3 bg-white bg-opacity-90 backdrop-blur-sm border border-gray-200 rounded-xl hover:bg-opacity-100 hover:shadow-md text-sm text-gray-700 transition-all duration-200 flex items-center gap-2.5"
               >
                 <Filter className="h-4 w-4" />
-                Filtres
+                <span>Filtres</span>
                 {showMobileFilters ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
               </button>
               
               <button
                 onClick={resetFilters}
-                className="px-4 py-2 bg-white bg-opacity-80 backdrop-blur-sm border border-white border-opacity-30 rounded-xl hover:bg-opacity-90 hover:shadow-lg text-sm text-gray-700 transition-all duration-200 shadow-md"
+                className="px-5 py-3 bg-white bg-opacity-90 backdrop-blur-sm border border-gray-200 rounded-xl hover:bg-opacity-100 hover:shadow-md text-sm text-gray-700 transition-all duration-200 flex items-center gap-2.5"
               >
-                <span className="hidden sm:inline">Réinitialiser</span>
-                <span className="sm:hidden">Reset</span>
+                <span>🔄</span>
+                <span>Reset filtres</span>
               </button>
             </div>
-          </div>
 
-          {/* Pagination en haut */}
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6 pb-4 border-b border-gray-200">
-            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
-              <div className="text-sm text-gray-700">
-                <span className="font-semibold text-lg">{filteredAndSortedProducts.length.toLocaleString('fr-FR')}</span> produits affichés
-                {totalProductsCount && filteredAndSortedProducts.length !== totalProductsCount && (
-                  <span className="text-gray-500 block sm:inline">
-                    {' '}(filtrés sur <span className="font-medium">{totalProductsCount.toLocaleString('fr-FR')}</span> total)
-                  </span>
-                )}
-              </div>
-              <select
-                value={itemsPerPage}
-                onChange={(e) => {
-                  setItemsPerPage(Number(e.target.value));
-                  setCurrentPage(1);
-                }}
-                className="text-sm border border-gray-300 rounded px-2 py-1 text-gray-900 w-full sm:w-auto"
-              >
-                <option value={50}>50 par page</option>
-                <option value={100}>100 par page</option>
-                <option value={250}>250 par page</option>
-                <option value={500}>500 par page</option>
-              </select>
-            </div>
-            
-            {/* Navigation des pages - version responsive */}
-            {totalPages > 1 && (
-              <div className="flex items-center justify-center sm:justify-end gap-1 sm:gap-2">
-                {/* Version mobile simplifiée */}
-                <div className="flex sm:hidden items-center gap-2">
-                  <button
-                    onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                    disabled={currentPage === 1}
-                    className="p-2 text-sm bg-white bg-opacity-80 backdrop-blur-sm border border-white border-opacity-30 rounded-lg disabled:bg-opacity-50 disabled:text-gray-400 text-gray-700 hover:bg-opacity-90 hover:shadow-md transition-all duration-200 shadow-sm"
-                  >
-                    <ChevronLeft className="h-4 w-4" />
-                  </button>
-                  <span className="px-3 py-1 text-sm text-gray-700 bg-white bg-opacity-60 backdrop-blur-sm rounded-lg border border-white border-opacity-20 shadow-sm">
-                    {currentPage} / {totalPages}
-                  </span>
-                  <button
-                    onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                    disabled={currentPage === totalPages}
-                    className="p-2 text-sm bg-white bg-opacity-80 backdrop-blur-sm border border-white border-opacity-30 rounded-lg disabled:bg-opacity-50 disabled:text-gray-400 text-gray-700 hover:bg-opacity-90 hover:shadow-md transition-all duration-200 shadow-sm"
-                  >
-                    <ChevronRight className="h-4 w-4" />
-                  </button>
-                </div>
+            {/* Groupe Export seul côté client */}
+            <div className="flex items-center gap-3 bg-white bg-opacity-60 backdrop-blur-sm rounded-2xl p-3 shadow-sm border border-white border-opacity-40">
+              <div className="relative dropdown-container">
+                <button
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    toggleDropdown('export');
+                  }}
+                  className="px-5 py-3 bg-white bg-opacity-90 backdrop-blur-sm border border-gray-200 rounded-xl hover:bg-opacity-100 hover:shadow-md text-sm text-gray-700 transition-all duration-200 flex items-center gap-2.5"
+                >
+                  <Download className="h-4 w-4" />
+                  <span>Export</span>
+                  <ChevronDown className="h-4 w-4" />
+                </button>
                 
-                {/* Version desktop complète */}
-                <div className="hidden sm:flex items-center gap-2">
-                  <button
-                    onClick={() => setCurrentPage(1)}
-                    disabled={currentPage === 1}
-                    className="px-3 py-1 text-sm bg-white bg-opacity-80 backdrop-blur-sm border border-white border-opacity-30 rounded-lg disabled:bg-opacity-50 disabled:text-gray-400 text-gray-700 hover:bg-opacity-90 hover:shadow-md transition-all duration-200 shadow-sm"
+                {dropdownOpen.export && (
+                  <div 
+                    className="absolute right-0 mt-2 w-52 bg-white border border-gray-200 rounded-xl shadow-lg z-50"
+                    onMouseEnter={handleDropdownInteraction}
+                    onClick={handleDropdownInteraction}
                   >
-                    Premier
-                  </button>
-                  <button
-                    onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                    disabled={currentPage === 1}
-                    className="px-3 py-1 text-sm bg-white bg-opacity-80 backdrop-blur-sm border border-white border-opacity-30 rounded-lg disabled:bg-opacity-50 disabled:text-gray-400 text-gray-700 hover:bg-opacity-90 hover:shadow-md transition-all duration-200 shadow-sm"
-                  >
-                    ←
-                  </button>
-                  <span className="px-3 py-1 text-sm text-gray-700 bg-white bg-opacity-60 backdrop-blur-sm rounded-lg border border-white border-opacity-20 shadow-sm">
-                    Page {currentPage} sur {totalPages}
-                  </span>
-                  <button
-                    onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                    disabled={currentPage === totalPages}
-                    className="px-3 py-1 text-sm bg-white bg-opacity-80 backdrop-blur-sm border border-white border-opacity-30 rounded-lg disabled:bg-opacity-50 disabled:text-gray-400 text-gray-700 hover:bg-opacity-90 hover:shadow-md transition-all duration-200 shadow-sm"
-                  >
-                    →
-                  </button>
-                  <button
-                    onClick={() => setCurrentPage(totalPages)}
-                    disabled={currentPage === totalPages}
-                    className="px-3 py-1 text-sm bg-white bg-opacity-80 backdrop-blur-sm border border-white border-opacity-30 rounded-lg disabled:bg-opacity-50 disabled:text-gray-400 text-gray-700 hover:bg-opacity-90 hover:shadow-md transition-all duration-200 shadow-sm"
-                  >
-                    Dernier
-                  </button>
-                </div>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        exportCatalog('xlsx');
+                        setDropdownOpen(prev => ({ ...prev, export: false }));
+                      }}
+                      className="w-full text-left px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 rounded-t-xl flex items-center gap-3 transition-colors"
+                    >
+                      <FileSpreadsheet className="h-4 w-4 text-green-600" />
+                      <span>Format Excel (.xlsx)</span>
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        exportCatalog('csv');
+                        setDropdownOpen(prev => ({ ...prev, export: false }));
+                      }}
+                      className="w-full text-left px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 rounded-b-xl flex items-center gap-3 transition-colors"
+                    >
+                      <span className="text-blue-600">📄</span>
+                      <span>Format CSV UTF-8</span>
+                    </button>
+                  </div>
+                )}
               </div>
-            )}
+            </div>
           </div>
 
-          {/* Boutons de toggle */}
-          <div className="text-xs mb-4 space-y-1">
-            <div className="flex items-center gap-2 flex-wrap">
-              {/* Toggle pour les produits en rupture de stock */}
-              <button
-                onClick={toggleZeroStockProducts}
-                className={`text-xs px-2 py-1 rounded-md border transition-colors ${
-                  includeZeroStock 
-                    ? 'bg-orange-100 text-orange-800 border-orange-300 hover:bg-orange-200' 
-                    : 'bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200'
-                }`}
-              >
-                {includeZeroStock ? '✓ ' : ''}📦 <span className="hidden sm:inline">Afficher produits à</span> quantité 0
-                {!includeZeroStock && filteredZeroStockProducts.length > 0 && ` (${filteredZeroStockProducts.length})`}
-              </button>
-              
-              {/* Toggle pour les nouveaux produits - toujours visible */}
-              <button
-                onClick={toggleNewProductsFilter}
-                disabled={newProductsSKUs.length === 0}
-                className={`text-xs px-2 py-1 rounded-md border transition-colors ${
-                  newProductsSKUs.length === 0
-                    ? 'bg-gray-100 text-gray-400 border-gray-300 cursor-not-allowed'
-                    : showNewProductsOnly 
-                      ? 'bg-green-100 text-green-800 border-green-300 hover:bg-green-200' 
-                      : 'bg-blue-100 text-blue-800 border-blue-300 hover:bg-blue-200'
-                }`}
-              >
-                {showNewProductsOnly ? '✓ ' : ''}✨ {newProductsSKUs.length > 0 ? `${newProductsSKUs.length} nouveaux` : 'Aucun nouveau'}
-                {lastImportDate && newProductsSKUs.length > 0 && (
-                  <span className="hidden sm:inline"> ({lastImportDate.toLocaleDateString('fr-FR')})</span>
-                )}
-              </button>
-              
-              {/* Toggle pour les capacités standard Apple/Samsung */}
-              <button
-                onClick={toggleStandardCapacityFilter}
-                className={`text-xs px-2 py-1 rounded-md border transition-colors ${
-                  showStandardCapacityOnly 
-                    ? 'bg-purple-100 text-purple-800 border-purple-300 hover:bg-purple-200' 
-                    : 'bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200'
-                }`}
-              >
-                {showStandardCapacityOnly ? '✓ ' : ''}📱 Capacités standard
-              </button>
-            </div>
-            
-            {/* Informations sur les filtres actifs */}
-            {(selectedManufacturers.length > 0 || selectedAppearances.length > 0 || searchTerm || priceMin || priceMax || quantityMin || quantityMax || showNewProductsOnly) && (
-              <div className="text-amber-600">
-                ⚠️ Filtres actifs - {products.length - filteredAndSortedProducts.length} produits masqués
+          {/* Ligne 3: Filtres spécialisés - Version compacte */}
+          <div className="flex flex-wrap items-center justify-center gap-3 max-w-4xl mx-auto">
+            {/* Stockage de base */}
+            <button
+              onClick={toggleStandardCapacityFilter}
+              className={`px-4 py-2 rounded-xl border-2 transition-all duration-300 text-xs font-medium flex items-center gap-2 hover:scale-105 ${
+                showStandardCapacityOnly 
+                  ? 'bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-100 shadow-md' 
+                  : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50 hover:border-gray-300 shadow-sm'
+              }`}
+            >
+              💾 {showStandardCapacityOnly && <span className="text-purple-600">✓</span>}
+              <span className="font-semibold">Stockage de base</span>
+            </button>
+
+            {/* Rupture de stock */}
+            <button
+              onClick={toggleZeroStockProducts}
+              className={`px-4 py-2 rounded-xl border-2 transition-all duration-300 text-xs font-medium flex items-center gap-2 hover:scale-105 ${
+                includeZeroStock 
+                  ? 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100 shadow-md' 
+                  : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50 hover:border-gray-300 shadow-sm'
+              }`}
+            >
+              📦 {includeZeroStock && <span className="text-red-600">✓</span>}
+              <span className="font-semibold">Rupture de stock</span>
+            </button>
+
+            {/* Nouveaux produits - Compact mais lisible */}
+            <button
+              onClick={toggleNewProductsFilter}
+              className={`px-3 py-2 rounded-xl border-2 transition-all duration-300 text-xs font-medium flex items-center gap-2 hover:scale-105 ${
+                showNewProductsOnly 
+                  ? 'bg-yellow-50 text-yellow-700 border-yellow-200 hover:bg-yellow-100 shadow-md' 
+                  : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50 hover:border-gray-300 shadow-sm'
+              }`}
+              title={importInfo ? 
+                `Dernière mise à jour: ${new Date(importInfo.importDate).toLocaleString('fr-FR')}` : 
+                'Information d\'import en cours de chargement'
+              }
+            >
+              <div className="flex items-center gap-1.5">
+                ✨ {showNewProductsOnly && <span className="text-yellow-600">✓</span>}
+                <div className="text-left">
+                  <div className="font-semibold whitespace-nowrap">
+                    Nouveaux {importInfo ? importInfo.totalNewProducts : '...'}
+                  </div>
+                  {importInfo && (
+                    <div className="text-[10px] opacity-75 leading-tight">
+                      {new Date(importInfo.importDate).toLocaleDateString('fr-FR')} {new Date(importInfo.importDate).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                    </div>
+                  )}
+                </div>
               </div>
-            )}
+            </button>
           </div>
 
           {/* Filtres avancés avec dropdowns cliquables - cachés sur mobile par défaut */}
-          <div className={`${showMobileFilters ? 'block' : 'hidden'} lg:block`}>
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
-              {/* Manufacturer - Fixé */}
+          <div className={`${showMobileFilters ? 'block' : 'hidden'} lg:block mt-8 bg-white bg-opacity-70 backdrop-blur-sm rounded-2xl p-6 border border-white border-opacity-40`}>
+            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+              
+              {/* Fabricant */}
               <div 
                 className="relative dropdown-container"
                 onMouseEnter={() => handleMouseEnterDropdown('manufacturer')}
                 onMouseLeave={() => handleMouseLeaveDropdown('manufacturer')}
               >
-                <label className="block text-sm font-medium text-gray-900 mb-2">Manufacturer</label>
+                <label className="block text-sm font-medium text-gray-900 mb-2">{translateInterfaceLabel('Manufacturer')}</label>
                 <div className="relative">
                   <div 
                     onClick={(e) => {
@@ -1748,20 +2222,32 @@ function ClientCatalogPage() {
                     <ChevronDown className="h-4 w-4 text-gray-500" />
                   </div>
                   {dropdownOpen.manufacturer && (
-                    <div className="absolute z-20 mt-1 w-full bg-white border border-gray-300 rounded-lg shadow-lg">
+                    <div 
+                      className="absolute z-20 mt-1 w-full bg-white border border-gray-300 rounded-lg shadow-lg"
+                      onMouseEnter={handleDropdownInteraction}
+                      onClick={handleDropdownInteraction}
+                    >
                       <div className="max-h-60 overflow-y-auto">
                         {MANUFACTURERS.map(manufacturer => (
-                          <label key={manufacturer} className="flex items-center px-3 py-2 hover:bg-gray-50 cursor-pointer text-gray-900">
+                          <label key={manufacturer} className={`flex items-center px-3 py-2 hover:bg-gray-50 cursor-pointer ${
+                            selectedManufacturers.includes(manufacturer) 
+                              ? 'bg-blue-50 text-blue-900 font-medium' 
+                              : 'text-gray-900'
+                          }`}>
                             <input
                               type="checkbox"
                               checked={selectedManufacturers.includes(manufacturer)}
                               onChange={(e) => {
                                 e.stopPropagation();
                                 toggleFilter(manufacturer, selectedManufacturers, setSelectedManufacturers);
+                                handleDropdownInteraction();
                               }}
                               className="mr-2 text-dbc-light-green focus:ring-dbc-light-green"
                             />
                             <span className="text-sm">{manufacturer}</span>
+                            {selectedManufacturers.includes(manufacturer) && (
+                              <Check className="h-3 w-3 text-blue-600 ml-auto" />
+                            )}
                           </label>
                         ))}
                       </div>
@@ -1770,13 +2256,13 @@ function ClientCatalogPage() {
                 </div>
               </div>
 
-              {/* Appearance */}
+              {/* Apparence */}
               <div 
                 className="relative dropdown-container"
                 onMouseEnter={() => handleMouseEnterDropdown('appearance')}
                 onMouseLeave={() => handleMouseLeaveDropdown('appearance')}
               >
-                <label className="block text-sm font-medium text-gray-900 mb-2">Appearance</label>
+                <label className="block text-sm font-medium text-gray-900 mb-2">{translateInterfaceLabel('Appearance')}</label>
                 <div className="relative">
                   <div 
                     onClick={(e) => {
@@ -1792,20 +2278,35 @@ function ClientCatalogPage() {
                     <ChevronDown className="h-4 w-4 text-gray-500" />
                   </div>
                   {dropdownOpen.appearance && (
-                    <div className="absolute z-20 mt-1 w-full bg-white border border-gray-300 rounded-lg shadow-lg">
+                    <div 
+                      className="absolute z-20 mt-1 w-full bg-white border border-gray-300 rounded-lg shadow-lg"
+                      onMouseEnter={handleDropdownInteraction}
+                      onClick={handleDropdownInteraction}
+                    >
                       <div className="max-h-60 overflow-y-auto">
-                        {APPEARANCES.map(appearance => (
-                          <label key={appearance} className="flex items-center px-3 py-2 hover:bg-gray-50 cursor-pointer text-gray-900">
+                        <div className="sticky top-0 bg-gray-50 px-3 py-1 text-xs text-gray-600 border-b">
+                          💡 Cochez plusieurs options
+                        </div>
+                        {APPEARANCES_FR.map((appearance, index) => (
+                          <label key={appearance} className={`flex items-center px-3 py-2 hover:bg-gray-50 cursor-pointer ${
+                            selectedAppearances.includes(appearance) 
+                              ? 'bg-blue-50 text-blue-900 font-medium' 
+                              : 'text-gray-900'
+                          }`}>
                             <input
                               type="checkbox"
                               checked={selectedAppearances.includes(appearance)}
                               onChange={(e) => {
                                 e.stopPropagation();
                                 toggleFilter(appearance, selectedAppearances, setSelectedAppearances);
+                                handleDropdownInteraction();
                               }}
                               className="mr-2 text-dbc-light-green focus:ring-dbc-light-green"
                             />
                             <span className="text-sm">{appearance}</span>
+                            {selectedAppearances.includes(appearance) && (
+                              <Check className="h-3 w-3 text-blue-600 ml-auto" />
+                            )}
                           </label>
                         ))}
                       </div>
@@ -1814,55 +2315,13 @@ function ClientCatalogPage() {
                 </div>
               </div>
 
-              {/* Functionality */}
-              <div 
-                className="relative dropdown-container"
-                onMouseEnter={() => handleMouseEnterDropdown('functionality')}
-                onMouseLeave={() => handleMouseLeaveDropdown('functionality')}
-              >
-                <label className="block text-sm font-medium text-gray-900 mb-2">Functionality</label>
-                <div className="relative">
-                  <div 
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      toggleDropdown('functionality');
-                    }}
-                    className="text-sm border border-gray-300 rounded-lg px-3 py-2 cursor-pointer hover:border-gray-400 bg-white text-gray-900 flex items-center justify-between"
-                  >
-                    <span className="truncate">
-                      {formatSelectedItems(selectedFunctionalities)}
-                    </span>
-                    <ChevronDown className="h-4 w-4 text-gray-500" />
-                  </div>
-                  {dropdownOpen.functionality && (
-                    <div className="absolute z-20 mt-1 w-full bg-white border border-gray-300 rounded-lg shadow-lg">
-                      {FUNCTIONALITIES.map(functionality => (
-                        <label key={functionality} className="flex items-center px-3 py-2 hover:bg-gray-50 cursor-pointer text-gray-900">
-                          <input
-                            type="checkbox"
-                            checked={selectedFunctionalities.includes(functionality)}
-                            onChange={(e) => {
-                              e.stopPropagation();
-                              toggleFilter(functionality, selectedFunctionalities, setSelectedFunctionalities);
-                            }}
-                            className="mr-2 text-dbc-light-green focus:ring-dbc-light-green"
-                          />
-                          <span className="text-sm">{functionality}</span>
-                        </label>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Boxed */}
+              {/* Boîte */}
               <div 
                 className="relative dropdown-container"
                 onMouseEnter={() => handleMouseEnterDropdown('boxed')}
                 onMouseLeave={() => handleMouseLeaveDropdown('boxed')}
               >
-                <label className="block text-sm font-medium text-gray-900 mb-2">Boxed</label>
+                <label className="block text-sm font-medium text-gray-900 mb-2">{translateInterfaceLabel('Boxed')}</label>
                 <div className="relative">
                   <div 
                     onClick={(e) => {
@@ -1878,19 +2337,31 @@ function ClientCatalogPage() {
                     <ChevronDown className="h-4 w-4 text-gray-500" />
                   </div>
                   {dropdownOpen.boxed && (
-                    <div className="absolute z-20 mt-1 w-full bg-white border border-gray-300 rounded-lg shadow-lg">
-                      {BOXED_OPTIONS.map(boxed => (
-                        <label key={boxed} className="flex items-center px-3 py-2 hover:bg-gray-50 cursor-pointer text-gray-900">
+                    <div 
+                      className="absolute z-20 mt-1 w-full bg-white border border-gray-300 rounded-lg shadow-lg"
+                      onMouseEnter={handleDropdownInteraction}
+                      onClick={handleDropdownInteraction}
+                    >
+                      {BOXED_OPTIONS_FR.map((boxed, index) => (
+                        <label key={boxed} className={`flex items-center px-3 py-2 hover:bg-gray-50 cursor-pointer ${
+                          selectedBoxedOptions.includes(boxed) 
+                            ? 'bg-blue-50 text-blue-900 font-medium' 
+                            : 'text-gray-900'
+                        }`}>
                           <input
                             type="checkbox"
                             checked={selectedBoxedOptions.includes(boxed)}
                             onChange={(e) => {
                               e.stopPropagation();
                               toggleFilter(boxed, selectedBoxedOptions, setSelectedBoxedOptions);
+                              handleDropdownInteraction();
                             }}
                             className="mr-2 text-dbc-light-green focus:ring-dbc-light-green"
                           />
                           <span className="text-sm">{boxed}</span>
+                          {selectedBoxedOptions.includes(boxed) && (
+                            <Check className="h-3 w-3 text-blue-600 ml-auto" />
+                          )}
                         </label>
                       ))}
                     </div>
@@ -1898,20 +2369,20 @@ function ClientCatalogPage() {
                 </div>
               </div>
 
-              {/* Filtres de prix et quantité avec de meilleures couleurs */}
+              {/* Prix */}
               <div className="col-span-2 md:col-span-1">
-                <label className="block text-sm font-medium text-gray-900 mb-2">Price</label>
+                <label className="block text-sm font-medium text-gray-900 mb-2">{translateInterfaceLabel('Price')}</label>
                 <div className="flex space-x-2">
                   <input
                     type="number"
-                    placeholder="From"
+                    placeholder={translateInterfaceLabel('From')}
                     value={priceMin}
                     onChange={(e) => setPriceMin(e.target.value)}
                     className="w-full text-sm border border-gray-300 rounded px-2 py-1 text-gray-900 focus:ring-2 focus:ring-dbc-light-green focus:border-transparent"
                   />
                   <input
                     type="number"
-                    placeholder="To"
+                    placeholder={translateInterfaceLabel('To')}
                     value={priceMax}
                     onChange={(e) => setPriceMax(e.target.value)}
                     className="w-full text-sm border border-gray-300 rounded px-2 py-1 text-gray-900 focus:ring-2 focus:ring-dbc-light-green focus:border-transparent"
@@ -1919,19 +2390,20 @@ function ClientCatalogPage() {
                 </div>
               </div>
 
+              {/* Quantité */}
               <div className="col-span-2 md:col-span-1">
-                <label className="block text-sm font-medium text-gray-900 mb-2">Quantity</label>
+                <label className="block text-sm font-medium text-gray-900 mb-2">{translateInterfaceLabel('Quantity')}</label>
                 <div className="flex space-x-2">
                   <input
                     type="number"
-                    placeholder="From"
+                    placeholder={translateInterfaceLabel('From')}
                     value={quantityMin}
                     onChange={(e) => setQuantityMin(e.target.value)}
                     className="w-full text-sm border border-gray-300 rounded px-2 py-1 text-gray-900 focus:ring-2 focus:ring-dbc-light-green focus:border-transparent"
                   />
                   <input
                     type="number"
-                    placeholder="To"
+                    placeholder={translateInterfaceLabel('To')}
                     value={quantityMax}
                     onChange={(e) => setQuantityMax(e.target.value)}
                     className="w-full text-sm border border-gray-300 rounded px-2 py-1 text-gray-900 focus:ring-2 focus:ring-dbc-light-green focus:border-transparent"
@@ -1954,40 +2426,33 @@ function ClientCatalogPage() {
           </div>
         ) : (
           <>
+            {/* Compteur de produits et pagination - Juste avant les produits */}
+            <div className="flex items-center justify-between mb-4 pb-3 border-b border-gray-100">
+              <div className="text-sm text-gray-600">
+                <span className="font-medium">{filteredAndSortedProducts.length.toLocaleString('fr-FR')}</span> produits affichés
+                {totalProductsCount && filteredAndSortedProducts.length !== totalProductsCount && (
+                  <span className="text-gray-400"> (sur {totalProductsCount.toLocaleString('fr-FR')} total)</span>
+                )}
+              </div>
+              <select
+                value={itemsPerPage}
+                onChange={(e) => {
+                  setItemsPerPage(Number(e.target.value));
+                  setCurrentPage(1);
+                }}
+                className="text-xs border border-gray-200 rounded px-2 py-1 text-gray-600 bg-gray-50"
+              >
+                <option value={50}>50 par page</option>
+                <option value={100}>100 par page</option>
+                <option value={250}>250 par page</option>
+                <option value={500}>500 par page</option>
+              </select>
+            </div>
+
             {/* Vue cartes (≤1023px) - Permet de voir toutes les infos importantes */}
             <div className="lg:hidden">
-              {/* Sélection globale sur mobile */}
-              <div className="bg-white rounded-lg shadow-sm border p-4 mb-4 flex items-center justify-between">
-                <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
-                  <input
-                    type="checkbox"
-                    checked={selectedProducts && paginatedProducts.length > 0 && paginatedProducts.every(p => selectedProducts[p.sku])}
-                    onChange={(e) => {
-                      if (e.target.checked) {
-                        const newSelection: {[key: string]: boolean} = {};
-                        const newQuantities: {[key: string]: number} = {};
-                        paginatedProducts.forEach(product => {
-                          newSelection[product.sku] = true;
-                          newQuantities[product.sku] = product.quantity;
-                        });
-                        setSelectedProducts(newSelection);
-                        setQuantities(newQuantities);
-                      } else {
-                        setSelectedProducts({});
-                        setQuantities({});
-                      }
-                    }}
-                    className="rounded border-gray-300"
-                  />
-                  Tout sélectionner
-                </label>
-                <span className="text-xs text-gray-500">
-                  {Object.keys(selectedProducts).filter(key => selectedProducts[key]).length} sélectionnés
-                </span>
-              </div>
-
               {/* Grille de cartes responsive */}
-              <div className="grid grid-cols-1 gap-2">
+              <div className="grid grid-cols-1 gap-2" data-products-container>
                 {paginatedProducts.map((product) => (
                   <ProductCard key={product.sku} product={product} />
                 ))}
@@ -2000,33 +2465,10 @@ function ClientCatalogPage() {
                 <table className="w-full">
                   <thead className="bg-gray-50">
                     <tr className="border-b border-gray-200">
-                      <th className="sticky left-0 z-10 bg-gray-50 w-8 px-1 py-1.5 text-left text-xs font-medium text-gray-500 uppercase">
-                        <input
-                          type="checkbox"
-                          checked={selectedProducts && paginatedProducts.length > 0 && paginatedProducts.every(p => selectedProducts[p.sku])}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              const newSelection: {[key: string]: boolean} = {};
-                              const newQuantities: {[key: string]: number} = {};
-                              paginatedProducts.forEach(product => {
-                                newSelection[product.sku] = true;
-                                newQuantities[product.sku] = product.quantity;
-                              });
-                              setSelectedProducts(newSelection);
-                              setQuantities(newQuantities);
-                            } else {
-                              setSelectedProducts({});
-                              setQuantities({});
-                            }
-                          }}
-                          className="rounded border-gray-300 scale-75"
-                        />
-                      </th>
                       <th className="px-1 py-1.5 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">SKU</th>
                       <th className="px-1 py-1.5 text-left text-xs font-medium text-gray-500 uppercase min-w-[180px]">Nom du produit</th>
                       <th className="px-1 py-1.5 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap hidden md:table-cell">Apparence</th>
                       <th className="px-1 py-1.5 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap hidden lg:table-cell">Add. Info</th>
-                      <th className="px-1 py-1.5 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap hidden lg:table-cell">Fonction.</th>
                       <th className="px-1 py-1.5 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap hidden lg:table-cell">Couleur</th>
                       <th className="px-1 py-1.5 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap hidden 2xl:table-cell">Emballage</th>
                       <th className="px-1 py-1.5 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">Prix</th>
@@ -2045,46 +2487,6 @@ function ClientCatalogPage() {
                           key={product.sku} 
                           className={`border-b border-gray-100 hover:bg-gray-50 ${isHighlighted ? 'bg-green-50 border-l-2 border-dbc-light-green' : ''}`}
                         >
-                          <td className="sticky left-0 z-10 bg-inherit px-1 py-1">
-                            <input
-                              type="checkbox"
-                              checked={isChecked}
-                              onChange={async (e) => {
-                                e.stopPropagation();
-                                const isChecked = e.target.checked;
-                                
-                                if (isChecked) {
-                                  await selectFullQuantity(product.sku, product.quantity);
-                                  setSelectedProducts(prev => ({ ...prev, [product.sku]: true }));
-                                } else {
-                                  if (currentDraftOrder && draftOrders[currentDraftOrder]) {
-                                    const newItems = { ...draftOrders[currentDraftOrder].items };
-                                    delete newItems[product.sku];
-                                    
-                                    const newDraftOrders = {
-                                      ...draftOrders,
-                                      [currentDraftOrder]: {
-                                        ...draftOrders[currentDraftOrder],
-                                        items: newItems
-                                      }
-                                    };
-                                    
-                                    setDraftOrders(newDraftOrders);
-                                    
-                                    setQuantities(prev => {
-                                      const newQuantities = { ...prev };
-                                      delete newQuantities[product.sku];
-                                      return newQuantities;
-                                    });
-                                    
-                                    await saveDraftOrdersToLocalStorage(newDraftOrders);
-                                  }
-                                  setSelectedProducts(prev => ({ ...prev, [product.sku]: false }));
-                                }
-                              }}
-                              className="rounded border-gray-300 scale-75"
-                            />
-                          </td>
                           <td className="px-1 py-1 text-xs font-mono text-gray-900 whitespace-nowrap">{product.sku}</td>
                           <td className="px-1 py-1 text-xs text-gray-900">
                             <div className="break-words max-w-[160px]" title={product.product_name}>
@@ -2098,7 +2500,7 @@ function ClientCatalogPage() {
                               product.appearance.includes('B') ? 'bg-yellow-100 text-yellow-800' :
                               'bg-orange-100 text-orange-800'
                             }`}>
-                              {product.appearance.replace('Grade ', '')}
+                              {getDisplayAppearance(product.appearance, product.functionality).replace('Grade ', '')}
                             </span>
                           </td>
                           <td className="px-1 py-1 text-xs text-gray-900 hidden lg:table-cell text-center">
@@ -2109,13 +2511,6 @@ function ClientCatalogPage() {
                             ) : (
                               <span className="text-xs text-gray-400">-</span>
                             )}
-                          </td>
-                          <td className="px-1 py-1 text-xs text-gray-900 hidden lg:table-cell">
-                            <div className={`text-center font-medium ${
-                              product.functionality.includes('Working') ? 'text-green-600' : 'text-amber-600'
-                            }`}>
-                              {product.functionality.includes('Working') ? 'Working' : 'Minor Fault'}
-                            </div>
                           </td>
                           <td className="px-1 py-1 hidden lg:table-cell">
                             {product.color ? (
@@ -2130,7 +2525,9 @@ function ClientCatalogPage() {
                             )}
                           </td>
                           <td className="px-1 py-1 text-xs text-gray-900 hidden 2xl:table-cell text-center">{product.boxed}</td>
-                          <td className="px-1 py-1 text-xs text-center font-medium text-gray-900 whitespace-nowrap">{product.price_dbc.toFixed(2)}€</td>
+                          <td className="px-1 py-1 text-xs text-center font-medium text-gray-900 whitespace-nowrap">
+                            <span>{product.price_dbc.toFixed(2)}€</span>
+                          </td>
                           <td className="px-1 py-1">
                             <div className="flex items-center justify-center gap-1">
                               <input
@@ -2188,45 +2585,65 @@ function ClientCatalogPage() {
                 </table>
               </div>
             </div>
+
+            {/* Pagination en bas */}
+            {totalPages > 1 && (
+              <div className="flex justify-center items-center space-x-2 mt-6">
+                <button
+                  onClick={() => setCurrentPage(1)}
+                  disabled={currentPage === 1}
+                  className="px-4 py-2 text-sm bg-white bg-opacity-80 backdrop-blur-sm border border-white border-opacity-30 rounded-xl disabled:bg-opacity-50 disabled:text-gray-400 text-gray-700 hover:bg-opacity-90 hover:shadow-lg transition-all duration-200 shadow-md"
+                >
+                  Premier
+                </button>
+                <button
+                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                  disabled={currentPage === 1}
+                  className="px-4 py-2 text-sm bg-white bg-opacity-80 backdrop-blur-sm border border-white border-opacity-30 rounded-xl disabled:bg-opacity-50 disabled:text-gray-400 text-gray-700 hover:bg-opacity-90 hover:shadow-lg transition-all duration-200 shadow-md"
+                >
+                  ← Précédent
+                </button>
+                
+                {/* Numéros de pages */}
+                {[...Array(Math.min(5, totalPages))].map((_, i) => {
+                  const pageNumber = Math.max(1, Math.min(totalPages - 4, currentPage - 2)) + i;
+                  if (pageNumber > totalPages) return null;
+                  
+                  return (
+                    <button
+                      key={pageNumber}
+                      onClick={() => setCurrentPage(pageNumber)}
+                      className={`px-3 py-2 text-sm rounded-xl transition-all duration-200 shadow-md ${
+                        currentPage === pageNumber
+                          ? 'bg-gradient-to-r from-dbc-bright-green to-emerald-400 text-dbc-dark-green font-semibold shadow-lg backdrop-blur-sm'
+                          : 'bg-white bg-opacity-80 backdrop-blur-sm border border-white border-opacity-30 text-gray-700 hover:bg-opacity-90 hover:shadow-lg'
+                      }`}
+                    >
+                      {pageNumber}
+                    </button>
+                  );
+                })}
+                
+                <button
+                  onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                  disabled={currentPage === totalPages}
+                  className="px-4 py-2 text-sm bg-white bg-opacity-80 backdrop-blur-sm border border-white border-opacity-30 rounded-xl disabled:bg-opacity-50 disabled:text-gray-400 text-gray-700 hover:bg-opacity-90 hover:shadow-lg transition-all duration-200 shadow-md"
+                >
+                  Suivant →
+                </button>
+                <button
+                  onClick={() => setCurrentPage(totalPages)}
+                  disabled={currentPage === totalPages}
+                  className="px-4 py-2 text-sm bg-white bg-opacity-80 backdrop-blur-sm border border-white border-opacity-30 rounded-xl disabled:bg-opacity-50 disabled:text-gray-400 text-gray-700 hover:bg-opacity-90 hover:shadow-lg transition-all duration-200 shadow-md"
+                >
+                  Dernier
+                </button>
+              </div>
+            )}
           </>
         )}
 
-        {/* Pagination en bas */}
-        {totalPages > 1 && (
-          <div className="flex justify-center items-center space-x-2 mt-6">
-            <button
-              onClick={() => setCurrentPage(1)}
-              disabled={currentPage === 1}
-              className="px-4 py-2 text-sm bg-white bg-opacity-80 backdrop-blur-sm border border-white border-opacity-30 rounded-xl disabled:bg-opacity-50 disabled:text-gray-400 text-gray-700 hover:bg-opacity-90 hover:shadow-lg transition-all duration-200 shadow-md"
-            >
-              Premier
-            </button>
-            <button
-              onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-              disabled={currentPage === 1}
-              className="px-4 py-2 text-sm bg-white bg-opacity-80 backdrop-blur-sm border border-white border-opacity-30 rounded-xl disabled:bg-opacity-50 disabled:text-gray-400 text-gray-700 hover:bg-opacity-90 hover:shadow-lg transition-all duration-200 shadow-md"
-            >
-              ← Précédent
-            </button>
-            <span className="px-4 py-2 text-sm text-gray-700 bg-white bg-opacity-60 backdrop-blur-sm rounded-xl border border-white border-opacity-20 shadow-md">
-              Page {currentPage} sur {totalPages}
-            </span>
-            <button
-              onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-              disabled={currentPage === totalPages}
-              className="px-4 py-2 text-sm bg-white bg-opacity-80 backdrop-blur-sm border border-white border-opacity-30 rounded-xl disabled:bg-opacity-50 disabled:text-gray-400 text-gray-700 hover:bg-opacity-90 hover:shadow-lg transition-all duration-200 shadow-md"
-            >
-              Suivant →
-            </button>
-            <button
-              onClick={() => setCurrentPage(totalPages)}
-              disabled={currentPage === totalPages}
-              className="px-4 py-2 text-sm bg-white bg-opacity-80 backdrop-blur-sm border border-white border-opacity-30 rounded-xl disabled:bg-opacity-50 disabled:text-gray-400 text-gray-700 hover:bg-opacity-90 hover:shadow-lg transition-all duration-200 shadow-md"
-            >
-              Dernier
-            </button>
-          </div>
-        )}
+        {/* ... existing code ... */}
       </div>
 
       {/* Bouton retour en haut */}
@@ -2234,8 +2651,8 @@ function ClientCatalogPage() {
 
       {/* Popup création commande */}
       {showOrderNamePopup && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999]">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4 shadow-2xl">
             <h3 className="text-lg font-bold text-dbc-dark-green mb-4">Créer une nouvelle commande</h3>
             <p className="text-sm text-gray-600 mb-4">
               Donnez un nom à votre commande pour la retrouver facilement.
@@ -2249,34 +2666,17 @@ function ClientCatalogPage() {
               autoFocus
             />
             
-            {/* Sélecteur de client - uniquement pour les admins */}
-            {isAdmin && (
-              <div className="mb-4">
-                <ClientSelector
-                  selectedClientId={selectedClientId}
-                  onChange={setSelectedClientId}
-                  isAdmin={isAdmin}
-                  currentUserId={user?.id}
-                />
-              </div>
-            )}
-            {isAdmin && !selectedClientId && (
-              <div className="text-red-600 text-sm mb-3 font-medium">
-                ⚠️ Veuillez sélectionner un client avant de créer la commande
-              </div>
-            )}
-            
             <div className="flex justify-end space-x-3">
               <button
                 onClick={() => {
+                  // Nettoyage complet lors de l'annulation
                   setShowOrderNamePopup(false);
                   setOrderName('');
-                  if (isAdmin) {
-                    setSelectedClientId(null);
-                  }
                   sessionStorage.removeItem('pendingProduct');
-                  // Décocher toutes les cases
+                  // Nettoyer aussi la sélection visuelle temporaire
                   setSelectedProducts({});
+                  // Ne pas créer de commande fantôme
+                  console.log('🚫 Création de commande annulée - état nettoyé');
                 }}
                 className="px-4 py-2 bg-white bg-opacity-80 backdrop-blur-sm border border-white border-opacity-30 rounded-xl text-gray-700 hover:text-gray-900 hover:bg-opacity-90 transition-all duration-200 shadow-sm"
               >
@@ -2284,7 +2684,7 @@ function ClientCatalogPage() {
               </button>
               <button
                 onClick={createNewOrder}
-                disabled={creatingOrder || (isAdmin && !selectedClientId)}
+                disabled={creatingOrder}
                 className="px-4 py-2 bg-gradient-to-r from-dbc-bright-green to-emerald-400 text-dbc-dark-green rounded-xl hover:from-emerald-300 hover:to-emerald-500 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed font-semibold shadow-lg backdrop-blur-sm transition-all duration-200"
               >
                 {creatingOrder ? 'Création...' : 'Créer la commande'}
@@ -2295,7 +2695,7 @@ function ClientCatalogPage() {
       )}
     </div>
   );
-} 
+}
 
 // Export avec protection client
 export default withAuth(ClientCatalogPage, 'client');

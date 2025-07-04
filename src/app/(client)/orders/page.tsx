@@ -18,7 +18,8 @@ import {
   Truck,
   AlertCircle,
   Eye,
-  Trash2
+  Trash2,
+  ExternalLink
 } from 'lucide-react';
 
 function ClientOrdersPage() {
@@ -244,6 +245,12 @@ function ClientOrdersPage() {
     }
   };
 
+  // Fonction pour générer l'URL de tracking FedEx
+  const getFedExTrackingUrl = (trackingNumber: string) => {
+    // Format: https://www.fedex.com/fedextrack/?trknbr=TRACKING_NUMBER&trkqual=TRACKING_NUMBER~FX
+    return `https://www.fedex.com/fedextrack/?trknbr=${trackingNumber}&trkqual=${trackingNumber}~FX`;
+  };
+
   // Afficher un loader pendant la vérification d'authentification
   if (!user) {
     return (
@@ -286,7 +293,7 @@ function ClientOrdersPage() {
         />
 
         {/* Tableau des commandes - Version Responsive */}
-        <div className="bg-white rounded-lg shadow-sm border overflow-hidden">
+        <div className="bg-white/40 backdrop-blur-md rounded-2xl shadow-xl border border-white/50 overflow-hidden">
           {loading ? (
             <div className="flex items-center justify-center py-12">
               <div className="text-center">
@@ -297,183 +304,231 @@ function ClientOrdersPage() {
           ) : (
             <>
               {/* Vue Mobile - Cards (≤1023px) */}
-              <div className="lg:hidden">
-                {filteredOrders.map((order) => (
-                  <div key={order.id} className="border-b border-gray-200 last:border-b-0 p-4 hover:bg-gray-50 transition-colors">
-                    {/* Header - Statut principal */}
-                    <div className="flex items-center justify-between mb-3">
-                      <span className={`inline-flex items-center space-x-2 px-3 py-1.5 rounded-full text-sm font-medium ${getStatusColor(order.status)}`}>
-                        {getStatusIcon(order.status)}
-                        <span>{order.status_label}</span>
-                      </span>
-                      <div className="text-right">
-                        <div className="text-lg font-bold text-gray-900">
-                          {order.totalAmount?.toFixed(2)} €
-                        </div>
-                        <div className="text-xs text-gray-500">
-                          {order.totalItems} article{order.totalItems > 1 ? 's' : ''}
+              <div className="lg:hidden space-y-6 p-4">
+                {filteredOrders.map((order) => {
+                  const getGlassBackground = (status: string) => {
+                    switch (status) {
+                      case 'completed': 
+                        return 'bg-gradient-to-br from-green-50/70 via-white/80 to-emerald-50/70 border-green-200/50';
+                      case 'shipping': 
+                        return 'bg-gradient-to-br from-blue-50/70 via-white/80 to-sky-50/70 border-blue-200/50';
+                      case 'pending_payment': 
+                      case 'validated': 
+                        return 'bg-gradient-to-br from-amber-50/70 via-white/80 to-yellow-50/70 border-amber-200/50';
+                      case 'draft': 
+                        return 'bg-gradient-to-br from-gray-50/70 via-white/80 to-slate-50/70 border-gray-200/50';
+                      default: 
+                        return 'bg-gradient-to-br from-gray-50/70 via-white/80 to-slate-50/70 border-gray-200/50';
+                    }
+                  };
+
+                  return (
+                    <div key={order.id} className={`${getGlassBackground(order.status)} border backdrop-blur-md rounded-2xl shadow-lg hover:shadow-xl transition-all duration-300 p-5 hover:scale-[1.01] transform`}>
+                      {/* Header - Statut principal */}
+                      <div className="flex items-center justify-between mb-4">
+                        <span className={`inline-flex items-center space-x-2 px-4 py-2 rounded-xl text-sm font-medium backdrop-blur-sm border ${getStatusColor(order.status)} shadow-sm`}>
+                          {getStatusIcon(order.status)}
+                          <span>{order.status_label}</span>
+                        </span>
+                        <div className="text-right">
+                          <div className="text-xl font-bold text-gray-900">
+                            {order.totalAmount?.toFixed(2)} €
+                          </div>
+                          <div className="text-xs text-gray-500 font-medium">
+                            {order.totalItems} article{order.totalItems > 1 ? 's' : ''}
+                          </div>
                         </div>
                       </div>
-                    </div>
 
-                    {/* Infos principales */}
-                    <div className="space-y-2 mb-4">
-                      <div className="flex items-center text-sm text-gray-600">
-                        <Calendar className="h-4 w-4 mr-2 text-gray-400" />
-                        <span>{new Date(order.createdAt).toLocaleDateString('fr-FR')}</span>
-                      </div>
-                      
-                      {order.tracking_number && (
-                        <div className="flex items-center text-sm text-blue-600">
-                          <Truck className="h-4 w-4 mr-2" />
-                          <span>Tracking: {order.tracking_number}</span>
+                      {/* Infos principales */}
+                      <div className="space-y-3 mb-5">
+                        <div className="flex items-center text-sm text-gray-700">
+                          <Calendar className="h-4 w-4 mr-2 text-gray-500" />
+                          <span className="font-medium">{new Date(order.createdAt).toLocaleDateString('fr-FR')}</span>
                         </div>
-                      )}
+                        
+                        {order.tracking_number && (
+                          <a
+                            href={getFedExTrackingUrl(order.tracking_number)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center text-sm text-blue-700 bg-blue-50/50 px-3 py-1.5 rounded-lg backdrop-blur-sm hover:bg-blue-100/60 hover:text-blue-800 transition-all duration-200 cursor-pointer group border border-blue-200/50 hover:border-blue-300/60"
+                          >
+                            <Truck className="h-4 w-4 mr-2 group-hover:scale-110 transition-transform" />
+                            <span className="font-medium">Tracking: {order.tracking_number}</span>
+                            <ExternalLink className="h-3 w-3 ml-1 opacity-60 group-hover:opacity-100 transition-opacity" />
+                          </a>
+                        )}
 
-                      <div className="text-xs text-gray-500 font-mono bg-gray-50 px-2 py-1 rounded">
-                        {order.name || order.id}
+                        <div className="text-xs text-gray-600 font-mono bg-white/50 px-3 py-2 rounded-lg backdrop-blur-sm border border-gray-200/50">
+                          {order.name || order.id}
+                        </div>
                       </div>
-                    </div>
 
-                    {/* Actions */}
-                    <div className="flex flex-col space-y-2">
-                      <button
-                        onClick={() => handleOrderClick(order.id)}
-                        className="w-full px-4 py-2 bg-gradient-to-r from-dbc-bright-green to-emerald-400 text-dbc-dark-green hover:from-emerald-300 hover:to-emerald-500 hover:text-white rounded-lg text-sm font-semibold transition-all duration-200 shadow-sm backdrop-blur-sm"
-                      >
-                        <Eye className="h-4 w-4 inline mr-2" />
-                        Voir les détails
-                      </button>
-                      {order.status === 'draft' && (
+                      {/* Actions */}
+                      <div className="flex flex-col space-y-3">
                         <button
-                          onClick={() => deleteOrder(order.id, order.name || order.id)}
-                          className="w-full px-4 py-2 bg-white border border-red-300 text-red-600 hover:bg-red-50 rounded-lg text-sm font-semibold transition-all duration-200 shadow-sm"
+                          onClick={() => handleOrderClick(order.id)}
+                          className="w-full px-6 py-3 bg-white/40 hover:bg-white/60 text-gray-800 hover:text-gray-900 rounded-xl text-sm font-semibold transition-all duration-200 shadow-sm backdrop-blur-md border border-white/50 hover:border-white/80 hover:shadow-md"
                         >
-                          <Trash2 className="h-4 w-4 inline mr-2" />
-                          Supprimer la commande
+                          <Eye className="h-4 w-4 inline mr-2" />
+                          Voir les détails
                         </button>
-                      )}
+                        {order.status === 'draft' && (
+                          <button
+                            onClick={() => deleteOrder(order.id, order.name || order.id)}
+                            className="w-full px-6 py-3 bg-red-50/50 hover:bg-red-100/70 text-red-600 hover:text-red-700 rounded-xl text-sm font-semibold transition-all duration-200 shadow-sm backdrop-blur-md border border-red-200/50 hover:border-red-300/50"
+                          >
+                            <Trash2 className="h-4 w-4 inline mr-2" />
+                            Supprimer la commande
+                          </button>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
 
               {/* Vue Desktop - Tableau Responsive (≥1024px) */}
               <div className="hidden lg:block overflow-x-auto">
                 <table className="w-full">
-                  <thead className="bg-gray-50 border-b">
+                  <thead className="bg-gradient-to-r from-white/80 via-gray-50/80 to-white/80 backdrop-blur-sm border-b border-gray-200/50">
                     <tr>
                       {/* Colonnes visibles selon breakpoints */}
-                      <th className="hidden xl:table-cell px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="hidden xl:table-cell px-4 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                         Numéro
                       </th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-4 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                         Statut
                       </th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-4 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                         Date
                       </th>
-                      <th className="hidden xl:table-cell px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="hidden xl:table-cell px-4 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                         Articles
                       </th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-4 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                         Montant
                       </th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-4 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                         Actions
                       </th>
                     </tr>
                   </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {filteredOrders.map((order) => (
-                      <tr key={order.id} className="hover:bg-gray-50 transition-colors">
-                        {/* Numéro - Visible XL+ */}
-                        <td className="hidden xl:table-cell px-4 py-3">
-                          <div className="max-w-xs">
-                            <div className="text-sm font-medium text-gray-900 truncate">{order.id}</div>
-                            {order.name && (
-                              <div className="text-xs text-gray-500 truncate">{order.name}</div>
-                            )}
-                          </div>
-                        </td>
+                  <tbody className="bg-gradient-to-b from-white/90 to-white/70 backdrop-blur-sm divide-y divide-gray-200/50">
+                    {filteredOrders.map((order, index) => {
+                      const getRowBackground = (status: string, index: number) => {
+                        const baseClass = index % 2 === 0 ? 'bg-white/30' : 'bg-gray-50/30';
+                        const hoverClass = 'hover:bg-white/60';
+                        const statusGlow = (() => {
+                          switch (status) {
+                            case 'completed': return 'hover:shadow-green-100/50';
+                            case 'shipping': return 'hover:shadow-blue-100/50';
+                            case 'pending_payment':
+                            case 'validated': return 'hover:shadow-amber-100/50';
+                            case 'draft': return 'hover:shadow-gray-100/50';
+                            default: return 'hover:shadow-gray-100/50';
+                          }
+                        })();
+                        return `${baseClass} ${hoverClass} ${statusGlow} backdrop-blur-sm transition-all duration-200 hover:shadow-lg`;
+                      };
 
-                        {/* Statut - Toujours visible */}
-                        <td className="px-4 py-3">
-                          <div className="flex flex-col space-y-1">
-                            <span className={`inline-flex items-center space-x-1 px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(order.status)} w-fit`}>
-                              {getStatusIcon(order.status)}
-                              <span className="hidden lg:inline">{order.status_label}</span>
-                            </span>
-                            {order.tracking_number && (
-                              <div className="flex items-center space-x-1 text-xs text-blue-600">
-                                <Truck className="h-3 w-3" />
-                                <span className="hidden xl:inline">Tracking: </span>
-                                <span className="truncate max-w-20">{order.tracking_number}</span>
-                              </div>
-                            )}
-                          </div>
-                        </td>
-
-                        {/* Date - Toujours visible */}
-                        <td className="px-4 py-3">
-                          <div className="flex items-center text-sm text-gray-900">
-                            <Calendar className="h-4 w-4 mr-1 text-gray-400" />
-                            <span className="hidden xl:inline">
-                              {new Date(order.createdAt).toLocaleDateString('fr-FR')}
-                            </span>
-                            <span className="xl:hidden">
-                              {new Date(order.createdAt).toLocaleDateString('fr-FR', { 
-                                day: '2-digit', 
-                                month: '2-digit' 
-                              })}
-                            </span>
-                          </div>
-                        </td>
-
-                        {/* Articles - Visible XL+ */}
-                        <td className="hidden xl:table-cell px-4 py-3">
-                          <div className="flex items-center text-sm text-gray-900">
-                            <Package className="h-4 w-4 mr-1 text-gray-400" />
-                            {order.totalItems} article{order.totalItems > 1 ? 's' : ''}
-                          </div>
-                        </td>
-
-                        {/* Montant - Toujours visible */}
-                        <td className="px-4 py-3">
-                          <div className="text-sm font-semibold text-gray-900">
-                            <div className="flex items-center">
-                              <Euro className="h-4 w-4 mr-1 text-gray-400" />
-                              {order.totalAmount?.toFixed(2)} €
+                      return (
+                        <tr key={order.id} className={getRowBackground(order.status, index)}>
+                          {/* Numéro - Visible XL+ */}
+                          <td className="hidden xl:table-cell px-4 py-4">
+                            <div className="max-w-xs">
+                              <div className="text-sm font-medium text-gray-900 truncate">{order.id}</div>
+                              {order.name && (
+                                <div className="text-xs text-gray-500 truncate">{order.name}</div>
+                              )}
                             </div>
-                            <div className="xl:hidden text-xs text-gray-500 mt-1">
+                          </td>
+
+                          {/* Statut - Toujours visible */}
+                          <td className="px-4 py-4">
+                            <div className="flex flex-col space-y-1">
+                              <span className={`inline-flex items-center space-x-1 px-3 py-1.5 rounded-xl text-xs font-medium backdrop-blur-sm border ${getStatusColor(order.status)} w-fit shadow-sm`}>
+                                {getStatusIcon(order.status)}
+                                <span className="hidden lg:inline">{order.status_label}</span>
+                              </span>
+                              {order.tracking_number && (
+                                <a
+                                  href={getFedExTrackingUrl(order.tracking_number)}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="flex items-center space-x-1 text-xs text-blue-700 bg-blue-50/50 px-2 py-1 rounded-lg backdrop-blur-sm hover:bg-blue-100/60 hover:text-blue-800 transition-all duration-200 cursor-pointer group border border-blue-200/50 hover:border-blue-300/60"
+                                >
+                                  <Truck className="h-3 w-3 group-hover:scale-110 transition-transform" />
+                                  <span className="hidden xl:inline">Tracking: </span>
+                                  <span className="truncate max-w-20">{order.tracking_number}</span>
+                                  <ExternalLink className="h-2 w-2 opacity-60 group-hover:opacity-100 transition-opacity" />
+                                </a>
+                              )}
+                            </div>
+                          </td>
+
+                          {/* Date - Toujours visible */}
+                          <td className="px-4 py-4">
+                            <div className="flex items-center text-sm text-gray-900">
+                              <Calendar className="h-4 w-4 mr-1 text-gray-400" />
+                              <span className="hidden xl:inline">
+                                {new Date(order.createdAt).toLocaleDateString('fr-FR')}
+                              </span>
+                              <span className="xl:hidden">
+                                {new Date(order.createdAt).toLocaleDateString('fr-FR', { 
+                                  day: '2-digit', 
+                                  month: '2-digit' 
+                                })}
+                              </span>
+                            </div>
+                          </td>
+
+                          {/* Articles - Visible XL+ */}
+                          <td className="hidden xl:table-cell px-4 py-4">
+                            <div className="flex items-center text-sm text-gray-900">
+                              <Package className="h-4 w-4 mr-1 text-gray-400" />
                               {order.totalItems} article{order.totalItems > 1 ? 's' : ''}
                             </div>
-                          </div>
-                        </td>
+                          </td>
 
-                        {/* Actions - Toujours visible */}
-                        <td className="px-4 py-3">
-                          <div className="flex items-center space-x-2">
-                            <button
-                              onClick={() => handleOrderClick(order.id)}
-                              className="px-3 py-1.5 bg-gradient-to-r from-dbc-bright-green to-emerald-400 text-dbc-dark-green hover:from-emerald-300 hover:to-emerald-500 hover:text-white rounded-lg text-sm font-semibold transition-all duration-200 shadow-sm backdrop-blur-sm whitespace-nowrap"
-                            >
-                              <Eye className="h-4 w-4 inline mr-1" />
-                              <span className="hidden xl:inline">Détails</span>
-                            </button>
-                            {order.status === 'draft' && (
+                          {/* Montant - Toujours visible */}
+                          <td className="px-4 py-4">
+                            <div className="text-sm font-semibold text-gray-900">
+                              <div className="flex items-center">
+                                <Euro className="h-4 w-4 mr-1 text-gray-400" />
+                                {order.totalAmount?.toFixed(2)} €
+                              </div>
+                              <div className="xl:hidden text-xs text-gray-500 mt-1">
+                                {order.totalItems} article{order.totalItems > 1 ? 's' : ''}
+                              </div>
+                            </div>
+                          </td>
+
+                          {/* Actions - Toujours visible */}
+                          <td className="px-4 py-4">
+                            <div className="flex items-center space-x-2">
                               <button
-                                onClick={() => deleteOrder(order.id, order.name || order.id)}
-                                className="p-1.5 text-red-600 hover:text-red-800 hover:bg-red-50 rounded-lg transition-colors"
-                                title="Supprimer"
+                                onClick={() => handleOrderClick(order.id)}
+                                className="px-4 py-2 bg-white/50 hover:bg-white/70 text-gray-800 hover:text-gray-900 rounded-lg text-sm font-semibold transition-all duration-200 shadow-sm backdrop-blur-md border border-white/60 hover:border-white/80 hover:shadow-md whitespace-nowrap"
                               >
-                                <Trash2 className="h-4 w-4" />
+                                <Eye className="h-4 w-4 inline mr-1" />
+                                <span className="hidden xl:inline">Détails</span>
                               </button>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
+                              {order.status === 'draft' && (
+                                <button
+                                  onClick={() => deleteOrder(order.id, order.name || order.id)}
+                                  className="p-2 bg-red-50/50 hover:bg-red-100/70 text-red-600 hover:text-red-700 rounded-lg transition-all duration-200 backdrop-blur-md border border-red-200/50 hover:border-red-300/50"
+                                  title="Supprimer"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -493,7 +548,7 @@ function ClientOrdersPage() {
             </p>
             <button
               onClick={() => router.push('/catalog')}
-              className="bg-gradient-to-r from-dbc-bright-green to-emerald-400 text-dbc-dark-green py-2 px-6 rounded-xl hover:from-emerald-300 hover:to-emerald-500 hover:text-white font-semibold shadow-lg backdrop-blur-sm transition-all duration-200"
+              className="bg-white/50 hover:bg-white/70 text-gray-800 hover:text-gray-900 py-3 px-8 rounded-xl font-semibold shadow-lg backdrop-blur-md border border-white/60 hover:border-white/80 hover:shadow-xl transition-all duration-200"
             >
               Voir le catalogue
             </button>

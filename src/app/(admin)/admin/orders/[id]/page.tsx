@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { useAuth, withAuth } from '../../../../../lib/auth-context';
+import AppHeader from '@/components/AppHeader';
 import { supabase, Product, orderService } from '../../../../../lib/supabase';
 import { 
   User, 
@@ -700,6 +701,7 @@ function AdminOrderDetailPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-gray-50 to-emerald-50">
+      <AppHeader />
       <div className="max-w-[2000px] mx-auto px-8 py-6">
         {/* Navigation */}
         <div className="flex items-center space-x-4 mb-6">
@@ -961,13 +963,6 @@ function AdminOrderDetailPage() {
                         {/* Ligne avec états et couleur */}
                         <div className="flex items-center justify-between mb-2">
                           <div className="flex items-center gap-2 flex-wrap">
-                            {/* Fonctionnalité */}
-                            <span className={`text-xs font-medium ${
-                              item.functionality === 'Working' ? 'text-green-600' : 'text-amber-600'
-                            }`}>
-                              {item.functionality === 'Working' ? 'Working' : 'Minor Fault'}
-                            </span>
-                            
                             {/* Grade */}
                             <span className={`text-xs font-medium px-1 py-0.5 rounded ${
                               item.appearance?.includes('A+') ? 'bg-green-100 text-green-800' :
@@ -1157,9 +1152,6 @@ function AdminOrderDetailPage() {
                               }`}>
                                 {item.appearance?.replace('Grade ', '') || 'N/A'}
                               </span>
-                              <span className="inline-flex px-2 py-1 text-xs font-medium rounded bg-green-100 text-green-800">
-                                {item.functionality || 'N/A'}
-                              </span>
                             </div>
                           </td>
 
@@ -1289,13 +1281,6 @@ function AdminOrderDetailPage() {
                           {/* Ligne avec états et couleur */}
                           <div className="flex items-center justify-between mb-2">
                             <div className="flex items-center gap-2 flex-wrap">
-                              {/* Fonctionnalité */}
-                              <span className={`text-xs font-medium ${
-                                imei.functionality === 'Working' ? 'text-green-600' : 'text-amber-600'
-                              }`}>
-                                {imei.functionality === 'Working' ? 'Working' : 'Minor Fault'}
-                              </span>
-                              
                               {/* Grade */}
                               <span className={`text-xs font-medium px-1 py-0.5 rounded ${
                                 imei.appearance?.includes('A+') ? 'bg-green-100 text-green-800' :
@@ -1375,9 +1360,6 @@ function AdminOrderDetailPage() {
                                 }`}>
                                   {imei.appearance.replace('Grade ', '')}
                                 </span>
-                                <span className="inline-flex px-1.5 py-0.5 text-xs font-medium rounded bg-green-100 text-green-800">
-                                  {imei.functionality}
-                                </span>
                               </div>
                             </td>
                             <td className="hidden xl:table-cell px-3 py-3">
@@ -1388,9 +1370,6 @@ function AdminOrderDetailPage() {
                                   'bg-yellow-100 text-yellow-800'
                                 }`}>
                                   {imei.appearance.replace('Grade ', '')}
-                                </span>
-                                <span className="inline-flex px-2 py-1 text-xs font-medium rounded bg-green-100 text-green-800">
-                                  {imei.functionality}
                                 </span>
                               </div>
                             </td>

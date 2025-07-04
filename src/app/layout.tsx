@@ -1,4 +1,4 @@
-import type { Metadata } from 'next'
+import type { Metadata, Viewport } from 'next'
 import { Inter } from 'next/font/google'
 import './globals.css'
 import { AuthProvider } from '../lib/auth-context'
@@ -10,7 +10,6 @@ export const metadata: Metadata = {
   title: 'DBC B2B Platform',
   description: 'Plateforme B2B pour la gestion des commandes DBC',
   manifest: '/manifest.json',
-  themeColor: '#10B981',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
@@ -32,6 +31,14 @@ export const metadata: Metadata = {
   },
 }
 
+export const viewport: Viewport = {
+  themeColor: '#10B981',
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+}
+
 export default function RootLayout({
   children,
 }: {
@@ -40,6 +47,9 @@ export default function RootLayout({
   return (
     <html lang="fr">
       <head>
+        {/* Viewport pour comportement app native sur mobile */}
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+        
         {/* PWA Meta Tags */}
         <meta name="application-name" content="DBC B2B" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -69,6 +79,133 @@ export default function RootLayout({
           {children}
           <PWAInstallPrompt />
         </AuthProvider>
+        
+        {/* Script pour optimiser l'expérience tactile */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              // Optimisations pour l'expérience tactile mobile
+              (function() {
+                // Empêcher les scroll indésirables lors des mises à jour React
+                let scrollLocked = false;
+                let savedScrollY = 0;
+                
+                // Bloquer temporairement le scroll lors des mises à jour
+                window.lockScroll = function() {
+                  if (!scrollLocked) {
+                    savedScrollY = window.scrollY;
+                    scrollLocked = true;
+                    document.body.style.position = 'fixed';
+                    document.body.style.top = '-' + savedScrollY + 'px';
+                    document.body.style.width = '100%';
+                  }
+                };
+                
+                window.unlockScroll = function() {
+                  if (scrollLocked) {
+                    scrollLocked = false;
+                    document.body.style.position = '';
+                    document.body.style.top = '';
+                    document.body.style.width = '';
+                    window.scrollTo(0, savedScrollY);
+                  }
+                };
+                
+                // Détecter les mises à jour du DOM et préserver la position
+                let isUpdating = false;
+                const preservePosition = function() {
+                  if (!isUpdating) {
+                    isUpdating = true;
+                    const currentY = window.scrollY;
+                    
+                    requestAnimationFrame(() => {
+                      if (Math.abs(window.scrollY - currentY) > 10) {
+                        window.scrollTo(0, currentY);
+                      }
+                      isUpdating = false;
+                    });
+                  }
+                };
+                
+                // Observer uniquement les changements critiques
+                if (typeof MutationObserver !== 'undefined') {
+                  const observer = new MutationObserver(function(mutations) {
+                    for (let mutation of mutations) {
+                      if (mutation.type === 'childList' && 
+                          mutation.target.className && 
+                          mutation.target.className.includes && 
+                          mutation.target.className.includes('product-card')) {
+                        preservePosition();
+                        break;
+                      }
+                    }
+                  });
+                  
+                  document.addEventListener('DOMContentLoaded', function() {
+                    const container = document.querySelector('[data-products-container]');
+                    if (container) {
+                      observer.observe(container, {
+                        childList: true,
+                        subtree: true,
+                        attributes: false,
+                        characterData: false
+                      });
+                    }
+                  });
+                }
+                
+                // Forcer l'affichage du clavier numérique sur iOS
+                document.addEventListener('click', function(e) {
+                  if (e.target.type === 'number' || 
+                      e.target.inputMode === 'numeric' || 
+                      e.target.inputMode === 'decimal') {
+                    e.preventDefault();
+                    e.target.focus();
+                    
+                    // Forcer le clavier sur iOS
+                    setTimeout(() => {
+                      e.target.click();
+                      e.target.focus();
+                      if (e.target.select) {
+                        e.target.select();
+                      }
+                    }, 100);
+                  }
+                }, true);
+                
+                // Optimiser les performances tactiles
+                let touching = false;
+                document.addEventListener('touchstart', function(e) {
+                  touching = true;
+                  document.body.classList.add('touching');
+                }, { passive: true });
+                
+                document.addEventListener('touchend', function(e) {
+                  setTimeout(() => {
+                    touching = false;
+                    document.body.classList.remove('touching');
+                  }, 300);
+                }, { passive: true });
+                
+                // Améliorer la réactivité des clics
+                document.addEventListener('touchstart', function(e) {
+                  const target = e.target;
+                  if (target.classList && target.classList.contains && 
+                      (target.classList.contains('product-card') || 
+                       target.closest('.product-card'))) {
+                    // Ajouter feedback visuel immédiat
+                    const card = target.closest('.product-card') || target;
+                    card.style.transform = 'scale(0.98)';
+                    
+                    setTimeout(() => {
+                      card.style.transform = '';
+                    }, 150);
+                  }
+                }, { passive: true });
+              })();
+            `,
+          }}
+        />
       </body>
     </html>
   )

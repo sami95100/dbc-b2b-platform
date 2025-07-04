@@ -182,7 +182,7 @@ export default function CatalogUpdateButton({ onUpdateComplete }: { onUpdateComp
                     style={{ width: `${updateStatus.progress}%` }}
                   ></div>
                 </div>
-                                 <div className="mt-2 text-sm text-gray-500 text-center">
+                                 <div className="mt-2 text-sm font-semibold text-gray-800 text-center">
                    {updateStatus.progress < 20 ? 'Lecture du fichier Excel...' :
                     updateStatus.progress < 40 ? 'Validation des données...' :
                     updateStatus.progress < 65 ? 'Application des marges DBC...' :
@@ -216,7 +216,7 @@ export default function CatalogUpdateButton({ onUpdateComplete }: { onUpdateComp
                            {updateStatus.summary.importedProducts}
                          </div>
                          <div className="text-xs text-gray-700">Produits traités</div>
-                         <div className="text-xs text-gray-500 mt-1">Lignes du fichier Excel</div>
+                         <div className="text-xs font-medium text-gray-700 mt-1">Lignes du fichier Excel</div>
                        </div>
                        
                        <div className="text-center">
@@ -224,7 +224,7 @@ export default function CatalogUpdateButton({ onUpdateComplete }: { onUpdateComp
                            {updateStatus.summary.newSkus}
                          </div>
                          <div className="text-xs text-gray-700">Nouveaux SKU</div>
-                         <div className="text-xs text-gray-500 mt-1">SKU nouveaux ou remis en stock</div>
+                         <div className="text-xs font-medium text-gray-700 mt-1">SKU nouveaux ou remis en stock</div>
                        </div>
                        
                        <div className="text-center">
@@ -232,7 +232,7 @@ export default function CatalogUpdateButton({ onUpdateComplete }: { onUpdateComp
                            {updateStatus.summary.stats?.marginal || 0}
                          </div>
                          <div className="text-xs text-gray-700">Marginaux (1%)</div>
-                         <div className="text-xs text-gray-500 mt-1">VAT Type = Marginal</div>
+                         <div className="text-xs font-medium text-gray-700 mt-1">VAT Type = Marginal</div>
                        </div>
                        
                        <div className="text-center">
@@ -240,7 +240,7 @@ export default function CatalogUpdateButton({ onUpdateComplete }: { onUpdateComp
                            {updateStatus.summary.stats?.non_marginal || 0}
                          </div>
                          <div className="text-xs text-gray-700">Non marginaux (11%)</div>
-                         <div className="text-xs text-gray-500 mt-1">Autres produits</div>
+                         <div className="text-xs font-medium text-gray-700 mt-1">Autres produits</div>
                        </div>
                      </div>
 
@@ -249,33 +249,33 @@ export default function CatalogUpdateButton({ onUpdateComplete }: { onUpdateComp
                          <span className="text-gray-700">Produits avant:</span>
                          <div className="text-right">
                            <span className="font-medium text-gray-900">{updateStatus.summary.oldProductCount}</span>
-                           <span className="text-xs text-gray-500 ml-2">SKU avant import</span>
+                           <span className="text-xs font-medium text-gray-700 ml-2">SKU avant import</span>
                          </div>
                        </div>
                        <div className="flex justify-between items-center text-sm">
                          <span className="text-gray-700">Produits après:</span>
                          <div className="text-right">
                            <span className="font-medium text-gray-900">{updateStatus.summary.newProductCount}</span>
-                           <span className="text-xs text-gray-500 ml-2">SKU après import</span>
+                           <span className="text-xs font-medium text-gray-700 ml-2">SKU après import</span>
                          </div>
                        </div>
                        <div className="flex justify-between items-center text-sm">
                          <span className="text-gray-700">Produits actifs:</span>
                          <div className="text-right">
                            <span className="font-medium text-green-600">{updateStatus.summary.stats?.active_products || 0}</span>
-                           <span className="text-xs text-gray-500 ml-2">Quantité ≠ 0</span>
+                           <span className="text-xs font-medium text-gray-700 ml-2">Quantité ≠ 0</span>
                          </div>
                        </div>
                        <div className="flex justify-between items-center text-sm">
                          <span className="text-gray-700">En rupture:</span>
                          <div className="text-right">
                            <span className="font-medium text-red-600">{updateStatus.summary.stats?.out_of_stock || 0}</span>
-                           <span className="text-xs text-gray-500 ml-2">Passés à quantité 0</span>
+                           <span className="text-xs font-medium text-gray-700 ml-2">Passés à quantité 0</span>
                          </div>
                        </div>
                      </div>
 
-                     <div className="mt-3 text-xs text-gray-600 border-t pt-2">
+                     <div className="mt-3 text-xs font-medium text-gray-700 border-t pt-2">
                        Traité le {new Date(updateStatus.summary.processedAt).toLocaleString('fr-FR')}
                      </div>
 
@@ -299,12 +299,12 @@ export default function CatalogUpdateButton({ onUpdateComplete }: { onUpdateComp
                                </div>
                                <div className="flex items-center gap-2 flex-shrink-0">
                                  <span className="text-green-600 font-medium">{product.price_dbc}€</span>
-                                 <span className="text-gray-600">x{product.quantity}</span>
+                                 <span className="text-gray-800 font-medium">x{product.quantity}</span>
                                </div>
                              </div>
                            ))}
                            {updateStatus.summary.newSkus > 10 && (
-                             <div className="text-center text-gray-600 py-2 text-sm">
+                             <div className="text-center text-gray-800 py-2 text-sm font-medium">
                                ... et {updateStatus.summary.newSkus - 10} autres nouveaux produits
                              </div>
                            )}

@@ -12,18 +12,22 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
   const router = useRouter();
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
     setError('');
+    setSuccess('');
     
     try {
       // Vérifier que les champs sont remplis
       if (!email || !password) {
         throw new Error('Veuillez remplir tous les champs');
       }
+
+      setSuccess('Connexion en cours...');
 
       // Authentification avec Supabase
       const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
@@ -32,12 +36,18 @@ export default function LoginPage() {
       });
 
       if (authError) {
+        // Messages d'erreur personnalisés
+        if (authError.message.includes('Invalid login credentials')) {
+          throw new Error('Email ou mot de passe incorrect');
+        }
         throw new Error(authError.message);
       }
 
       if (!authData.user) {
         throw new Error('Erreur lors de la connexion');
       }
+
+      setSuccess('Vérification du profil...');
 
       // Vérifier que l'utilisateur a un profil et qu'il est actif
       const { data: profile, error: profileError } = await supabase
@@ -53,14 +63,18 @@ export default function LoginPage() {
 
       if (!profile.is_active) {
         // Rediriger vers la page d'attente de validation
+        setSuccess('Redirection vers la page d\'attente...');
         router.push('/pending-validation');
         return;
       }
 
       // Connexion réussie - redirection selon le rôle
       console.log('✅ Connexion réussie:', profile);
+      setSuccess('Connexion réussie ! Redirection...');
       const redirectPath = profile.role === 'admin' ? '/admin' : '/catalog';
-      router.push(redirectPath);
+      setTimeout(() => {
+        router.push(redirectPath);
+      }, 1000);
       
     } catch (error: any) {
       console.error('❌ Erreur de connexion:', error);
@@ -159,7 +173,7 @@ export default function LoginPage() {
         </div>
 
         {/* Section droite - Formulaire de connexion */}
-        <div className="w-full lg:w-1/2 flex items-center justify-center p-8">
+        <div className="w-full lg:w-1/2 flex items-center justify-center p-4 sm:p-8">
           <div className="w-full max-w-md">
             {/* Logo mobile */}
             <div className="lg:hidden text-center mb-8">
@@ -173,7 +187,7 @@ export default function LoginPage() {
             </div>
 
             {/* Carte de connexion */}
-            <div className="bg-white bg-opacity-20 backdrop-blur-xl rounded-3xl shadow-2xl p-8 border border-white border-opacity-30">
+            <div className="bg-white bg-opacity-20 backdrop-blur-xl rounded-3xl shadow-2xl p-6 sm:p-8 border border-white border-opacity-30">
               <div className="text-center mb-8">
                 <h3 className="text-2xl font-bold text-white mb-2">Connexion</h3>
                 <p className="text-emerald-100">Accédez à votre espace professionnel</p>
@@ -181,8 +195,15 @@ export default function LoginPage() {
 
               {/* Affichage des erreurs */}
               {error && (
-                <div className="mb-6 p-4 bg-red-500 bg-opacity-20 border border-red-400 rounded-xl text-red-300 text-sm">
+                <div className="mb-6 p-4 bg-red-500 bg-opacity-30 border border-red-400 rounded-xl text-red-100 text-sm font-medium">
                   {error}
+                </div>
+              )}
+
+              {/* Affichage des succès */}
+              {success && (
+                <div className="mb-6 p-4 bg-green-500 bg-opacity-30 border border-green-400 rounded-xl text-green-100 text-sm font-medium">
+                  {success}
                 </div>
               )}
 
@@ -192,15 +213,16 @@ export default function LoginPage() {
                     Email professionnel
                   </label>
                   <div className="relative">
-                    <Mail className="absolute left-4 top-1/2 transform -translate-y-1/2 h-5 w-5 text-emerald-300" />
                     <input
                       id="email"
                       type="email"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      className="w-full pl-12 pr-4 py-4 bg-white bg-opacity-20 border-2 border-white border-opacity-30 rounded-xl focus:ring-2 focus:ring-dbc-bright-green focus:border-dbc-bright-green focus:bg-opacity-30 transition-all duration-200 text-white placeholder-emerald-200 backdrop-blur-sm"
+                      className="w-full px-4 py-4 bg-white bg-opacity-80 border-2 border-emerald-300 rounded-xl focus:ring-2 focus:ring-dbc-bright-green focus:border-dbc-bright-green focus:bg-white focus:bg-opacity-90 transition-all duration-200 text-gray-900 placeholder-gray-500 font-medium text-base"
                       placeholder="votre@entreprise.com"
                       required
+                      autoComplete="email"
+                      onFocus={(e) => e.target.select()}
                     />
                   </div>
                 </div>
@@ -210,20 +232,22 @@ export default function LoginPage() {
                     Mot de passe
                   </label>
                   <div className="relative">
-                    <Lock className="absolute left-4 top-1/2 transform -translate-y-1/2 h-5 w-5 text-emerald-300" />
                     <input
                       id="password"
                       type={showPassword ? 'text' : 'password'}
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      className="w-full pl-12 pr-12 py-4 bg-white bg-opacity-20 border-2 border-white border-opacity-30 rounded-xl focus:ring-2 focus:ring-dbc-bright-green focus:border-dbc-bright-green focus:bg-opacity-30 transition-all duration-200 text-white placeholder-emerald-200 backdrop-blur-sm"
+                      className="w-full px-4 py-4 pr-14 bg-white bg-opacity-80 border-2 border-emerald-300 rounded-xl focus:ring-2 focus:ring-dbc-bright-green focus:border-dbc-bright-green focus:bg-white focus:bg-opacity-90 transition-all duration-200 text-gray-900 placeholder-gray-500 font-medium text-base"
                       placeholder="••••••••"
                       required
+                      autoComplete="current-password"
+                      onFocus={(e) => e.target.select()}
                     />
                     <button
                       type="button"
                       onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-4 top-1/2 transform -translate-y-1/2 text-emerald-300 hover:text-white transition-colors"
+                      className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-600 hover:text-gray-800 transition-colors p-2 z-10"
+                      title={showPassword ? "Masquer le mot de passe" : "Afficher le mot de passe"}
                     >
                       {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
                     </button>
@@ -231,12 +255,13 @@ export default function LoginPage() {
                 </div>
 
                 <div className="flex items-center justify-between text-sm">
-                  <label className="flex items-center">
+                  <label className="flex items-center cursor-pointer">
                     <input
                       type="checkbox"
-                      className="h-4 w-4 text-dbc-bright-green focus:ring-dbc-bright-green border-emerald-300 rounded bg-white bg-opacity-20"
+                      className="w-5 h-5 text-dbc-bright-green bg-white bg-opacity-80 border-2 border-emerald-300 rounded focus:ring-dbc-bright-green focus:ring-2 focus:ring-offset-0 checked:bg-dbc-bright-green checked:border-dbc-bright-green cursor-pointer"
+                      style={{ borderRadius: '4px' }}
                     />
-                    <span className="ml-2 text-emerald-100">Se souvenir de moi</span>
+                    <span className="ml-3 text-emerald-100">Se souvenir de moi</span>
                   </label>
                   <a href="#" className="text-dbc-bright-green hover:text-white font-medium transition-colors">
                     Mot de passe oublié ?
@@ -246,10 +271,13 @@ export default function LoginPage() {
                 <button
                   type="submit"
                   disabled={isLoading}
-                  className="w-full bg-gradient-to-r from-dbc-bright-green to-emerald-400 text-dbc-dark-green py-4 px-6 rounded-xl hover:from-emerald-300 hover:to-emerald-500 hover:text-white focus:ring-2 focus:ring-dbc-bright-green focus:ring-offset-2 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2 font-bold shadow-2xl backdrop-blur-sm"
+                  className="w-full bg-gradient-to-r from-dbc-bright-green to-emerald-400 text-dbc-dark-green py-4 px-6 rounded-xl hover:from-emerald-300 hover:to-emerald-500 hover:text-white focus:ring-2 focus:ring-dbc-bright-green focus:ring-offset-2 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2 font-bold shadow-2xl backdrop-blur-sm text-lg"
                 >
                   {isLoading ? (
-                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-dbc-dark-green"></div>
+                    <>
+                      <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-dbc-dark-green"></div>
+                      <span>Connexion en cours...</span>
+                    </>
                   ) : (
                     <>
                       <span>Accéder à la plateforme</span>

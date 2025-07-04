@@ -48,6 +48,7 @@ export interface Product {
   campaign_price: number | null
   vat_type: string | null
   price_dbc: number
+  supplier_price?: number // Prix d'achat fournisseur (admin seulement)
   is_active: boolean
   created_at?: string
   updated_at?: string
@@ -700,5 +701,37 @@ export const supabaseOperations = {
     };
 
     return { data: stats, error: null };
+  },
+
+  // Récupérer les statistiques du dashboard pour l'admin
+  async getDashboardStats() {
+    try {
+      const admin = getSupabaseAdmin();
+      if (!admin) return { error: 'Client admin non disponible' };
+
+      // Utiliser les fonctions SQL
+      const [marginResult, modelsResult, debugResult] = await Promise.all([
+        admin.rpc('get_total_margin_completed_orders'),
+        admin.rpc('get_top_selling_models_completed_orders', { limit_count: 5 }),
+        admin.rpc('debug_margin_data')
+      ]);
+
+      if (marginResult.error || modelsResult.error || debugResult.error) {
+        return { 
+          error: marginResult.error?.message || modelsResult.error?.message || debugResult.error?.message 
+        };
+      }
+
+      const stats = {
+        totalMargin: marginResult.data || 0,
+        topModels: modelsResult.data || [],
+        debug: debugResult.data?.[0] || {}
+      };
+
+      return { data: stats, error: null };
+    } catch (error) {
+      console.error('Erreur fonction getDashboardStats:', error);
+      return { error: error instanceof Error ? error.message : 'Erreur inconnue' };
+    }
   }
 }; 

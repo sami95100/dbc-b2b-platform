@@ -121,7 +121,7 @@ export default function OrderFilters({
       <div className="flex flex-wrap items-center gap-4 mb-4">
         {/* Filtre par statut */}
         <div className="flex items-center space-x-2">
-          <span className="text-sm text-gray-600 font-medium">Statut:</span>
+          <span className="text-sm text-gray-800 font-semibold">Statut:</span>
           <select
             value={statusFilter}
             onChange={(e) => onStatusFilterChange(e.target.value)}
@@ -254,16 +254,16 @@ export default function OrderFilters({
 
       {/* Résumé des résultats - Responsive */}
       <div className="flex flex-col space-y-2 sm:flex-row sm:items-center sm:justify-between sm:space-y-0 mt-4 pt-4 border-t">
-        <p className="text-sm text-gray-600">
+                  <p className="text-sm text-gray-800 font-medium">
           <span className="font-medium text-dbc-dark-green text-lg">{filteredCount}</span>
           <span className="ml-1">commande{filteredCount > 1 ? 's' : ''} trouvée{filteredCount > 1 ? 's' : ''}</span>
           {filteredCount !== totalOrders && (
-            <span className="text-gray-500 block sm:inline"> sur {totalOrders} au total</span>
+            <span className="text-gray-700 font-medium block sm:inline"> sur {totalOrders} au total</span>
           )}
         </p>
         
         {hasAnyActiveFilter && (
-          <div className="flex items-center text-sm text-gray-500 bg-gray-50 px-3 py-1 rounded-full">
+          <div className="flex items-center text-sm text-gray-700 font-medium bg-gray-100 px-3 py-1 rounded-full">
             <Filter className="h-4 w-4 mr-1" />
             <span>Filtres actifs</span>
           </div>

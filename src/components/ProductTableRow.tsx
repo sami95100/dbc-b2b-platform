@@ -1,6 +1,6 @@
 'use client';
 
-import React, { memo, useCallback } from 'react';
+import React, { memo, useCallback, useRef } from 'react';
 import { Plus, Minus, ShoppingCart, Check } from 'lucide-react';
 import type { Product } from '../lib/supabase';
 
@@ -27,6 +27,8 @@ const ProductTableRow = memo(function ProductTableRow({
   onDecrementQuantity,
   getColorClass
 }: ProductTableRowProps) {
+  const inputRef = useRef<HTMLInputElement>(null);
+
   // Memoize les handlers pour éviter les re-renders
   const handleQuantityChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     onQuantityChange(product.sku, e.target.value);
@@ -43,6 +45,51 @@ const ProductTableRow = memo(function ProductTableRow({
   const handleDecrementQuantity = useCallback(() => {
     onDecrementQuantity(product.sku);
   }, [product.sku, onDecrementQuantity]);
+
+  // Gestionnaire spécifique pour mobile
+  const handleInputFocus = useCallback(() => {
+    if (inputRef.current) {
+      // Sélectionner tout le texte pour faciliter la saisie
+      inputRef.current.select();
+      // Forcer le focus sur mobile
+      inputRef.current.focus();
+    }
+  }, []);
+
+  // Gestionnaire tactile amélioré
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    if (inputRef.current) {
+      // Force l'ouverture du clavier numérique
+      inputRef.current.focus();
+      inputRef.current.click();
+      inputRef.current.select();
+      
+      // Déclencher l'événement input pour forcer l'affichage du clavier
+      const event = new Event('input', { bubbles: true });
+      inputRef.current.dispatchEvent(event);
+    }
+  }, []);
+
+  // Gestionnaire de clic optimisé
+  const handleInputClick = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    if (inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+      
+      // Pour iOS, forcer l'affichage du clavier
+      setTimeout(() => {
+        if (inputRef.current) {
+          inputRef.current.focus();
+        }
+      }, 100);
+    }
+  }, []);
 
   const quantityInCart = typeof quantity === 'string' ? parseInt(quantity) || 0 : quantity || 0;
 
@@ -87,7 +134,7 @@ const ProductTableRow = memo(function ProductTableRow({
         <span className={`inline-block w-4 h-4 rounded-full border-2 border-gray-300 ${getColorClass(product.color)}`}
               title={product.color || 'Couleur non spécifiée'}>
         </span>
-        <span className="ml-2 text-xs text-gray-600">{product.color || '-'}</span>
+        <span className="ml-2 text-xs text-gray-800 font-medium">{product.color || '-'}</span>
       </td>
       <td className="px-2 py-3 text-sm">
         <span className={`px-2 py-1 rounded text-xs font-medium ${
@@ -122,24 +169,38 @@ const ProductTableRow = memo(function ProductTableRow({
           {quantityInCart > 0 && (
             <button
               onClick={handleDecrementQuantity}
-              className="p-1 text-gray-600 hover:text-gray-800"
+              className="p-2 text-gray-700 hover:text-gray-900 font-medium touch-manipulation active:scale-95 transition-transform"
             >
-              <Minus className="h-3 w-3" />
+              <Minus className="h-4 w-4" />
             </button>
           )}
-          <input
-            type="number"
-            min="0"
-            max={product.quantity}
-            value={quantity}
-            onChange={handleQuantityChange}
-            className="w-12 px-1 py-1 text-center text-xs border border-gray-300 rounded focus:ring-1 focus:ring-dbc-light-green focus:border-transparent text-gray-900"
-          />
+          <div 
+            className="relative z-10" 
+            onClick={(e) => e.stopPropagation()}
+            onTouchStart={(e) => e.stopPropagation()}
+          >
+            <input
+              ref={inputRef}
+              type="tel"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              min="0"
+              max={product.quantity}
+              value={quantity}
+              onChange={handleQuantityChange}
+              onFocus={handleInputFocus}
+              onTouchStart={handleTouchStart}
+              onClick={handleInputClick}
+              onPointerDown={(e) => e.stopPropagation()}
+              className="quantity-input w-16 h-10 px-2 py-2 text-center text-sm touch-manipulation relative z-20"
+              style={{ fontSize: '16px' }} // Empêche le zoom sur iOS
+            />
+          </div>
           <button
             onClick={handleAddToCart}
-            className="p-1 text-gray-600 hover:text-gray-800"
+            className="p-2 text-gray-700 hover:text-gray-900 font-medium touch-manipulation active:scale-95 transition-transform"
           >
-            <Plus className="h-3 w-3" />
+            <Plus className="h-4 w-4" />
           </button>
         </div>
       </td>
@@ -147,10 +208,10 @@ const ProductTableRow = memo(function ProductTableRow({
         <div className="flex items-center justify-center space-x-1">
           <button
             onClick={handleSelectFullQuantity}
-            className={`p-1 transition-colors ${
+            className={`p-2 transition-all touch-manipulation active:scale-95 ${
               isSelected
-                ? 'text-dbc-light-green bg-green-50 rounded'
-                : 'text-gray-600 hover:text-dbc-light-green'
+                ? 'text-dbc-light-green bg-green-50 rounded-lg'
+                : 'text-gray-700 hover:text-dbc-light-green font-medium'
             }`}
             title={isSelected ? 'Tout sélectionné' : 'Sélectionner tout le stock'}
           >

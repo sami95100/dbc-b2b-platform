@@ -1,249 +1,14 @@
 'use client';
 
-import { useState, useMemo, useEffect, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth, withAuth } from '../../../../lib/auth-context';
 import AppHeader from '@/components/AppHeader';
-
-// Modal de résumé d'import
-const ImportSummaryModal = ({ isOpen, onClose, summary }: { 
-  isOpen: boolean; 
-  onClose: () => void; 
-  summary: any; 
-}) => {
-  if (!isOpen) return null;
-
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4 shadow-xl">
-        <div className="text-center mb-4">
-          <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-3">
-            <Check className="w-8 h-8 text-green-600" />
-          </div>
-          <h3 className="text-lg font-semibold text-gray-900">
-            ✅ Import réussi !
-          </h3>
-        </div>
-        
-        <div className="space-y-3 mb-6">
-          <div className="bg-gray-50 rounded-lg p-4">
-            <h4 className="font-semibold text-gray-800 mb-2">📊 Résumé de l'import</h4>
-            <div className="space-y-1 text-sm text-gray-600">
-              <div className="flex justify-between">
-                <span>Produits traités:</span>
-                <span className="font-medium">{summary?.importedProducts || 0}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Nouveaux SKU:</span>
-                <span className="font-medium text-blue-600">
-                  {(() => {
-                    // Calculer les VRAIS nouveaux SKU
-                    if (!summary?.all_new_skus) return 0;
-                    const existingNewSkus = JSON.parse(localStorage.getItem('newProductsSKUs') || '[]');
-                    const reallyNewSkus = summary.all_new_skus.filter((sku: string) => 
-                      !existingNewSkus.includes(sku)
-                    );
-                    return reallyNewSkus.length;
-                  })()}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span>Produits actifs:</span>
-                <span className="font-medium text-green-600">{summary?.stats?.active_products || 0}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>En rupture:</span>
-                <span className="font-medium text-red-600">{summary?.stats?.out_of_stock || 0}</span>
-              </div>
-            </div>
-          </div>
-          
-          <div className="bg-blue-50 rounded-lg p-4">
-            <h4 className="font-semibold text-blue-800 mb-2">💰 Répartition des marges</h4>
-            <div className="space-y-1 text-sm text-blue-700">
-              <div className="flex justify-between">
-                <span>Marginaux (1%):</span>
-                <span className="font-medium">{summary?.stats?.marginal || 0}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Non marginaux (11%):</span>
-                <span className="font-medium">{summary?.stats?.non_marginal || 0}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-        
-        <div className="flex gap-3">
-          <button
-            onClick={() => {
-              onClose();
-              window.location.reload();
-            }}
-            className="flex-1 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition-colors"
-          >
-            🔄 Voir les nouveaux produits
-          </button>
-          <button
-            onClick={onClose}
-            className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 transition-colors"
-          >
-            Fermer
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// Composant pour les outils d'import
-const ImportTools = () => {
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [showSummary, setShowSummary] = useState(false);
-  const [importSummary, setImportSummary] = useState<any>(null);
-  const [showDiagnostic, setShowDiagnostic] = useState(false);
-
-  const handleDiagnostic = async () => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.xlsx,.xls';
-    input.onchange = async (e) => {
-      const file = (e.target as HTMLInputElement).files?.[0];
-      if (!file) return;
-      
-      setIsProcessing(true);
-      const formData = new FormData();
-      formData.append('catalog', file);
-      
-      try {
-        console.log('🔧 Diagnostic en cours...');
-        const response = await fetch('/api/debug-catalog', {
-          method: 'POST',
-          body: formData,
-        });
-        
-        const result = await response.json();
-        console.log('📊 Résultat diagnostic:', result);
-        
-        if (result.success) {
-          alert('✅ Diagnostic réussi ! Vérifiez la console pour les détails.');
-        } else {
-          console.error('Détails erreur:', result);
-          let errorMessage = `❌ Diagnostic échoué: ${result.error || 'Erreur inconnue'}`;
-          if (result.recommendation) {
-            errorMessage += `\n\n💡 ${result.recommendation}`;
-          }
-          alert(errorMessage);
-        }
-      } catch (error) {
-        console.error('Erreur diagnostic:', error);
-        alert('❌ Erreur réseau lors du diagnostic.');
-      } finally {
-        setIsProcessing(false);
-      }
-    };
-    input.click();
-  };
-
-  const handleCatalogImport = async () => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.xlsx,.xls';
-    input.onchange = async (e) => {
-      const file = (e.target as HTMLInputElement).files?.[0];
-      if (!file) return;
-      
-      setIsProcessing(true);
-      const formData = new FormData();
-      formData.append('catalog', file);
-      
-      try {
-        console.log('📂 Import catalogue en cours...');
-        const response = await fetch('/api/catalog/update-ts', {
-          method: 'POST',
-          body: formData,
-        });
-        
-        const result = await response.json();
-        console.log('📊 Résultat import:', result);
-        
-        if (result.success) {
-          // Sauvegarder SEULEMENT les VRAIS nouveaux SKU
-          if (result.summary?.all_new_skus && result.summary.all_new_skus.length > 0) {
-            // Vérifier si c'est vraiment de nouveaux SKU ou juste une réimportation
-            const existingNewSkus = JSON.parse(localStorage.getItem('newProductsSKUs') || '[]');
-            const reallyNewSkus = result.summary.all_new_skus.filter((sku: string) => 
-              !existingNewSkus.includes(sku)
-            );
-            
-            if (reallyNewSkus.length > 0) {
-              // Ajouter les nouveaux SKU aux existants
-              const allNewSkus = [...existingNewSkus, ...reallyNewSkus];
-              localStorage.setItem('newProductsSKUs', JSON.stringify(allNewSkus));
-              localStorage.setItem('lastImportDate', new Date().toISOString());
-              console.log('✨ Nouveaux SKU ajoutés:', reallyNewSkus.length);
-            } else {
-              console.log('🔄 Réimportation - aucun nouveau SKU');
-            }
-          }
-          
-          setImportSummary(result.summary);
-          setShowSummary(true);
-        } else {
-          console.error('Détails erreur:', result);
-          alert(`❌ Import échoué: ${result.error}`);
-        }
-      } catch (error) {
-        console.error('Erreur import:', error);
-        alert('❌ Erreur réseau lors de l\'import.');
-      } finally {
-        setIsProcessing(false);
-      }
-    };
-    input.click();
-  };
-
-  return (
-    <>
-      <div className="flex gap-2 flex-wrap items-center">
-        <button
-          onClick={handleCatalogImport}
-          disabled={isProcessing}
-          className="inline-flex items-center px-4 py-2 border border-blue-300 text-sm font-medium rounded-md text-blue-700 bg-blue-50 hover:bg-blue-100 disabled:opacity-50 transition-colors"
-        >
-          {isProcessing ? '📂 Import...' : '📂 Import Catalogue'}
-        </button>
-        
-        {/* Diagnostic caché par défaut */}
-        {showDiagnostic && (
-          <button
-            onClick={handleDiagnostic}
-            disabled={isProcessing}
-            className="inline-flex items-center px-3 py-1.5 border border-orange-300 text-xs font-medium rounded-md text-orange-700 bg-orange-50 hover:bg-orange-100 disabled:opacity-50 transition-colors"
-          >
-            {isProcessing ? '🔧 Diagnostic...' : '🔧 Diagnostic'}
-          </button>
-        )}
-        
-        <button
-          onClick={() => setShowDiagnostic(!showDiagnostic)}
-          className="text-xs text-gray-500 hover:text-gray-700 underline"
-        >
-          {showDiagnostic ? 'Masquer diagnostic' : 'Afficher diagnostic'}
-        </button>
-      </div>
-      
-      <ImportSummaryModal 
-        isOpen={showSummary}
-        onClose={() => setShowSummary(false)}
-        summary={importSummary}
-      />
-    </>
-  );
-};
 import ClientSelector from '@/components/ClientSelector';
 import BackToTopButton from '@/components/BackToTopButton';
 import { supabase, Product } from '../../../../lib/supabase';
 import { OrdersUtils } from '../../../../lib/orders-utils';
+import { translateCatalogTerm, translateInterfaceLabel, MANUFACTURERS, APPEARANCES_EN, APPEARANCES_FR, BOXED_OPTIONS_EN, BOXED_OPTIONS_FR, frenchToEnglishValue } from '../../../../lib/catalog-translations';
 import { 
   Search, 
   Filter, 
@@ -263,11 +28,388 @@ import {
   ChevronRight
 } from 'lucide-react';
 
+// Modal de résumé d'import - VERSION COMPLÈTE
+const ImportSummaryModal = ({ isOpen, onClose, summary }: { 
+  isOpen: boolean; 
+  onClose: () => void; 
+  summary: any; 
+}) => {
+  if (!isOpen) return null;
+
+  const reallyNewSkus = summary?.all_new_skus ? 
+    summary.all_new_skus.filter((sku: string) => {
+      const existingNewSkus = JSON.parse(localStorage.getItem('newProductsSKUs') || '[]');
+      return !existingNewSkus.includes(sku);
+    }) : [];
+
+  const restockedSkus = summary?.restocked_skus || [];
+  const missingSkus = summary?.missing_skus || [];
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-[9999] p-4">
+      <div className="bg-white rounded-xl max-w-5xl w-full max-h-[95vh] overflow-hidden shadow-2xl border border-gray-200">
+        {/* Header */}
+        <div className="p-6 border-b border-gray-200">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center">
+                <Check className="w-6 h-6 text-green-600" />
+              </div>
+              <div>
+                <h3 className="text-xl font-semibold text-gray-900">✅ Import réussi !</h3>
+                <p className="text-sm font-medium text-gray-800">Import terminé à {new Date().toLocaleString('fr-FR')}</p>
+              </div>
+            </div>
+            <button
+              onClick={onClose}
+              className="text-gray-500 hover:text-gray-700 text-xl"
+            >
+              ×
+            </button>
+          </div>
+        </div>
+        
+        {/* Contenu principal scrollable */}
+        <div className="p-6 overflow-y-auto max-h-[calc(95vh-120px)]">
+          {/* Statistiques principales */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+            <div className="bg-blue-50 rounded-lg p-4 text-center">
+              <div className="text-2xl font-bold text-blue-600">{summary?.importedProducts || 0}</div>
+              <div className="text-sm text-blue-700">Produits traités</div>
+            </div>
+            <div className="bg-green-50 rounded-lg p-4 text-center">
+              <div className="text-2xl font-bold text-green-600">{reallyNewSkus.length}</div>
+              <div className="text-sm text-green-700">Nouveaux SKU</div>
+            </div>
+            <div className="bg-orange-50 rounded-lg p-4 text-center">
+              <div className="text-2xl font-bold text-orange-600">{restockedSkus.length}</div>
+              <div className="text-sm text-orange-700">Remis en stock</div>
+            </div>
+            <div className="bg-red-50 rounded-lg p-4 text-center">
+              <div className="text-2xl font-bold text-red-600">{missingSkus.length}</div>
+              <div className="text-sm text-red-700">En rupture</div>
+            </div>
+          </div>
+
+          {/* Détails techniques */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+            {/* Statistiques détaillées */}
+            <div className="bg-gray-50 rounded-lg p-4">
+              <h4 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
+                📊 Détails de l'import
+              </h4>
+                             <div className="space-y-2 text-sm">
+                 <div className="flex justify-between">
+                   <span className="text-gray-800">Produits actifs:</span>
+                   <span className="font-semibold text-green-700">{summary?.stats?.active_products || 0}</span>
+                 </div>
+                 <div className="flex justify-between">
+                   <span className="text-gray-800">Stock zéro:</span>
+                   <span className="font-semibold text-red-700">{summary?.stats?.out_of_stock || 0}</span>
+                 </div>
+                 <div className="flex justify-between">
+                   <span className="text-gray-800">Marginaux (1%):</span>
+                   <span className="font-semibold text-purple-700">{summary?.stats?.marginal || 0}</span>
+                 </div>
+                 <div className="flex justify-between">
+                   <span className="text-gray-800">Non marginaux (11%):</span>
+                   <span className="font-semibold text-blue-700">{summary?.stats?.non_marginal || 0}</span>
+                 </div>
+                 <div className="flex justify-between pt-2 border-t">
+                   <span className="text-gray-800">Fichier traité:</span>
+                   <span className="font-semibold text-gray-800">{summary?.fileName || 'N/A'}</span>
+                 </div>
+               </div>
+            </div>
+
+            {/* Répartition par statut */}
+            <div className="bg-blue-50 rounded-lg p-4">
+              <h4 className="font-semibold text-blue-800 mb-3 flex items-center gap-2">
+                🔄 Changements détectés
+              </h4>
+                             <div className="space-y-2 text-sm">
+                 <div className="flex justify-between">
+                   <span className="text-gray-800">✅ SKU correspondants:</span>
+                   <span className="font-semibold text-gray-800">{(summary?.importedProducts || 0) - reallyNewSkus.length - restockedSkus.length}</span>
+                 </div>
+                 <div className="flex justify-between">
+                   <span className="text-gray-800">🆕 Nouveaux ajouts:</span>
+                   <span className="font-semibold text-green-700">{reallyNewSkus.length}</span>
+                 </div>
+                 <div className="flex justify-between">
+                   <span className="text-gray-800">📦 Remis en stock:</span>
+                   <span className="font-semibold text-orange-700">{restockedSkus.length}</span>
+                 </div>
+                 <div className="flex justify-between">
+                   <span className="text-gray-800">❌ Ruptures détectées:</span>
+                   <span className="font-semibold text-red-700">{missingSkus.length}</span>
+                 </div>
+                 <div className="flex justify-between pt-2 border-t">
+                   <span className="text-gray-800">📈 Taux de nouveauté:</span>
+                   <span className="font-semibold text-gray-800">{summary?.importedProducts ? ((reallyNewSkus.length / summary.importedProducts) * 100).toFixed(1) : 0}%</span>
+                 </div>
+               </div>
+            </div>
+          </div>
+
+          {/* Exemples de SKU pour vérification */}
+          <div className="space-y-4">
+            {reallyNewSkus.length > 0 && (
+              <div className="bg-green-50 rounded-lg p-4">
+                <h4 className="font-semibold text-green-800 mb-2 flex items-center gap-2">
+                  🆕 Exemples de nouveaux SKU ({reallyNewSkus.length} total)
+                </h4>
+                                 <div className="text-sm text-green-800 font-mono bg-white rounded p-3 max-h-20 overflow-y-auto border">
+                   {reallyNewSkus.slice(0, 10).join(', ')}
+                   {reallyNewSkus.length > 10 && `, ... et ${reallyNewSkus.length - 10} autres`}
+                 </div>
+              </div>
+            )}
+
+            {restockedSkus.length > 0 && (
+              <div className="bg-orange-50 rounded-lg p-4">
+                <h4 className="font-semibold text-orange-800 mb-2 flex items-center gap-2">
+                  📦 Exemples de remises en stock ({restockedSkus.length} total)
+                </h4>
+                                 <div className="text-sm text-orange-800 font-mono bg-white rounded p-3 max-h-20 overflow-y-auto border">
+                   {restockedSkus.slice(0, 10).join(', ')}
+                   {restockedSkus.length > 10 && `, ... et ${restockedSkus.length - 10} autres`}
+                 </div>
+              </div>
+            )}
+
+            {missingSkus.length > 0 && (
+              <div className="bg-red-50 rounded-lg p-4">
+                <h4 className="font-semibold text-red-800 mb-2 flex items-center gap-2">
+                  ❌ Exemples de ruptures de stock ({missingSkus.length} total)
+                </h4>
+                                 <div className="text-sm text-red-800 font-mono bg-white rounded p-3 max-h-20 overflow-y-auto border">
+                   {missingSkus.slice(0, 10).join(', ')}
+                   {missingSkus.length > 10 && `, ... et ${missingSkus.length - 10} autres`}
+                 </div>
+              </div>
+            )}
+          </div>
+
+                    {/* Explication de la logique */}
+          <div className="mt-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <h4 className="font-semibold text-blue-800 mb-2 flex items-center gap-2">
+              💡 Explication de la logique
+            </h4>
+            <div className="text-sm text-blue-800 space-y-1">
+              <div><strong>📦 Remis en stock:</strong> SKU qui était à quantité 0 et maintenant &gt; 0</div>
+              <div><strong>❌ En rupture:</strong> SKU présent en base avec stock &gt; 0 mais absent du nouveau catalogue</div>
+              <div><strong>✅ Correspondances:</strong> SKU existants avec quantités mises à jour</div>
+              <div><strong>🆕 Nouveaux:</strong> SKU jamais vus auparavant dans la base</div>
+            </div>
+          </div>
+
+          {/* Avertissements et recommandations */}
+          {(reallyNewSkus.length > summary?.importedProducts * 0.1 || missingSkus.length > summary?.importedProducts * 0.1) && (
+            <div className="mt-4 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+              <h4 className="font-semibold text-yellow-800 mb-2 flex items-center gap-2">
+                ⚠️ Points d'attention
+              </h4>
+              <ul className="text-sm text-yellow-800 space-y-1">
+                {reallyNewSkus.length > summary?.importedProducts * 0.1 && (
+                  <li className="font-medium">• Taux élevé de nouveaux SKU ({((reallyNewSkus.length / summary.importedProducts) * 100).toFixed(1)}%) - Vérifiez la cohérence</li>
+                )}
+                {missingSkus.length > summary?.importedProducts * 0.1 && (
+                  <li className="font-medium">• Nombreuses ruptures détectées ({((missingSkus.length / summary.importedProducts) * 100).toFixed(1)}%) - Vérifiez le fichier source</li>
+                )}
+                <li className="font-medium">• Consultez les exemples de SKU ci-dessus pour vérifier la cohérence des données</li>
+              </ul>
+            </div>
+          )}
+        </div>
+        
+        {/* Footer actions - fixe en bas */}
+        <div className="p-6 border-t border-gray-200 bg-gray-50 flex-shrink-0">
+          <div className="flex gap-3">
+            <button
+              onClick={() => {
+                onClose();
+                window.location.reload();
+              }}
+              className="flex-1 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
+            >
+              🔄 Actualiser l'interface
+            </button>
+            <button
+              onClick={() => {
+                // Copier les statistiques dans le presse-papiers
+                const stats = `Import réussi - ${new Date().toLocaleString('fr-FR')}
+Produits traités: ${summary?.importedProducts || 0}
+Nouveaux SKU: ${reallyNewSkus.length}
+Remis en stock: ${restockedSkus.length}
+Ruptures: ${missingSkus.length}
+Actifs: ${summary?.stats?.active_products || 0}
+Stock zéro: ${summary?.stats?.out_of_stock || 0}`;
+                navigator.clipboard.writeText(stats);
+                alert('📋 Statistiques copiées dans le presse-papiers !');
+              }}
+              className="px-4 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 transition-colors"
+            >
+              📋 Copier stats
+            </button>
+            <button
+              onClick={onClose}
+              className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 transition-colors"
+            >
+              Fermer
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+
+
+// Composant pour les outils d'import
+const ImportTools = () => {
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [summaryData, setSummaryData] = useState<any>(null);
+  const [showSummary, setShowSummary] = useState(false);
+
+  const [importProgress, setImportProgress] = useState({ 
+    step: '', 
+    current: 0, 
+    total: 0, 
+    message: '' 
+  });
+
+
+
+  const handleCatalogImport = async () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.xlsx,.xls';
+    input.onchange = async (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (!file) return;
+      
+      setIsProcessing(true);
+      setImportProgress({ step: 'upload', current: 0, total: 100, message: 'Envoi du fichier...' });
+      
+      const formData = new FormData();
+      formData.append('catalog', file);
+      
+      try {
+        console.log('📂 Import catalogue en cours...');
+        
+        // Simuler la progression étape par étape
+        setImportProgress({ step: 'reading', current: 10, total: 100, message: 'Lecture du fichier Excel...' });
+        
+        await new Promise(resolve => setTimeout(resolve, 500)); // Pause courte pour l'UI
+        
+        setImportProgress({ step: 'validating', current: 30, total: 100, message: 'Validation des données...' });
+        
+        const response = await fetch('/api/catalog/update-ts', {
+          method: 'POST',
+          body: formData,
+        });
+        
+        setImportProgress({ step: 'processing', current: 70, total: 100, message: 'Traitement en cours...' });
+        
+        const result = await response.json();
+        console.log('📊 Résultat import:', result);
+        
+        setImportProgress({ step: 'finalizing', current: 90, total: 100, message: 'Finalisation...' });
+        
+        if (result.success) {
+          console.log('✅ Import réussi:', result);
+          
+          setImportProgress({ step: 'complete', current: 100, total: 100, message: 'Import terminé !' });
+          
+          setTimeout(() => {
+            setSummaryData(result.summary);
+            setShowSummary(true);
+          }, 500);
+          
+        } else {
+          console.error('Détails erreur:', result);
+          setImportProgress({ step: 'error', current: 0, total: 100, message: 'Erreur d\'import' });
+          alert(`❌ Import échoué: ${result.error}`);
+        }
+      } catch (error) {
+        console.error('Erreur import:', error);
+        setImportProgress({ step: 'error', current: 0, total: 100, message: 'Erreur réseau' });
+        alert('❌ Erreur réseau lors de l\'import.');
+      } finally {
+        setTimeout(() => {
+          setIsProcessing(false);
+          setImportProgress({ step: '', current: 0, total: 0, message: '' });
+        }, 1000);
+      }
+    };
+    input.click();
+  };
+
+
+
+
+
+  return (
+    <>
+        {/* Bouton principal d'import */}
+        <button
+          onClick={handleCatalogImport}
+          disabled={isProcessing}
+          className="px-6 py-3 bg-white bg-opacity-90 backdrop-blur-sm border border-white border-opacity-40 rounded-xl hover:bg-opacity-95 hover:shadow-lg text-base text-gray-700 transition-all duration-200 shadow-md flex items-center gap-3 font-medium"
+        >
+          <FileSpreadsheet className="h-5 w-5" />
+          {isProcessing ? 'Import en cours...' : 'Importer Catalogue Excel'}
+        </button>
+        
+
+      
+      {/* Barre de progression pendant l'import */}
+      {isProcessing && importProgress.step && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4 shadow-xl">
+            <div className="text-center mb-4">
+              <div className="text-lg font-semibold text-gray-800 mb-2">
+                Import du catalogue en cours
+              </div>
+              <div className="text-sm text-gray-600">
+                {importProgress.message}
+              </div>
+            </div>
+            
+            {/* Barre de progression */}
+            <div className="w-full bg-gray-200 rounded-full h-3 mb-4">
+              <div 
+                className="bg-blue-500 h-3 rounded-full transition-all duration-300 ease-out"
+                style={{ width: `${(importProgress.current / importProgress.total) * 100}%` }}
+              ></div>
+            </div>
+            
+            <div className="text-center text-sm font-semibold text-gray-800">
+              {importProgress.current}% terminé
+            </div>
+            
+            {/* Indicateur de chargement animé */}
+            <div className="flex justify-center mt-4">
+              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-500"></div>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      <ImportSummaryModal 
+        isOpen={showSummary}
+        onClose={() => setShowSummary(false)}
+        summary={summaryData}
+      />
+      
+
+    </>
+  );
+};
+
 // Valeurs de filtres basées sur l'analyse du vrai catalogue
-const MANUFACTURERS = ['Apple', 'Samsung', 'Xiaomi', 'Google', 'Huawei', 'OnePlus', 'Motorola', 'Honor', 'Oppo', 'Realme', 'Sony', 'LG', 'TCL', 'Nokia', 'Vivo', 'Asus', 'ZTE', 'Nothing', 'Gigaset', 'HTC'];
-const APPEARANCES = ['Brand New', 'Grade A+', 'Grade A', 'Grade AB', 'Grade B', 'Grade BC', 'Grade C', 'Grade C+'];
-const FUNCTIONALITIES = ['Minor Fault', 'Working'];
-const BOXED_OPTIONS = ['Original Box', 'Premium Unboxed', 'Unboxed'];
 const ADDITIONAL_INFO_OPTIONS = ['AS-IS', 'Brand New Battery', 'Chip/Crack', 'Discoloration', 'Engraving', 'Engraving Removed', 'Heavy cosmetic wear', 'Other', 'Premium Refurbished', 'Reduced Battery Performance'];
 
 // Type pour les options de tri
@@ -280,9 +422,10 @@ function AdminCatalogPage() {
   
   // États des filtres avec valeurs par défaut
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
   const [selectedManufacturers, setSelectedManufacturers] = useState<string[]>(['Apple']); // Apple par défaut
-  const [selectedAppearances, setSelectedAppearances] = useState<string[]>(['Grade C', 'Grade BC']); // Grade C et BC par défaut
-  const [selectedFunctionalities, setSelectedFunctionalities] = useState<string[]>([]);
+  const [selectedAppearances, setSelectedAppearances] = useState<string[]>(['Grade C', 'Grade BC']); // Grade C et BC par défaut (valeurs françaises)
+
   const [selectedColors, setSelectedColors] = useState<string[]>([]);
   const [selectedBoxedOptions, setSelectedBoxedOptions] = useState<string[]>([]);
   const [selectedAdditionalInfo, setSelectedAdditionalInfo] = useState<string[]>([]);
@@ -293,6 +436,7 @@ function AdminCatalogPage() {
   const [showNewProductsOnly, setShowNewProductsOnly] = useState(false);
   const [includeZeroStock, setIncludeZeroStock] = useState(false);
   const [showStandardCapacityOnly, setShowStandardCapacityOnly] = useState(false);
+  const [importInfo, setImportInfo] = useState<{ importDate: string; totalNewProducts: number; newSkus: string[]; restockedSkus: string[]; missingSkus: string[]; totalMissingProducts: number } | null>(null);
   
   // États de tri et pagination
   const [sortField, setSortField] = useState<SortField>('product_name');
@@ -337,6 +481,7 @@ function AdminCatalogPage() {
   const [newProductsSKUs, setNewProductsSKUs] = useState<string[]>([]);
   const [lastImportDate, setLastImportDate] = useState<Date | null>(null);
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
+  const [totalNewProducts, setTotalNewProducts] = useState<number>(0);
 
   // États de dropdowns avec timer pour fermeture
   const [dropdownOpen, setDropdownOpen] = useState<{[key: string]: boolean}>({
@@ -352,6 +497,135 @@ function AdminCatalogPage() {
 
   // État pour gérer l'affichage des filtres sur mobile
   const [showMobileFilters, setShowMobileFilters] = useState(false);
+
+  // États pour les suggestions de recherche
+  const [searchSuggestions, setSearchSuggestions] = useState<string[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [suggestionTimeout, setSuggestionTimeout] = useState<NodeJS.Timeout | null>(null);
+  const [suggestionCache, setSuggestionCache] = useState<{[key: string]: string[]}>({});
+
+  // Index de recherche pré-calculé pour les performances
+  const searchIndex = useMemo(() => {
+    // Nettoyer le cache quand les produits changent
+    setSuggestionCache({});
+    
+    if (products.length === 0) return [];
+    
+    // Créer un index simplifié avec seulement les termes de recherche uniques
+    const terms = new Set<string>();
+    
+    products.slice(0, 250).forEach(product => { // Encore moins de produits pour plus de fluidité
+      const name = product.product_name;
+      
+      // Ajouter le nom complet s'il est court
+      if (name.length < 35) {
+        terms.add(name);
+      }
+      
+      // Extraire les modèles principaux (ex: "Apple iPhone 11", "Samsung Galaxy")
+      const modelMatch = name.match(/^(Apple\s+iPhone\s+\d+[A-Za-z\s]*|Samsung\s+Galaxy\s+[A-Za-z0-9\s]*|iPhone\s+\d+[A-Za-z\s]*)/i);
+      if (modelMatch) {
+        terms.add(modelMatch[1].trim());
+      }
+      
+      // Ajouter seulement les 2 premières combinaisons de mots
+      const words = name.split(' ');
+      for (let i = 0; i < Math.min(words.length - 1, 2); i++) {
+        const combo = words.slice(i, i + 2).join(' ');
+        if (combo.length >= 6 && combo.length <= 20) {
+          terms.add(combo);
+        }
+      }
+    });
+    
+    return Array.from(terms).sort();
+  }, [products]);
+
+  // Générer des suggestions ultra-rapides avec cache
+  const generateSearchSuggestions = (term: string) => {
+    if (!term || term.length < 2 || searchIndex.length === 0) {
+      setSearchSuggestions([]);
+      setShowSuggestions(false);
+      return;
+    }
+
+    const termLower = term.toLowerCase();
+    
+    // Vérifier le cache d'abord
+    if (suggestionCache[termLower]) {
+      setSearchSuggestions(suggestionCache[termLower]);
+      setShowSuggestions(suggestionCache[termLower].length > 0);
+      return;
+    }
+    
+    // Filtrer l'index pré-calculé - beaucoup plus rapide
+    const suggestions = searchIndex
+      .filter(item => item.toLowerCase().includes(termLower))
+      .sort((a, b) => {
+        // Priorité aux suggestions qui commencent par le terme
+        const aStarts = a.toLowerCase().startsWith(termLower);
+        const bStarts = b.toLowerCase().startsWith(termLower);
+        if (aStarts && !bStarts) return -1;
+        if (!aStarts && bStarts) return 1;
+        
+        // Puis par longueur
+        return a.length - b.length;
+      })
+      .slice(0, 5); // Maximum 5 suggestions
+    
+    // Sauvegarder dans le cache (limité à 50 entrées)
+    if (Object.keys(suggestionCache).length < 50) {
+      setSuggestionCache(prev => ({
+        ...prev,
+        [termLower]: suggestions
+      }));
+    }
+      
+    setSearchSuggestions(suggestions);
+    setShowSuggestions(suggestions.length > 0);
+  };
+
+  // Gérer les changements de recherche avec debounce pour les suggestions
+  const handleSearchChange = (value: string) => {
+    setSearchTerm(value);
+    
+    // Annuler le timeout précédent s'il existe
+    if (suggestionTimeout) {
+      clearTimeout(suggestionTimeout);
+    }
+    
+    // Debounce plus long pour moins de calculs (300ms)
+    const newTimeout = setTimeout(() => {
+      generateSearchSuggestions(value);
+    }, 300);
+    
+    setSuggestionTimeout(newTimeout);
+  };
+
+  // Sélectionner une suggestion
+  const selectSuggestion = (suggestion: string) => {
+    setSearchTerm(suggestion);
+    setShowSuggestions(false);
+    setSearchSuggestions([]);
+  };
+
+  // Debounce pour la recherche
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchTerm(searchTerm);
+    }, 300); // Attendre 300ms après la dernière frappe
+
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
+
+  // Cleanup du timeout des suggestions
+  useEffect(() => {
+    return () => {
+      if (suggestionTimeout) {
+        clearTimeout(suggestionTimeout);
+      }
+    };
+  }, [suggestionTimeout]);
 
   // Fonction pour synchroniser les commandes brouillon avec Supabase
   const syncDraftOrdersWithSupabase = async () => {
@@ -794,29 +1068,64 @@ function AdminCatalogPage() {
     return productName;
   };
 
+  // Fonction pour vérifier si un produit est "nouveau"
+  const isNewProduct = (product: Product) => {
+    if (importInfo && importInfo.newSkus && importInfo.restockedSkus) {
+      // Utiliser les vraies données d'import si disponibles
+      return importInfo.newSkus.includes(product.sku) || importInfo.restockedSkus.includes(product.sku);
+    } else {
+      // Heuristique temporaire plus restrictive
+      // Seulement les produits avec stock élevé et certaines caractéristiques
+      if (product.quantity === 0) return false;
+      
+      // Par exemple, considérer comme "nouveaux" les produits avec stock > 50
+      // ou qui ont certaines caractéristiques récentes
+      const hasHighStock = product.quantity > 50;
+      const hasRecentFeatures = product.additional_info && 
+        (product.additional_info.includes('2024') || 
+         product.additional_info.includes('new') ||
+         product.additional_info.includes('récent'));
+      
+      return hasHighStock || hasRecentFeatures || false; // Plus restrictif
+    }
+  };
+
   // Filtrage et tri des produits
   const filteredAndSortedProducts = useMemo(() => {
     let filtered = products.filter(product => {
-      const matchesSearch = !searchTerm || 
-        product.product_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        product.sku.toLowerCase().includes(searchTerm.toLowerCase());
+      // Filtre nouveaux produits
+      if (showNewProductsOnly && !isNewProduct(product)) return false;
       
-      const matchesManufacturer = selectedManufacturers.length === 0 || 
+      // Filtre de recherche
+      const matchesSearch = !debouncedSearchTerm || 
+        product.product_name.toLowerCase().includes(debouncedSearchTerm.toLowerCase()) ||
+        product.sku.toLowerCase().includes(debouncedSearchTerm.toLowerCase()) ||
+        product.item_group.toLowerCase().includes(debouncedSearchTerm.toLowerCase()) ||
+        (product.color && product.color.toLowerCase().includes(debouncedSearchTerm.toLowerCase())) ||
+        (product.additional_info && product.additional_info.toLowerCase().includes(debouncedSearchTerm.toLowerCase()));
+      
+      // Filtres existants restaurés
+            const matchesManufacturer = selectedManufacturers.length === 0 || 
         productContainsManufacturer(product.product_name, selectedManufacturers);
       
       const matchesAppearance = selectedAppearances.length === 0 || 
-        selectedAppearances.includes(product.appearance);
-      
-      const matchesFunctionality = selectedFunctionalities.length === 0 || 
-        selectedFunctionalities.includes(product.functionality);
+        selectedAppearances.some(selectedApp => {
+          // Convertir la valeur française sélectionnée vers l'anglais pour comparer avec la DB
+          const englishValue = frenchToEnglishValue(selectedApp, 'appearance');
+          return product.appearance === englishValue || product.appearance === selectedApp;
+        });
       
       const matchesColor = selectedColors.length === 0 || 
         selectedColors.includes(product.color);
       
       const matchesBoxed = selectedBoxedOptions.length === 0 || 
-        selectedBoxedOptions.includes(product.boxed);
+        selectedBoxedOptions.some(selectedBoxed => {
+          // Convertir la valeur française sélectionnée vers l'anglais pour comparer avec la DB
+          const englishValue = frenchToEnglishValue(selectedBoxed, 'boxed');
+          return product.boxed === englishValue || product.boxed === selectedBoxed;
+        });
       
-      const matchesAdditionalInfo = selectedAdditionalInfo.length === 0 || 
+      const matchesAdditionalInfo = selectedAdditionalInfo.length === 0 ||
         (product.additional_info && selectedAdditionalInfo.includes(product.additional_info));
       
       const matchesPriceMin = !priceMin || product.price_dbc >= parseFloat(priceMin);
@@ -824,7 +1133,6 @@ function AdminCatalogPage() {
       const matchesQuantityMin = !quantityMin || product.quantity >= parseInt(quantityMin);
       const matchesQuantityMax = !quantityMax || product.quantity <= parseInt(quantityMax);
       
-      const matchesNewProducts = !showNewProductsOnly || newProductsSKUs.includes(product.sku);
       const matchesStandardCapacity = !showStandardCapacityOnly || (() => {
         // Vérifier si c'est Apple ou Samsung
         const isAppleOrSamsung = product.product_name.toLowerCase().includes('apple') || 
@@ -843,36 +1151,34 @@ function AdminCatalogPage() {
         return standardCapacity && parsed.capacity === standardCapacity;
       })();
       
-      // Gestion du stock: distinguer recherche explicite de filtrage passif
-      const hasSearch = searchTerm.trim().length > 0;
-      const hasStock = product.quantity > 0;
-      const allowZeroQuantity = quantityMin === '0' || (quantityMin !== '' && parseInt(quantityMin) === 0);
-      
-      // CORRECTION: Ne pas afficher les produits à quantité 0 sauf si explicitement demandé
-      // Filtrer les produits inactifs SAUF si recherche active ou filtre quantité explicite
-      const isActiveOrSearched = product.is_active || hasSearch || allowZeroQuantity || includeZeroStock;
-      
-      // CORRECTION STRICTE: Produits à stock 0 UNIQUEMENT si toggle activé
-      // La recherche et les filtres ne doivent pas forcer l'affichage des produits à stock 0
-      const matchesStock = hasStock || includeZeroStock;
+      // Gestion de la rupture de stock : afficher les produits avec quantité 0
+      const matchesStock = includeZeroStock 
+        ? product.quantity === 0  // Afficher tous les produits avec quantité 0
+        : product.quantity > 0;   // Afficher seulement les produits avec stock > 0
       
       return matchesSearch && matchesManufacturer && matchesAppearance && 
-             matchesFunctionality && matchesColor && matchesBoxed &&
+             matchesColor && matchesBoxed &&
              matchesAdditionalInfo && matchesPriceMin && matchesPriceMax && 
-             matchesQuantityMin && matchesQuantityMax && matchesNewProducts && 
-             matchesStandardCapacity && matchesStock && isActiveOrSearched;
+             matchesQuantityMin && matchesQuantityMax && 
+             matchesStandardCapacity && matchesStock;
     });
 
-    // Tri avec priorisation ABSOLUE Minor Fault > Working
+    // Tri avec groupement par product_name puis Minor Fault > Working par produit
     filtered.sort((a, b) => {
-      // TRI PRIMAIRE OBLIGATOIRE : Minor Fault en premier, TOUJOURS
-      if (a.functionality === 'Minor Fault' && b.functionality === 'Working') {
-        return -1; // Minor Fault avant Working
-      } else if (a.functionality === 'Working' && b.functionality === 'Minor Fault') {
-        return 1; // Working après Minor Fault
+      // TRI PRIMAIRE : Par nom de produit
+      const productNameComparison = a.product_name.localeCompare(b.product_name);
+      if (productNameComparison !== 0) {
+        return productNameComparison; // Grouper par product_name d'abord
       }
 
-      // TRI SECONDAIRE : selon le champ sélectionné (seulement si même fonctionnalité)
+      // TRI SECONDAIRE : Pour le même produit, Minor Fault avant Working
+      if (a.functionality === 'Minor Fault' && b.functionality === 'Working') {
+        return -1; // Minor Fault avant Working pour le même produit
+      } else if (a.functionality === 'Working' && b.functionality === 'Minor Fault') {
+        return 1; // Working après Minor Fault pour le même produit
+      }
+
+      // TRI TERTIAIRE : Si même produit et même functionality, selon le champ sélectionné
       let aValue = a[sortField];
       let bValue = b[sortField];
       
@@ -887,35 +1193,56 @@ function AdminCatalogPage() {
         return aValue > bValue ? -1 : aValue < bValue ? 1 : 0;
       }
     });
-    
-    return filtered;
-  }, [searchTerm, selectedManufacturers, selectedAppearances, selectedFunctionalities, 
-      selectedColors, selectedBoxedOptions, selectedAdditionalInfo, priceMin, priceMax, 
-      quantityMin, quantityMax, sortField, sortDirection, products, showNewProductsOnly, 
-      newProductsSKUs, includeZeroStock, showStandardCapacityOnly, getStandardCapacities]);
 
-  // Calculer les statistiques des produits filtrés mais masqués
-  const filteredZeroStockProducts = useMemo(() => {
+    return filtered;
+  }, [
+    products, 
+    includeZeroStock, 
+    showNewProductsOnly, 
+    importInfo,
+    debouncedSearchTerm,
+    selectedManufacturers,
+    selectedAppearances,
+    selectedColors,
+    selectedBoxedOptions,
+    selectedAdditionalInfo,
+    priceMin,
+    priceMax,
+    quantityMin,
+    quantityMax,
+    showStandardCapacityOnly,
+    sortField,
+    sortDirection,
+    getStandardCapacities
+  ]);
+
+      // Calculer les statistiques des produits en rupture de stock (quantité 0)
+  const filteredOutOfStockProducts = useMemo(() => {
     return products.filter(product => {
       // Appliquer tous les filtres sauf le filtre de stock
-      const matchesSearch = !searchTerm || 
-        product.product_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        product.sku.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesSearch = !debouncedSearchTerm || 
+        product.product_name.toLowerCase().includes(debouncedSearchTerm.toLowerCase()) ||
+        product.sku.toLowerCase().includes(debouncedSearchTerm.toLowerCase());
       
       const matchesManufacturer = selectedManufacturers.length === 0 || 
         productContainsManufacturer(product.product_name, selectedManufacturers);
       
       const matchesAppearance = selectedAppearances.length === 0 || 
-        selectedAppearances.includes(product.appearance);
+        selectedAppearances.some(selectedApp => {
+          // Convertir la valeur française sélectionnée vers l'anglais pour comparer avec la DB
+          const englishValue = frenchToEnglishValue(selectedApp, 'appearance');
+          return product.appearance === englishValue || product.appearance === selectedApp;
+        });
       
-      const matchesFunctionality = selectedFunctionalities.length === 0 || 
-        selectedFunctionalities.includes(product.functionality);
-      
-      const matchesColor = selectedColors.length === 0 || 
+      const matchesColor = selectedColors.length === 0 ||
         selectedColors.includes(product.color);
       
       const matchesBoxed = selectedBoxedOptions.length === 0 || 
-        selectedBoxedOptions.includes(product.boxed);
+        selectedBoxedOptions.some(selectedBoxed => {
+          // Convertir la valeur française sélectionnée vers l'anglais pour comparer avec la DB
+          const englishValue = frenchToEnglishValue(selectedBoxed, 'boxed');
+          return product.boxed === englishValue || product.boxed === selectedBoxed;
+        });
       
       const matchesAdditionalInfo = selectedAdditionalInfo.length === 0 || 
         (product.additional_info && selectedAdditionalInfo.includes(product.additional_info));
@@ -923,15 +1250,15 @@ function AdminCatalogPage() {
       const matchesPriceMin = !priceMin || product.price_dbc >= parseFloat(priceMin);
       const matchesPriceMax = !priceMax || product.price_dbc <= parseFloat(priceMax);
       
-      // Inclure seulement les produits à quantité 0 qui matchent les autres filtres
-      const isZeroStock = product.quantity === 0;
+      // Vérifier si ce produit est en rupture de stock (quantité 0)
+      const isOutOfStock = product.quantity === 0;
       const matchesQuantityMax = !quantityMax || product.quantity <= parseInt(quantityMax);
       
-      return isZeroStock && matchesSearch && matchesManufacturer && matchesAppearance && 
-             matchesFunctionality && matchesColor && matchesBoxed &&
+      return isOutOfStock && matchesSearch && matchesManufacturer && matchesAppearance && 
+             matchesColor && matchesBoxed &&
              matchesAdditionalInfo && matchesPriceMin && matchesPriceMax && matchesQuantityMax;
     });
-  }, [searchTerm, selectedManufacturers, selectedAppearances, selectedFunctionalities, 
+  }, [debouncedSearchTerm, selectedManufacturers, selectedAppearances, 
       selectedColors, selectedBoxedOptions, selectedAdditionalInfo, priceMin, priceMax, 
       quantityMax, products]);
 
@@ -977,13 +1304,22 @@ function AdminCatalogPage() {
   };
 
   const handleMouseLeaveDropdown = (key: string) => {
+    // Augmenter le délai à 1000ms pour laisser le temps de faire les sélections
     const timeout = setTimeout(() => {
       setDropdownOpen(prev => ({
         ...prev,
         [key]: false
       }));
-    }, 200); // 200ms de délai
+    }, 1000); // 1 seconde au lieu de 200ms
     setCloseTimeout(timeout);
+  };
+
+  // Annuler la fermeture automatique quand on interagit avec le dropdown
+  const handleDropdownInteraction = () => {
+    if (closeTimeout) {
+      clearTimeout(closeTimeout);
+      setCloseTimeout(null);
+    }
   };
 
   // Fermer tous les dropdowns quand on clique ailleurs
@@ -1075,10 +1411,10 @@ function AdminCatalogPage() {
 
   const addToCartWithQuantity = async (sku: string, quantity: number, replace: boolean = false) => {
     
-    // Si pas de commande active, chercher d'abord s'il y a une commande brouillon existante
+    // Si pas de commande active, ouvrir la popup de création
     if (!currentDraftOrder) {
       
-      // Chercher une commande brouillon existante
+      // Chercher d'abord une commande brouillon existante
       const existingDrafts = Object.values(draftOrders).filter((order: any) => order.status === 'draft');
       
       if (existingDrafts.length > 0) {
@@ -1093,7 +1429,6 @@ function AdminCatalogPage() {
         // Continuer avec cette commande
         const currentQuantity = lastDraft.items?.[sku] || 0;
         const newQuantity = replace ? quantity : currentQuantity + quantity;
-        
         
         const newDraftOrders = {
           ...draftOrders,
@@ -1125,8 +1460,55 @@ function AdminCatalogPage() {
         if (response.ok) {
           const result = await response.json();
           if (result.draftOrders && result.draftOrders.length > 0) {
+            // Utiliser automatiquement la commande en brouillon la plus récente
             const existingDraft = result.draftOrders[0];
-            alert(`⚠️ Une commande en brouillon existe déjà: "${existingDraft.name}"\n\nVeuillez d'abord la supprimer ou la finaliser avant d'en créer une nouvelle.\n\nVous pouvez gérer vos commandes depuis la page "Commandes".`);
+            console.log('📋 Utilisation de la commande en brouillon existante:', existingDraft.name);
+            
+            // Charger cette commande comme commande active
+            setCurrentDraftOrder(existingDraft.id);
+            saveCurrentOrderToLocalStorage(existingDraft.id);
+            
+            // Synchroniser avec les données existantes
+            const syncedDraftOrders = { ...draftOrders };
+            syncedDraftOrders[existingDraft.id] = {
+              id: existingDraft.id,
+              name: existingDraft.name,
+              status: 'draft',
+              status_label: 'Brouillon',
+              createdAt: existingDraft.created_at,
+              items: existingDraft.items || {},
+              supabaseId: existingDraft.id,
+              source: 'supabase',
+              total_amount: existingDraft.total_amount,
+              total_items: existingDraft.total_items
+            };
+            
+            setDraftOrders(syncedDraftOrders);
+            setQuantities(existingDraft.items || {});
+            await saveDraftOrdersToLocalStorage(syncedDraftOrders);
+            
+            // Maintenant continuer avec l'ajout du produit
+            const currentQuantity = existingDraft.items?.[sku] || 0;
+            const newQuantity = replace ? quantity : currentQuantity + quantity;
+            
+            const updatedItems = {
+              ...existingDraft.items,
+              [sku]: newQuantity
+            };
+            
+            const updatedDraftOrders = {
+              ...syncedDraftOrders,
+              [existingDraft.id]: {
+                ...syncedDraftOrders[existingDraft.id],
+                items: updatedItems
+              }
+            };
+            
+            setDraftOrders(updatedDraftOrders);
+            setQuantities(prev => ({ ...prev, [sku]: newQuantity }));
+            setSelectedProducts(prev => ({ ...prev, [sku]: true }));
+            
+            await saveDraftOrdersToLocalStorage(updatedDraftOrders);
             return;
           }
         }
@@ -1135,15 +1517,24 @@ function AdminCatalogPage() {
         // Continuer en mode dégradé en cas d'erreur réseau
       }
       
-      // Si vraiment aucune commande brouillon, alors demander un nom
+      // Si aucune commande brouillon existante, ouvrir la popup de création
+      console.log('📋 Ouverture de la popup de création de commande');
+      
+      // Sauvegarder le produit à ajouter en attente
+      sessionStorage.setItem('pendingProduct', JSON.stringify({ sku, quantity }));
+      
+      // Marquer le produit comme sélectionné visuellement
+      setSelectedProducts(prev => ({ ...prev, [sku]: true }));
+      
+      // Ouvrir la popup
       setShowOrderNamePopup(true);
-      sessionStorage.setItem('pendingProduct', JSON.stringify({ sku, quantity, replace }));
+      
       return;
     }
 
+    // Si une commande existe déjà, ajouter le produit normalement
     const currentQuantity = draftOrders[currentDraftOrder]?.items?.[sku] || 0;
     const newQuantity = replace ? quantity : currentQuantity + quantity;
-    
     
     const newDraftOrders = {
       ...draftOrders,
@@ -1156,16 +1547,12 @@ function AdminCatalogPage() {
       }
     };
     
-    
     setDraftOrders(newDraftOrders);
     setQuantities(prev => ({ ...prev, [sku]: newQuantity }));
-    
-    // Mettre à jour visuellement la case cochée
     setSelectedProducts(prev => ({ ...prev, [sku]: true }));
     
-    // Sauvegarder avec sync Supabase
+    // Sauvegarder
     await saveDraftOrdersToLocalStorage(newDraftOrders);
-    
   };
 
   // Fonction pour sélectionner toute la quantité disponible (case à cocher)
@@ -1173,27 +1560,14 @@ function AdminCatalogPage() {
     await addToCartWithQuantity(sku, productQuantity, true); // Replace avec toute la quantité
   };
 
-  const createNewOrder = async () => {
-    // Protection contre les double-clics
-    if (creatingOrder) return;
+  const createAutomaticOrder = async () => {
+    // Création automatique de commande sans popup
+    if (creatingOrder) return null;
     setCreatingOrder(true);
     
-    const finalOrderName = orderName.trim() || `Commande ${new Date().toLocaleDateString('fr-FR')}`;
+    const finalOrderName = `Commande ${new Date().toLocaleDateString('fr-FR')} ${new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`;
     
     try {
-      
-      // Préparer les items de la commande en attente
-      const pendingProduct = sessionStorage.getItem('pendingProduct');
-      const initialItems: {[key: string]: number} = {};
-      
-      if (pendingProduct) {
-        const { sku, quantity } = JSON.parse(pendingProduct);
-        initialItems[sku] = quantity;
-      }
-
-      // Calculer les totaux initiaux
-      const totalItems = Object.values(initialItems).reduce((sum, qty) => sum + qty, 0);
-      
       // Appeler l'API pour créer la commande dans Supabase
       const response = await fetch('/api/orders/draft', {
         method: 'POST',
@@ -1202,75 +1576,49 @@ function AdminCatalogPage() {
         },
         body: JSON.stringify({
           name: finalOrderName,
-          items: initialItems,
-          totalItems: totalItems,
-          userId: selectedClientId // Ajouter l'ID du client sélectionné
+          items: {},
+          totalItems: 0,
+          userId: selectedClientId
         })
       });
 
       if (!response.ok) {
         const errorData = await response.json();
-        
-        // Si c'est une erreur 409 (commande brouillon existante), afficher un message spécifique
-        if (response.status === 409) {
-          const existingDraft = errorData.existingDraft;
-          alert(`⚠️ ${errorData.message}\n\nCommande existante: "${existingDraft.name}"\nCréée le: ${new Date(existingDraft.created_at).toLocaleDateString('fr-FR')}\n\nVous pouvez gérer vos commandes depuis la page "Commandes".`);
-          setShowOrderNamePopup(false);
-          setOrderName('');
-          sessionStorage.removeItem('pendingProduct');
-          setCreatingOrder(false);
-          return;
-        }
-        
         throw new Error(errorData.error || 'Erreur création commande');
       }
 
       const result = await response.json();
       const supabaseOrder = result.order;
-      
 
-      // Créer l'objet commande pour localStorage avec l'UUID Supabase
+      // Créer l'objet commande pour localStorage
       const newOrder = {
-        id: supabaseOrder.id, // Utiliser l'UUID Supabase
+        id: supabaseOrder.id,
         name: finalOrderName,
         status: 'draft',
         status_label: 'Brouillon',
         createdAt: supabaseOrder.created_at,
-        items: initialItems,
-        supabaseId: supabaseOrder.id, // Garder une référence explicite
-        source: 'manual'
+        items: {},
+        supabaseId: supabaseOrder.id,
+        source: 'auto'
       };
 
       const newDraftOrders = { ...draftOrders, [supabaseOrder.id]: newOrder };
       
       setDraftOrders(newDraftOrders);
       setCurrentDraftOrder(supabaseOrder.id);
-      setShowOrderNamePopup(false);
-      setOrderName('');
-      setSelectedClientId(null);
       
-      // Sauvegarder dans localStorage avec l'UUID Supabase
-      saveDraftOrdersToLocalStorage(newDraftOrders);
+      await saveDraftOrdersToLocalStorage(newDraftOrders);
       saveCurrentOrderToLocalStorage(supabaseOrder.id);
 
-      // Marquer les commandes comme obsolètes pour forcer le rechargement
       OrdersUtils.markOrdersAsStale();
-
-      // Traiter le produit en attente
-      if (pendingProduct) {
-        const { sku, quantity } = JSON.parse(pendingProduct);
-        
-        setQuantities(prev => ({ ...prev, [sku]: quantity }));
-        setSelectedProducts(prev => ({ ...prev, [sku]: true }));
-        sessionStorage.removeItem('pendingProduct');
-      }
-
+      
+      console.log('✅ Commande automatique créée avec ID:', supabaseOrder.id);
+      return { orderId: supabaseOrder.id, draftOrders: newDraftOrders };
       
     } catch (error) {
-      console.error('❌ Erreur création commande:', error);
-      alert(`Erreur lors de la création de la commande: ${error instanceof Error ? error.message : 'Erreur inconnue'}`);
+      console.error('❌ Erreur création commande automatique:', error);
       
-      // En cas d'erreur, revenir au mode localStorage uniquement
+      // Fallback localStorage
       const orderId = `DRAFT-${Date.now()}`;
       const newOrder = {
         id: orderId,
@@ -1279,32 +1627,19 @@ function AdminCatalogPage() {
         status_label: 'Brouillon',
         createdAt: new Date().toISOString(),
         items: {},
-        source: 'manual_fallback'
+        source: 'auto_fallback'
       };
 
       const newDraftOrders = { ...draftOrders, [orderId]: newOrder };
       
       setDraftOrders(newDraftOrders);
       setCurrentDraftOrder(orderId);
-      setShowOrderNamePopup(false);
-      setOrderName('');
       
-      saveDraftOrdersToLocalStorage(newDraftOrders);
+      await saveDraftOrdersToLocalStorage(newDraftOrders);
       saveCurrentOrderToLocalStorage(orderId);
-
-      // Traiter le produit en attente
-      const pendingProduct = sessionStorage.getItem('pendingProduct');
-      if (pendingProduct) {
-        const { sku, quantity } = JSON.parse(pendingProduct);
-        
-        newDraftOrders[orderId].items = { [sku]: quantity };
-        setDraftOrders(newDraftOrders);
-        setQuantities(prev => ({ ...prev, [sku]: quantity }));
-        setSelectedProducts(prev => ({ ...prev, [sku]: true }));
-        sessionStorage.removeItem('pendingProduct');
-        
-        saveDraftOrdersToLocalStorage(newDraftOrders);
-      }
+      
+      console.log('✅ Commande fallback créée avec ID:', orderId);
+      return { orderId, draftOrders: newDraftOrders };
     } finally {
       setCreatingOrder(false);
     }
@@ -1330,7 +1665,6 @@ function AdminCatalogPage() {
     setSearchTerm('');
     setSelectedManufacturers([]);
     setSelectedAppearances([]);
-    setSelectedFunctionalities([]);
     setSelectedColors([]);
     setSelectedBoxedOptions([]);
     setSelectedAdditionalInfo([]);
@@ -1362,29 +1696,74 @@ function AdminCatalogPage() {
     console.log('Toggle capacités standard:', !showStandardCapacityOnly);
   };
 
-  // Charger les SKU des nouveaux produits depuis localStorage
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const savedNewSKUs = localStorage.getItem('lastImportNewSKUs');
-      const savedImportDate = localStorage.getItem('lastImportDate');
+  // Calculer le nombre total de nouveaux produits (nouveaux SKU + passés de 0 à en stock)
+  const calculateNewProducts = async () => {
+    try {
+      // Récupérer les données depuis l'API route
+      const response = await fetch('/api/catalog/import-info');
+      const result = await response.json();
       
-      if (savedNewSKUs) {
-        try {
-          setNewProductsSKUs(JSON.parse(savedNewSKUs));
-        } catch (e) {
-          console.error('Erreur parsing nouveaux SKU:', e);
-        }
+      if (!response.ok) {
+        console.error('Erreur récupération import:', result.error);
+        setTotalNewProducts(0);
+        setNewProductsSKUs([]);
+        setLastImportDate(null);
+        return;
       }
+
+      if (!result.data) {
+        // Aucun import trouvé
+        setTotalNewProducts(0);
+        setNewProductsSKUs([]);
+        setLastImportDate(null);
+        return;
+      }
+
+      // Combiner les nouveaux SKU et les restockés
+      const allNewSKUs = [...(result.data.newSkus || []), ...(result.data.restockedSkus || [])];
       
-      if (savedImportDate) {
-        try {
-          setLastImportDate(new Date(savedImportDate));
-        } catch (e) {
-          console.error('Erreur parsing date import:', e);
-        }
-      }
+      setNewProductsSKUs(allNewSKUs);
+      setTotalNewProducts(result.data.totalNewProducts);
+      setLastImportDate(result.data.importDate ? new Date(result.data.importDate) : null);
+      
+      // Stocker toutes les informations d'import dans importInfo
+      setImportInfo({
+        importDate: result.data.importDate,
+        totalNewProducts: result.data.totalNewProducts,
+        newSkus: result.data.newSkus || [],
+        restockedSkus: result.data.restockedSkus || [],
+        missingSkus: result.data.missingSkus || [],
+        totalMissingProducts: result.data.totalMissingProducts || 0
+      });
+      
+      console.log('📊 Informations d\'import récupérées depuis l\'API:', {
+        newSKUs: result.data.newSkus?.length || 0,
+        restockedSKUs: result.data.restockedSkus?.length || 0,
+        missingSKUs: result.data.missingSkus?.length || 0,
+        totalNew: result.data.totalNewProducts,
+        totalMissing: result.data.totalMissingProducts,
+        date: result.data.importDate
+      });
+      
+    } catch (error) {
+      console.error('Erreur calcul nouveaux produits:', error);
+      setTotalNewProducts(0);
+      setNewProductsSKUs([]);
+      setLastImportDate(null);
     }
+  };
+
+  // Charger les données des nouveaux produits au montage
+  useEffect(() => {
+    calculateNewProducts();
   }, []);
+
+  // Recalculer quand les produits changent (après un import)
+  useEffect(() => {
+    if (products.length > 0) {
+      calculateNewProducts();
+    }
+  }, [products]);
 
   // Fonction d'export
   const exportCatalog = (format: 'xlsx' | 'csv') => {
@@ -1566,6 +1945,109 @@ function AdminCatalogPage() {
     }
   };
 
+  // Fonction pour obtenir le nom de la couleur en français
+  const getColorName = (color: string | null) => {
+    if (!color) return '';
+    
+    const colorLower = color.toLowerCase();
+    
+    switch (colorLower) {
+      case 'black':
+        return 'Noir';
+      case 'space black':
+        return 'Noir sidéral';
+      case 'space gray':
+        return 'Gris sidéral';
+      case 'white':
+        return 'Blanc';
+      case 'red':
+        return 'Rouge';
+      case 'product red':
+        return 'Rouge';
+      case 'blue':
+        return 'Bleu';
+      case 'pacific blue':
+        return 'Bleu Pacifique';
+      case 'sierra blue':
+        return 'Bleu Sierra';
+      case 'bleu intense':
+        return 'Bleu intense';
+      case 'alpine blue':
+      case 'bleu alpine':
+        return 'Bleu Alpine';
+      case 'green':
+        return 'Vert';
+      case 'alpine green':
+      case 'vert alpine':
+        return 'Vert alpin';
+      case 'midnight green':
+      case 'vert nuit':
+        return 'Vert nuit';
+      case 'yellow':
+      case 'jaune':
+        return 'Jaune';
+      case 'purple':
+        return 'Violet';
+      case 'deep purple':
+      case 'violet intense':
+        return 'Violet intense';
+      case 'pink':
+      case 'rose':
+        return 'Rose';
+      case 'rose gold':
+      case 'or rose':
+        return 'Or rose';
+      case 'orange':
+        return 'Orange';
+      case 'gray':
+      case 'grey':
+      case 'gris':
+        return 'Gris';
+      case 'silver':
+      case 'argent':
+        return 'Argent';
+      case 'gold':
+      case 'or':
+        return 'Or';
+      case 'coral':
+      case 'corail':
+        return 'Corail';
+      case 'midnight':
+      case 'minuit':
+        return 'Minuit';
+      case 'graphite':
+        return 'Graphite';
+      case 'starlight':
+      case 'lumière stellaire':
+        return 'Lumière stellaire';
+      case 'mauve':
+        return 'Mauve';
+      case 'titan blue':
+      case 'titane bleu':
+        return 'Titane Bleu';
+      case 'teal':
+      case 'sarcelle':
+        return 'Sarcelle';
+      case 'ultramarine':
+      case 'outremer':
+        return 'Outremer';
+      case 'titan sand':
+      case 'titane sable':
+        return 'Titane sable';
+      case 'titan white':
+      case 'titane blanc':
+        return 'Titane blanc';
+      case 'titan black':
+      case 'titane noir':
+        return 'Titane noir';
+      case 'titan natural':
+      case 'titane naturel':
+        return 'Titane naturel';
+      default:
+        return color; // Retourne la couleur originale si pas de traduction
+    }
+  };
+
   // Fonction pour forcer une resynchronisation en cas d'incohérence
   const forceResync = async () => {
     console.log('🔄 Resynchronisation forcée...');
@@ -1689,16 +2171,9 @@ function AdminCatalogPage() {
           {shortenProductName(product.product_name)}
         </h3>
 
-        {/* Ligne avec Working/Grade, Additional Info et Couleur */}
+        {/* Ligne avec Grade, Additional Info et Couleur */}
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2 flex-wrap">
-            {/* Fonctionnalité */}
-            <span className={`text-sm font-medium ${
-              product.functionality === 'Working' ? 'text-green-600' : 'text-amber-600'
-            }`}>
-              {product.functionality === 'Working' ? 'Working' : 'Minor Fault'}
-            </span>
-            
             {/* Grade */}
             <span className={`text-sm font-medium px-1 py-0.5 rounded ${
               product.appearance.includes('A+') ? 'bg-green-100 text-green-800' :
@@ -1706,132 +2181,349 @@ function AdminCatalogPage() {
               product.appearance.includes('B') ? 'bg-yellow-100 text-yellow-800' :
               'bg-orange-100 text-orange-800'
             }`}>
-              {product.appearance.replace('Grade ', '')}
+              {getDisplayAppearance(product.appearance, product.functionality).replace('Grade ', '')}
             </span>
 
-            {/* Additional Info */}
-            {product.additional_info && (
-              <span className="text-xs px-1 py-0.5 bg-gray-100 text-gray-700 rounded border">
-                {product.additional_info}
-              </span>
+            {/* Additional Info et Couleur côte à côte */}
+            <div className="flex items-center gap-2">
+              {/* Additional Info */}
+              {product.additional_info && (
+                <span className="text-xs px-1 py-0.5 bg-purple-100 text-purple-800 rounded font-medium">
+                  {translateCatalogTerm('additional_info', product.additional_info)}
+                </span>
+              )}
+
+              {/* Couleur - Pastille colorée avec nom */}
+              {product.color && product.color.trim() !== '' && (
+                <div className="flex items-center gap-1.5 bg-gray-100 px-1.5 py-0.5 rounded-full">
+                  <div className={`w-3 h-3 rounded-full border ${getColorClass(product.color)}`}></div>
+                  <span className="text-xs text-gray-700">{getColorName(product.color)}</span>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Prix et contrôles de quantité optimisés B2B Admin */}
+        <div className="flex items-center justify-between gap-3">
+          {/* Prix avec stock */}
+          <div className="flex-1">
+            <div className="text-lg font-bold text-gray-900">
+              {product.supplier_price ? (
+                <span>
+                  <span className="text-sm text-gray-600">{product.supplier_price.toFixed(2)}€</span>
+                  <span className="text-gray-400 mx-1">-</span>
+                  {product.price_dbc.toFixed(2)}€
+                </span>
+              ) : (
+                <span>{product.price_dbc.toFixed(2)}€</span>
+              )}
+            </div>
+            <div className="text-xs text-gray-500">
+              Stock: {product.quantity}
+            </div>
+          </div>
+
+          {/* Contrôles de quantité ultra-compacts et tactiles */}
+          <div className="flex items-center gap-1.5">
+            {/* Bouton décrémenter */}
+            {quantityInCart > 0 && (
+              <button
+                onClick={async (e) => {
+                  e.stopPropagation();
+                  await decrementQuantity(product.sku);
+                }}
+                className="w-8 h-8 flex items-center justify-center bg-red-100 text-red-600 rounded-full hover:bg-red-200 active:scale-95 transition-all touch-manipulation"
+              >
+                <Minus className="h-3 w-3" />
+              </button>
             )}
-          </div>
-
-          {/* Couleur à droite */}
-          {product.color && (
-            <div className={`w-8 h-4 rounded border-2 border-gray-300 ${getColorClass(product.color)}`} title={product.color} />
-          )}
-        </div>
-
-        {/* Prix en bas, centré, juste au-dessus de la quantité */}
-        <div className="text-center mb-2">
-          <div className="text-sm font-bold text-gray-900">
-            {product.price_dbc.toFixed(2)}€
-          </div>
-        </div>
-
-        {/* Contrôles de quantité ultra-compacts */}
-        <div className="flex items-center gap-1">
-          <button
-            onClick={async () => await decrementQuantity(product.sku)}
-            disabled={!quantityInCart || quantityInCart === 0}
-            className={`p-1 rounded text-xs ${
-              !quantityInCart || quantityInCart === 0
-                ? 'bg-gray-100 text-gray-400 cursor-not-allowed' 
-                : 'bg-red-500 text-white hover:bg-red-600'
-            }`}
-          >
-            <Minus className="h-3 w-3" />
-          </button>
-          
-          <div className="flex-1 relative">
-            <input
-              type="number"
-              min="0"
-              max={product.quantity}
-              value={quantityInCart || ''}
-              onChange={async (e) => {
-                const newValue = e.target.value;
-                const numValue = parseInt(newValue);
-                
-                if (newValue === '' || (numValue >= 0 && numValue <= product.quantity)) {
-                  await updateQuantity(product.sku, newValue);
-                }
+            
+            {/* Input quantité compact - Clavier numérique mobile */}
+            <div className="relative">
+              <input
+                type="tel"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                autoComplete="off"
+                enterKeyHint="done"
+                min="0"
+                max={product.quantity}
+                value={quantityInCart || ''}
+                onChange={async (e) => {
+                  const rawValue = e.target.value;
+                  
+                  // Nettoyer la valeur - seulement les chiffres
+                  const cleanValue = rawValue.replace(/[^0-9]/g, '');
+                  
+                  const numValue = parseInt(cleanValue) || 0;
+                  
+                  // Vérifier les limites de stock
+                  if (cleanValue && numValue > product.quantity) {
+                    e.target.value = product.quantity.toString();
+                    await addToCartWithQuantity(product.sku, product.quantity, true);
+                    return;
+                  }
+                  
+                  // Si on saisit une quantité, utiliser addToCartWithQuantity pour déclencher la popup si nécessaire
+                  if (cleanValue && numValue > 0) {
+                    await addToCartWithQuantity(product.sku, numValue, true);
+                  } else {
+                    // Si on efface (quantité 0), juste mettre à jour
+                    await updateQuantity(product.sku, cleanValue);
+                  }
+                }}
+                                 onPointerDown={(e) => {
+                   // Empêcher la propagation vers la carte parent
+                   e.stopPropagation();
+                   
+                   const input = e.target as HTMLInputElement;
+                   
+                   // Forcer le focus avec le clavier numérique
+                   setTimeout(() => {
+                     input.focus();
+                     input.select();
+                     
+                     // Sur mobile, déclencher un clic virtuel pour s'assurer que le clavier apparaît
+                     if (e.pointerType === 'touch') {
+                       // Forcer l'événement de focus
+                       const focusEvent = new FocusEvent('focus', { bubbles: true });
+                       input.dispatchEvent(focusEvent);
+                     }
+                   }, 10);
+                 }}
+                 onFocus={(e) => {
+                   e.target.select();
+                 }}
+                placeholder="0"
+                className={`w-12 h-8 text-center text-sm font-medium border rounded-lg focus:outline-none focus:ring-2 focus:ring-dbc-light-green ${
+                  isHighlighted 
+                    ? 'border-dbc-light-green bg-green-50 text-green-700' 
+                    : 'border-gray-300 bg-white text-gray-900'
+                }`}
+                style={{ 
+                  WebkitAppearance: 'none',
+                  MozAppearance: 'textfield'
+                }}
+              />
+            </div>
+            
+            {/* Bouton ajouter principal */}
+            <button
+              onClick={async (e) => {
+                e.stopPropagation();
+                await addToCart(product.sku);
               }}
-              placeholder="0"
-              className={`w-full px-1 py-1 pr-6 text-xs text-center border rounded focus:outline-none focus:ring-1 focus:ring-dbc-light-green ${
-                isHighlighted ? 'border-dbc-light-green bg-green-50' : 'border-gray-300'
+              disabled={quantityInCart >= product.quantity}
+              className={`w-8 h-8 flex items-center justify-center rounded-full transition-all touch-manipulation ${
+                quantityInCart >= product.quantity 
+                  ? 'bg-gray-200 text-gray-400 cursor-not-allowed' 
+                  : 'bg-gradient-to-r from-dbc-bright-green to-emerald-400 text-white hover:from-emerald-400 hover:to-emerald-500 active:scale-95 shadow-md'
               }`}
-            />
-            <span className="absolute right-1 top-1/2 transform -translate-y-1/2 text-xs text-gray-500">
-              /{product.quantity}
-            </span>
+            >
+              <Plus className="h-3 w-3" />
+            </button>
           </div>
-          
-          <button
-            onClick={async () => await addToCart(product.sku)}
-            disabled={quantityInCart >= product.quantity}
-            className={`p-1 rounded text-xs transition-all duration-200 ${
-              quantityInCart >= product.quantity 
-                ? 'bg-gray-400 cursor-not-allowed text-white' 
-                : 'bg-gradient-to-r from-dbc-bright-green to-emerald-400 hover:from-emerald-300 hover:to-emerald-500 text-dbc-dark-green hover:text-white'
-            }`}
-          >
-            <Plus className="h-3 w-3" />
-          </button>
         </div>
+
+
       </div>
     );
   };
 
-  // Ajout du bouton de debug en haut de la page
-  <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
-    <h3 className="text-lg font-semibold text-red-800 mb-2">
-      🚨 Debug Import (Temporaire)
-    </h3>
-    <p className="text-red-700 mb-4">
-      Si l'import normal échoue, utilisez ce bouton pour diagnostiquer le problème :
-    </p>
-    <button
-      onClick={() => {
-        const input = document.createElement('input');
-        input.type = 'file';
-        input.accept = '.xlsx,.xls';
-        input.onchange = async (e) => {
-          const file = (e.target as HTMLInputElement).files?.[0];
-          if (!file) return;
-          
-          const formData = new FormData();
-          formData.append('catalog', file);
-          
-          try {
-            console.log('🔧 Démarrage diagnostic...');
-            const response = await fetch('/api/debug-catalog', {
-              method: 'POST',
-              body: formData,
-            });
-            
-            const result = await response.json();
-            console.log('📊 Résultat diagnostic:', result);
-            
-            // Afficher les résultats dans une alerte
-            if (result.success) {
-              alert('✅ Diagnostic réussi ! Vérifiez la console pour les détails.');
-            } else {
-              alert(`❌ Diagnostic échoué: ${result.error}\n\nVérifiez la console pour plus de détails.`);
-            }
-          } catch (error) {
-            console.error('Erreur diagnostic:', error);
-            alert('❌ Erreur lors du diagnostic. Vérifiez la console.');
+
+
+  const createNewOrder = async () => {
+    // Protection contre les double-clics
+    if (creatingOrder) return;
+    setCreatingOrder(true);
+    
+    const finalOrderName = orderName.trim() || `Commande ${new Date().toLocaleDateString('fr-FR')}`;
+    
+    try {
+      
+      // Préparer les items de la commande en attente
+      const pendingProduct = sessionStorage.getItem('pendingProduct');
+      const initialItems: {[key: string]: number} = {};
+      
+      if (pendingProduct) {
+        const { sku, quantity } = JSON.parse(pendingProduct);
+        initialItems[sku] = quantity;
+      }
+
+      // Calculer les totaux initiaux
+      const totalItems = Object.values(initialItems).reduce((sum, qty) => sum + qty, 0);
+      
+      // Appeler l'API pour créer la commande dans Supabase
+      const response = await fetch('/api/orders/draft', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          name: finalOrderName,
+          items: initialItems,
+          totalItems: totalItems,
+          userId: selectedClientId // Ajouter l'ID du client sélectionné
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        
+        // Si c'est une erreur 409 (commande brouillon existante), afficher un message spécifique
+        if (response.status === 409) {
+          const existingDraft = errorData.existingDraft;
+          alert(`⚠️ ${errorData.message}\n\nCommande existante: "${existingDraft.name}"\nCréée le: ${new Date(existingDraft.created_at).toLocaleDateString('fr-FR')}\n\nVous pouvez gérer vos commandes depuis la page "Commandes".`);
+          setShowOrderNamePopup(false);
+          setOrderName('');
+          sessionStorage.removeItem('pendingProduct');
+          setCreatingOrder(false);
+          return;
+        }
+        
+        throw new Error(errorData.error || 'Erreur création commande');
+      }
+
+      const result = await response.json();
+      const supabaseOrder = result.order;
+      
+
+      // Créer l'objet commande pour localStorage avec l'UUID Supabase
+      const newOrder = {
+        id: supabaseOrder.id, // Utiliser l'UUID Supabase
+        name: finalOrderName,
+        status: 'draft',
+        status_label: 'Brouillon',
+        createdAt: supabaseOrder.created_at,
+        items: initialItems,
+        supabaseId: supabaseOrder.id, // Garder une référence explicite
+        source: 'manual'
+      };
+
+      const newDraftOrders = { ...draftOrders, [supabaseOrder.id]: newOrder };
+      
+      setDraftOrders(newDraftOrders);
+      setCurrentDraftOrder(supabaseOrder.id);
+      
+      await saveDraftOrdersToLocalStorage(newDraftOrders);
+      saveCurrentOrderToLocalStorage(supabaseOrder.id);
+
+      // Marquer les commandes comme obsolètes pour forcer le rechargement
+      OrdersUtils.markOrdersAsStale();
+
+      // Traiter le produit en attente
+      if (pendingProduct) {
+        const { sku, quantity } = JSON.parse(pendingProduct);
+        
+        setQuantities(prev => ({ ...prev, [sku]: quantity }));
+        setSelectedProducts(prev => ({ ...prev, [sku]: true }));
+        sessionStorage.removeItem('pendingProduct');
+      }
+
+      
+    } catch (error) {
+      console.error('❌ Erreur création commande:', error);
+      alert(`Erreur lors de la création de la commande: ${error instanceof Error ? error.message : 'Erreur inconnue'}`);
+      
+      // En cas d'erreur, revenir au mode localStorage uniquement
+      const orderId = `DRAFT-${Date.now()}`;
+      const newOrder = {
+        id: orderId,
+        name: finalOrderName,
+        status: 'draft',
+        status_label: 'Brouillon',
+        createdAt: new Date().toISOString(),
+        items: {},
+        source: 'manual_fallback'
+      };
+
+      const newDraftOrders = { ...draftOrders, [orderId]: newOrder };
+      
+      setDraftOrders(newDraftOrders);
+      setCurrentDraftOrder(orderId);
+      setShowOrderNamePopup(false);
+      setOrderName('');
+      
+      saveDraftOrdersToLocalStorage(newDraftOrders);
+      saveCurrentOrderToLocalStorage(orderId);
+
+      // Traiter le produit en attente
+      const pendingProduct = sessionStorage.getItem('pendingProduct');
+      if (pendingProduct) {
+        const { sku, quantity } = JSON.parse(pendingProduct);
+        
+        newDraftOrders[orderId].items = { [sku]: quantity };
+        setDraftOrders(newDraftOrders);
+        setQuantities(prev => ({ ...prev, [sku]: quantity }));
+        setSelectedProducts(prev => ({ ...prev, [sku]: true }));
+        sessionStorage.removeItem('pendingProduct');
+        
+        saveDraftOrdersToLocalStorage(newDraftOrders);
+      }
+    } finally {
+      setCreatingOrder(false);
+    }
+  };
+
+  // Charger les informations d'import au chargement
+  useEffect(() => {
+    const loadImportInfo = async () => {
+      try {
+        const response = await fetch('/api/catalog/import-info');
+        if (response.ok) {
+          const result = await response.json();
+          if (result.data) {
+            setImportInfo(result.data);
+          } else {
+            // Pas de données d'import, essayer une estimation basée sur les produits récents
+            console.log('Aucune donnée d\'import trouvée, utilisation d\'une estimation temporaire');
           }
-        };
-        input.click();
-      }}
-      className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-red-600 hover:bg-red-700"
-    >
-      🔧 Diagnostic Import
-    </button>
-  </div>
+        } else {
+          console.error('Erreur chargement import info:', response.status);
+          // Utiliser une estimation temporaire en cas d'erreur
+        }
+      } catch (error) {
+        console.error('Erreur chargement import info:', error);
+      }
+    };
+
+    if (products.length > 0) {
+      loadImportInfo();
+    }
+  }, [products.length]);
+
+  // Fonction temporaire pour estimer les nouveaux produits
+  const estimateNewProducts = () => {
+    if (!products.length) return 0;
+    
+    // Heuristique simple : compter les produits avec des IDs élevés (nouvellement ajoutés)
+    // En attendant que la table catalog_imports soit créée
+    const totalProducts = products.length;
+    const activeProducts = products.filter(p => p.quantity > 0).length;
+    
+    // Si on a beaucoup de produits actifs, on estime qu'environ 5% sont nouveaux
+    // C'est une estimation temporaire jusqu'à ce que la vraie logique soit en place
+    const estimatedNew = Math.min(Math.floor(activeProducts * 0.05), 50);
+    
+    return estimatedNew;
+  };
+
+  const getDisplayAppearance = (appearance: string, functionality: string) => {
+    if (functionality === 'Minor Fault') {
+      // Ajouter 'x' minuscule après le grade pour les Minor Fault
+      // Grade C → Grade Cx, Grade BC → Grade BCx, Grade C+ → Grade Cx+
+      const gradeMatch = appearance.match(/^(Grade [A-Z]+)(\+?)/i);
+      if (gradeMatch) {
+        const grade = gradeMatch[1]; // "Grade C"
+        const plus = gradeMatch[2] || ''; // "+" ou ""
+        const rest = appearance.substring(grade.length + plus.length).trim();
+        return rest ? `${grade}x${plus} ${rest}` : `${grade}x${plus}`;
+      }
+    }
+    // Pour Working ou si pas de grade détecté, retourner tel quel
+    return appearance;
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-gray-50 to-emerald-50">
@@ -1900,45 +2592,76 @@ function AdminCatalogPage() {
 
       {/* Conteneur principal avec plus d'espace et centrage */}
       <div className="max-w-[2000px] mx-auto px-4 py-6">
-        {/* Barre d'outils principale */}
-        <div className="bg-white rounded-lg shadow-sm border p-4 md:p-6 mb-6">
-          {/* Recherche et actions */}
-          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-6">
-            <div className="flex-1 max-w-full lg:max-w-md">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
-                <input
-                  type="text"
-                  placeholder="Rechercher par nom, SKU..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-dbc-light-green focus:border-transparent text-gray-900"
-                />
+        {/* Barre d'outils principale - Design épuré et élégant */}
+        <div className="bg-gradient-to-r from-slate-50 via-blue-50 to-slate-50 rounded-2xl p-6 mb-8 shadow-sm border border-gray-100">
+          {/* Ligne 1: Recherche centrée */}
+          <div className="mb-8">
+            <div className="relative max-w-3xl mx-auto">
+              <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                <Search className="h-5 w-5 text-gray-400" />
               </div>
+              <input
+                type="text"
+                placeholder="Rechercher par nom, SKU... (ex: iPhone 15 Pro Max)"
+                value={searchTerm}
+                onChange={(e) => handleSearchChange(e.target.value)}
+                onFocus={() => {
+                  if (searchSuggestions.length > 0) {
+                    setShowSuggestions(true);
+                  }
+                }}
+                onBlur={() => {
+                  // Délai pour permettre le clic sur une suggestion
+                  setTimeout(() => setShowSuggestions(false), 200);
+                }}
+                className="block w-full pl-12 pr-6 py-4 text-base border border-gray-200 rounded-2xl bg-white bg-opacity-80 backdrop-blur-sm focus:ring-2 focus:ring-dbc-light-green focus:border-transparent placeholder-gray-500 shadow-sm transition-all duration-200"
+              />
+              
+              {/* Dropdown des suggestions */}
+              {showSuggestions && searchSuggestions.length > 0 && (
+                <div className="absolute z-30 w-full mt-2 bg-white border border-gray-200 rounded-xl shadow-lg max-h-60 overflow-y-auto">
+                  {searchSuggestions.map((suggestion, index) => (
+                    <button
+                      key={index}
+                      type="button"
+                      onClick={() => selectSuggestion(suggestion)}
+                      className="w-full text-left px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 hover:text-gray-900 focus:bg-gray-50 focus:outline-none first:rounded-t-xl last:rounded-b-xl transition-colors"
+                    >
+                      <Search className="inline h-4 w-4 text-gray-400 mr-3" />
+                      {suggestion}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
-            
-            <div className="flex items-center justify-between lg:justify-start gap-2 lg:gap-3 flex-wrap">
-              {/* Bouton filtres mobile */}
+          </div>
+
+          {/* Ligne 2: Actions principales - Centré et espacé */}
+          <div className="flex flex-wrap items-center justify-center gap-6 mb-8">
+            {/* Groupe Filtres + Reset */}
+            <div className="flex items-center gap-3 bg-white bg-opacity-60 backdrop-blur-sm rounded-2xl p-3 shadow-sm border border-white border-opacity-40">
               <button
                 onClick={() => setShowMobileFilters(!showMobileFilters)}
-                className="lg:hidden px-4 py-2 bg-white bg-opacity-80 backdrop-blur-sm border border-white border-opacity-30 rounded-xl hover:bg-opacity-90 hover:shadow-lg text-sm text-gray-700 transition-all duration-200 shadow-md flex items-center gap-2"
+                className="lg:hidden px-5 py-3 bg-white bg-opacity-90 backdrop-blur-sm border border-gray-200 rounded-xl hover:bg-opacity-100 hover:shadow-md text-sm text-gray-700 transition-all duration-200 flex items-center gap-2.5"
               >
                 <Filter className="h-4 w-4" />
-                Filtres
+                <span>Filtres</span>
                 {showMobileFilters ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
               </button>
               
               <button
                 onClick={resetFilters}
-                className="px-4 py-2 bg-white bg-opacity-80 backdrop-blur-sm border border-white border-opacity-30 rounded-xl hover:bg-opacity-90 hover:shadow-lg text-sm text-gray-700 transition-all duration-200 shadow-md"
+                className="px-5 py-3 bg-white bg-opacity-90 backdrop-blur-sm border border-gray-200 rounded-xl hover:bg-opacity-100 hover:shadow-md text-sm text-gray-700 transition-all duration-200 flex items-center gap-2.5"
               >
-                <span className="hidden sm:inline">Réinitialiser</span>
-                <span className="sm:hidden">Reset</span>
+                <span>🔄</span>
+                <span>Reset filtres</span>
               </button>
-              
+            </div>
+
+            {/* Groupe Import + Export */}
+            <div className="flex items-center gap-3 bg-white bg-opacity-60 backdrop-blur-sm rounded-2xl p-3 shadow-sm border border-white border-opacity-40">
               <ImportTools />
               
-              {/* Dropdown Export Catalogue */}
               <div className="relative dropdown-container">
                 <button
                   onClick={(e) => {
@@ -1946,25 +2669,25 @@ function AdminCatalogPage() {
                     e.stopPropagation();
                     toggleDropdown('export');
                   }}
-                  className="flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-dbc-bright-green to-emerald-400 text-dbc-dark-green rounded-xl hover:from-emerald-300 hover:to-emerald-500 hover:text-white transition-all duration-200 text-sm font-semibold shadow-lg backdrop-blur-sm"
+                  className="px-5 py-3 bg-white bg-opacity-90 backdrop-blur-sm border border-gray-200 rounded-xl hover:bg-opacity-100 hover:shadow-md text-sm text-gray-700 transition-all duration-200 flex items-center gap-2.5"
                 >
-                  <FileSpreadsheet className="h-4 w-4" />
-                  <span className="hidden sm:inline">Export Catalogue</span>
-                  <span className="sm:hidden">Export</span>
+                  <Download className="h-4 w-4" />
+                  <span>Export</span>
                   <ChevronDown className="h-4 w-4" />
                 </button>
                 
                 {dropdownOpen.export && (
-                  <div className="absolute right-0 mt-1 w-48 bg-white border border-gray-300 rounded-lg shadow-lg z-50">
+                  <div className="absolute right-0 mt-2 w-52 bg-white border border-gray-200 rounded-xl shadow-lg z-50">
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
                         exportCatalog('xlsx');
                         setDropdownOpen(prev => ({ ...prev, export: false }));
                       }}
-                      className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-t-lg"
+                      className="w-full text-left px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 rounded-t-xl flex items-center gap-3 transition-colors"
                     >
-                      📊 Format Excel (.xlsx)
+                      <FileSpreadsheet className="h-4 w-4 text-green-600" />
+                      <span>Format Excel (.xlsx)</span>
                     </button>
                     <button
                       onClick={(e) => {
@@ -1972,9 +2695,10 @@ function AdminCatalogPage() {
                         exportCatalog('csv');
                         setDropdownOpen(prev => ({ ...prev, export: false }));
                       }}
-                      className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-b-lg"
+                      className="w-full text-left px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 rounded-b-xl flex items-center gap-3 transition-colors"
                     >
-                      📄 Format CSV UTF-8
+                      <span className="text-blue-600">📄</span>
+                      <span>Format CSV UTF-8</span>
                     </button>
                   </div>
                 )}
@@ -1982,159 +2706,79 @@ function AdminCatalogPage() {
             </div>
           </div>
 
-          {/* Pagination en haut */}
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6 pb-4 border-b border-gray-200">
-            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
-              <div className="text-sm text-gray-700">
-                <span className="font-semibold text-lg">{filteredAndSortedProducts.length.toLocaleString('fr-FR')}</span> produits affichés
-                {totalProductsCount && filteredAndSortedProducts.length !== totalProductsCount && (
-                  <span className="text-gray-500 block sm:inline">
-                    {' '}(filtrés sur <span className="font-medium">{totalProductsCount.toLocaleString('fr-FR')}</span> total)
-                  </span>
-                )}
-              </div>
-              <select
-                value={itemsPerPage}
-                onChange={(e) => {
-                  setItemsPerPage(Number(e.target.value));
-                  setCurrentPage(1);
-                }}
-                className="text-sm border border-gray-300 rounded px-2 py-1 text-gray-900 w-full sm:w-auto"
-              >
-                <option value={50}>50 par page</option>
-                <option value={100}>100 par page</option>
-                <option value={250}>250 par page</option>
-                <option value={500}>500 par page</option>
-              </select>
-            </div>
-            
-            {/* Navigation des pages - version responsive */}
-            {totalPages > 1 && (
-              <div className="flex items-center justify-center sm:justify-end gap-1 sm:gap-2">
-                {/* Version mobile simplifiée */}
-                <div className="flex sm:hidden items-center gap-2">
-                  <button
-                    onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                    disabled={currentPage === 1}
-                    className="p-2 text-sm bg-white bg-opacity-80 backdrop-blur-sm border border-white border-opacity-30 rounded-lg disabled:bg-opacity-50 disabled:text-gray-400 text-gray-700 hover:bg-opacity-90 hover:shadow-md transition-all duration-200 shadow-sm"
-                  >
-                    <ChevronLeft className="h-4 w-4" />
-                  </button>
-                  <span className="px-3 py-1 text-sm text-gray-700 bg-white bg-opacity-60 backdrop-blur-sm rounded-lg border border-white border-opacity-20 shadow-sm">
-                    {currentPage} / {totalPages}
-                  </span>
-                  <button
-                    onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                    disabled={currentPage === totalPages}
-                    className="p-2 text-sm bg-white bg-opacity-80 backdrop-blur-sm border border-white border-opacity-30 rounded-lg disabled:bg-opacity-50 disabled:text-gray-400 text-gray-700 hover:bg-opacity-90 hover:shadow-md transition-all duration-200 shadow-sm"
-                  >
-                    <ChevronRight className="h-4 w-4" />
-                  </button>
-                </div>
-                
-                {/* Version desktop complète */}
-                <div className="hidden sm:flex items-center gap-2">
-                  <button
-                    onClick={() => setCurrentPage(1)}
-                    disabled={currentPage === 1}
-                    className="px-3 py-1 text-sm bg-white bg-opacity-80 backdrop-blur-sm border border-white border-opacity-30 rounded-lg disabled:bg-opacity-50 disabled:text-gray-400 text-gray-700 hover:bg-opacity-90 hover:shadow-md transition-all duration-200 shadow-sm"
-                  >
-                    Premier
-                  </button>
-                  <button
-                    onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                    disabled={currentPage === 1}
-                    className="px-3 py-1 text-sm bg-white bg-opacity-80 backdrop-blur-sm border border-white border-opacity-30 rounded-lg disabled:bg-opacity-50 disabled:text-gray-400 text-gray-700 hover:bg-opacity-90 hover:shadow-md transition-all duration-200 shadow-sm"
-                  >
-                    ←
-                  </button>
-                  <span className="px-3 py-1 text-sm text-gray-700 bg-white bg-opacity-60 backdrop-blur-sm rounded-lg border border-white border-opacity-20 shadow-sm">
-                    Page {currentPage} sur {totalPages}
-                  </span>
-                  <button
-                    onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                    disabled={currentPage === totalPages}
-                    className="px-3 py-1 text-sm bg-white bg-opacity-80 backdrop-blur-sm border border-white border-opacity-30 rounded-lg disabled:bg-opacity-50 disabled:text-gray-400 text-gray-700 hover:bg-opacity-90 hover:shadow-md transition-all duration-200 shadow-sm"
-                  >
-                    →
-                  </button>
-                  <button
-                    onClick={() => setCurrentPage(totalPages)}
-                    disabled={currentPage === totalPages}
-                    className="px-3 py-1 text-sm bg-white bg-opacity-80 backdrop-blur-sm border border-white border-opacity-30 rounded-lg disabled:bg-opacity-50 disabled:text-gray-400 text-gray-700 hover:bg-opacity-90 hover:shadow-md transition-all duration-200 shadow-sm"
-                  >
-                    Dernier
-                  </button>
+          {/* Ligne 3: Filtres spécialisés - Version compacte */}
+          <div className="flex flex-wrap items-center justify-center gap-3 max-w-4xl mx-auto">
+            {/* Stockage de base */}
+            <button
+              onClick={toggleStandardCapacityFilter}
+              className={`px-4 py-2 rounded-xl border-2 transition-all duration-300 text-xs font-medium flex items-center gap-2 hover:scale-105 ${
+                showStandardCapacityOnly 
+                  ? 'bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-100 shadow-md' 
+                  : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50 hover:border-gray-300 shadow-sm'
+              }`}
+            >
+              💾 {showStandardCapacityOnly && <span className="text-purple-600">✓</span>}
+              <span className="font-semibold">Stockage de base</span>
+            </button>
+
+            {/* Rupture de stock */}
+            <button
+              onClick={toggleZeroStockProducts}
+              className={`px-4 py-2 rounded-xl border-2 transition-all duration-300 text-xs font-medium flex items-center gap-2 hover:scale-105 ${
+                includeZeroStock 
+                  ? 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100 shadow-md' 
+                  : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50 hover:border-gray-300 shadow-sm'
+              }`}
+            >
+              📦 {includeZeroStock && <span className="text-red-600">✓</span>}
+              <span className="font-semibold">Rupture de stock</span>
+              {!includeZeroStock && filteredOutOfStockProducts.length > 0 && (
+                <span className="bg-red-100 text-red-800 text-xs px-2 py-0.5 rounded-full font-normal">
+                  +{filteredOutOfStockProducts.length}
+                </span>
+              )}
+            </button>
+
+            {/* Nouveaux produits - Compact mais lisible */}
+            <button
+              onClick={() => setShowNewProductsOnly(!showNewProductsOnly)}
+              className={`px-3 py-2 rounded-xl border-2 transition-all duration-300 text-xs font-medium flex items-center gap-2 hover:scale-105 ${
+                showNewProductsOnly 
+                  ? 'bg-yellow-50 text-yellow-700 border-yellow-200 hover:bg-yellow-100 shadow-md' 
+                  : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50 hover:border-gray-300 shadow-sm'
+              }`}
+              title={importInfo ? 
+                `Dernière mise à jour: ${new Date(importInfo.importDate).toLocaleString('fr-FR')}` : 
+                'Information d\'import en cours de chargement'
+              }
+            >
+              <div className="flex items-center gap-1.5">
+                ✨ {showNewProductsOnly && <span className="text-yellow-600">✓</span>}
+                <div className="text-left">
+                  <div className="font-semibold whitespace-nowrap">
+                    Nouveaux {importInfo ? importInfo.totalNewProducts : '...'}
+                  </div>
+                  {importInfo && (
+                    <div className="text-[10px] opacity-75 leading-tight">
+                      {new Date(importInfo.importDate).toLocaleDateString('fr-FR')} {new Date(importInfo.importDate).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                    </div>
+                  )}
                 </div>
               </div>
-            )}
+            </button>
           </div>
+        </div>
 
-          {/* Boutons de toggle */}
-          <div className="text-xs mb-4 space-y-1">
-            <div className="flex items-center gap-2 flex-wrap">
-              {/* Toggle pour les produits en rupture de stock */}
-              <button
-                onClick={toggleZeroStockProducts}
-                className={`text-xs px-2 py-1 rounded-md border transition-colors ${
-                  includeZeroStock 
-                    ? 'bg-orange-100 text-orange-800 border-orange-300 hover:bg-orange-200' 
-                    : 'bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200'
-                }`}
-              >
-                {includeZeroStock ? '✓ ' : ''}📦 <span className="hidden sm:inline">Afficher produits à</span> quantité 0
-                {!includeZeroStock && filteredZeroStockProducts.length > 0 && ` (${filteredZeroStockProducts.length})`}
-              </button>
-              
-              {/* Toggle pour les nouveaux produits - toujours visible */}
-              <button
-                onClick={toggleNewProductsFilter}
-                disabled={newProductsSKUs.length === 0}
-                className={`text-xs px-2 py-1 rounded-md border transition-colors ${
-                  newProductsSKUs.length === 0
-                    ? 'bg-gray-100 text-gray-400 border-gray-300 cursor-not-allowed'
-                    : showNewProductsOnly 
-                      ? 'bg-green-100 text-green-800 border-green-300 hover:bg-green-200' 
-                      : 'bg-blue-100 text-blue-800 border-blue-300 hover:bg-blue-200'
-                }`}
-              >
-                {showNewProductsOnly ? '✓ ' : ''}✨ {newProductsSKUs.length > 0 ? `${newProductsSKUs.length} nouveaux` : 'Aucun nouveau'}
-                {lastImportDate && newProductsSKUs.length > 0 && (
-                  <span className="hidden sm:inline"> ({lastImportDate.toLocaleDateString('fr-FR')})</span>
-                )}
-              </button>
-              
-              {/* Toggle pour les capacités standard Apple/Samsung */}
-              <button
-                onClick={toggleStandardCapacityFilter}
-                className={`text-xs px-2 py-1 rounded-md border transition-colors ${
-                  showStandardCapacityOnly 
-                    ? 'bg-purple-100 text-purple-800 border-purple-300 hover:bg-purple-200' 
-                    : 'bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200'
-                }`}
-              >
-                {showStandardCapacityOnly ? '✓ ' : ''}📱 Capacités standard
-              </button>
-            </div>
-            
-            {/* Informations sur les filtres actifs */}
-            {(selectedManufacturers.length > 0 || selectedAppearances.length > 0 || searchTerm || priceMin || priceMax || quantityMin || quantityMax || showNewProductsOnly) && (
-              <div className="text-amber-600">
-                ⚠️ Filtres actifs - {products.length - filteredAndSortedProducts.length} produits masqués
-              </div>
-            )}
-          </div>
-
-          {/* Filtres avancés avec dropdowns cliquables - cachés sur mobile par défaut */}
-          <div className={`${showMobileFilters ? 'block' : 'hidden'} lg:block`}>
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
-            {/* Manufacturer - Fixé */}
+        {/* Filtres avancés avec dropdowns - cachés sur mobile par défaut */}
+        <div className={`${showMobileFilters ? 'block' : 'hidden'} lg:block mb-6`}>
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
+            {/* Manufacturer */}
             <div 
               className="relative dropdown-container"
               onMouseEnter={() => handleMouseEnterDropdown('manufacturer')}
               onMouseLeave={() => handleMouseLeaveDropdown('manufacturer')}
             >
-              <label className="block text-sm font-medium text-gray-900 mb-2">Manufacturer</label>
+              <label className="block text-sm font-medium text-gray-900 mb-2">{translateInterfaceLabel('Manufacturer')}</label>
               <div className="relative">
                 <div 
                   onClick={(e) => {
@@ -2150,20 +2794,32 @@ function AdminCatalogPage() {
                   <ChevronDown className="h-4 w-4 text-gray-500" />
                 </div>
                 {dropdownOpen.manufacturer && (
-                  <div className="absolute z-20 mt-1 w-full bg-white border border-gray-300 rounded-lg shadow-lg">
+                  <div 
+                    className="absolute z-20 mt-1 w-full bg-white border border-gray-300 rounded-lg shadow-lg"
+                    onMouseEnter={handleDropdownInteraction}
+                    onClick={handleDropdownInteraction}
+                  >
                     <div className="max-h-60 overflow-y-auto">
                       {MANUFACTURERS.map(manufacturer => (
-                        <label key={manufacturer} className="flex items-center px-3 py-2 hover:bg-gray-50 cursor-pointer text-gray-900">
+                        <label key={manufacturer} className={`flex items-center px-3 py-2 hover:bg-gray-50 cursor-pointer ${
+                          selectedManufacturers.includes(manufacturer) 
+                            ? 'bg-blue-50 text-blue-900 font-medium' 
+                            : 'text-gray-900'
+                        }`}>
                           <input
                             type="checkbox"
                             checked={selectedManufacturers.includes(manufacturer)}
                             onChange={(e) => {
                               e.stopPropagation();
                               toggleFilter(manufacturer, selectedManufacturers, setSelectedManufacturers);
+                              handleDropdownInteraction(); // Garder ouvert après sélection
                             }}
                             className="mr-2 text-dbc-light-green focus:ring-dbc-light-green"
                           />
                           <span className="text-sm">{manufacturer}</span>
+                          {selectedManufacturers.includes(manufacturer) && (
+                            <Check className="h-3 w-3 text-blue-600 ml-auto" />
+                          )}
                         </label>
                       ))}
                     </div>
@@ -2178,7 +2834,7 @@ function AdminCatalogPage() {
               onMouseEnter={() => handleMouseEnterDropdown('appearance')}
               onMouseLeave={() => handleMouseLeaveDropdown('appearance')}
             >
-              <label className="block text-sm font-medium text-gray-900 mb-2">Appearance</label>
+              <label className="block text-sm font-medium text-gray-900 mb-2">{translateInterfaceLabel('Appearance')}</label>
               <div className="relative">
                 <div 
                   onClick={(e) => {
@@ -2194,65 +2850,38 @@ function AdminCatalogPage() {
                   <ChevronDown className="h-4 w-4 text-gray-500" />
                 </div>
                 {dropdownOpen.appearance && (
-                  <div className="absolute z-20 mt-1 w-full bg-white border border-gray-300 rounded-lg shadow-lg">
+                  <div 
+                    className="absolute z-20 mt-1 w-full bg-white border border-gray-300 rounded-lg shadow-lg"
+                    onMouseEnter={handleDropdownInteraction}
+                    onClick={handleDropdownInteraction}
+                  >
                     <div className="max-h-60 overflow-y-auto">
-                      {APPEARANCES.map(appearance => (
-                        <label key={appearance} className="flex items-center px-3 py-2 hover:bg-gray-50 cursor-pointer text-gray-900">
+                      <div className="sticky top-0 bg-gray-50 px-3 py-1 text-xs text-gray-600 border-b">
+                        💡 Cochez plusieurs options
+                      </div>
+                      {APPEARANCES_FR.map((appearance, index) => (
+                        <label key={appearance} className={`flex items-center px-3 py-2 hover:bg-gray-50 cursor-pointer ${
+                          selectedAppearances.includes(appearance) 
+                            ? 'bg-blue-50 text-blue-900 font-medium' 
+                            : 'text-gray-900'
+                        }`}>
                           <input
                             type="checkbox"
                             checked={selectedAppearances.includes(appearance)}
                             onChange={(e) => {
                               e.stopPropagation();
                               toggleFilter(appearance, selectedAppearances, setSelectedAppearances);
+                              handleDropdownInteraction(); // Garder ouvert après sélection
                             }}
                             className="mr-2 text-dbc-light-green focus:ring-dbc-light-green"
                           />
                           <span className="text-sm">{appearance}</span>
+                          {selectedAppearances.includes(appearance) && (
+                            <Check className="h-3 w-3 text-blue-600 ml-auto" />
+                          )}
                         </label>
                       ))}
                     </div>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Functionality */}
-            <div 
-              className="relative dropdown-container"
-              onMouseEnter={() => handleMouseEnterDropdown('functionality')}
-              onMouseLeave={() => handleMouseLeaveDropdown('functionality')}
-            >
-              <label className="block text-sm font-medium text-gray-900 mb-2">Functionality</label>
-              <div className="relative">
-                <div 
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    toggleDropdown('functionality');
-                  }}
-                  className="text-sm border border-gray-300 rounded-lg px-3 py-2 cursor-pointer hover:border-gray-400 bg-white text-gray-900 flex items-center justify-between"
-                >
-                  <span className="truncate">
-                    {formatSelectedItems(selectedFunctionalities)}
-                  </span>
-                  <ChevronDown className="h-4 w-4 text-gray-500" />
-                </div>
-                {dropdownOpen.functionality && (
-                  <div className="absolute z-20 mt-1 w-full bg-white border border-gray-300 rounded-lg shadow-lg">
-                    {FUNCTIONALITIES.map(functionality => (
-                      <label key={functionality} className="flex items-center px-3 py-2 hover:bg-gray-50 cursor-pointer text-gray-900">
-                        <input
-                          type="checkbox"
-                          checked={selectedFunctionalities.includes(functionality)}
-                          onChange={(e) => {
-                            e.stopPropagation();
-                            toggleFilter(functionality, selectedFunctionalities, setSelectedFunctionalities);
-                          }}
-                          className="mr-2 text-dbc-light-green focus:ring-dbc-light-green"
-                        />
-                        <span className="text-sm">{functionality}</span>
-                      </label>
-                    ))}
                   </div>
                 )}
               </div>
@@ -2264,7 +2893,7 @@ function AdminCatalogPage() {
               onMouseEnter={() => handleMouseEnterDropdown('boxed')}
               onMouseLeave={() => handleMouseLeaveDropdown('boxed')}
             >
-              <label className="block text-sm font-medium text-gray-900 mb-2">Boxed</label>
+              <label className="block text-sm font-medium text-gray-900 mb-2">{translateInterfaceLabel('Boxed')}</label>
               <div className="relative">
                 <div 
                   onClick={(e) => {
@@ -2280,19 +2909,31 @@ function AdminCatalogPage() {
                   <ChevronDown className="h-4 w-4 text-gray-500" />
                 </div>
                 {dropdownOpen.boxed && (
-                  <div className="absolute z-20 mt-1 w-full bg-white border border-gray-300 rounded-lg shadow-lg">
-                    {BOXED_OPTIONS.map(boxed => (
-                      <label key={boxed} className="flex items-center px-3 py-2 hover:bg-gray-50 cursor-pointer text-gray-900">
+                  <div 
+                    className="absolute z-20 mt-1 w-full bg-white border border-gray-300 rounded-lg shadow-lg"
+                    onMouseEnter={handleDropdownInteraction}
+                    onClick={handleDropdownInteraction}
+                  >
+                    {BOXED_OPTIONS_FR.map((boxed, index) => (
+                      <label key={boxed} className={`flex items-center px-3 py-2 hover:bg-gray-50 cursor-pointer ${
+                        selectedBoxedOptions.includes(boxed) 
+                          ? 'bg-blue-50 text-blue-900 font-medium' 
+                          : 'text-gray-900'
+                      }`}>
                         <input
                           type="checkbox"
                           checked={selectedBoxedOptions.includes(boxed)}
                           onChange={(e) => {
                             e.stopPropagation();
                             toggleFilter(boxed, selectedBoxedOptions, setSelectedBoxedOptions);
+                            handleDropdownInteraction(); // Garder ouvert après sélection
                           }}
                           className="mr-2 text-dbc-light-green focus:ring-dbc-light-green"
                         />
                         <span className="text-sm">{boxed}</span>
+                        {selectedBoxedOptions.includes(boxed) && (
+                          <Check className="h-3 w-3 text-blue-600 ml-auto" />
+                        )}
                       </label>
                     ))}
                   </div>
@@ -2300,20 +2941,20 @@ function AdminCatalogPage() {
               </div>
             </div>
 
-            {/* Filtres de prix et quantité avec de meilleures couleurs */}
+            {/* Price filters */}
             <div className="col-span-2 md:col-span-1">
-              <label className="block text-sm font-medium text-gray-900 mb-2">Price</label>
+              <label className="block text-sm font-medium text-gray-900 mb-2">{translateInterfaceLabel('Price')}</label>
               <div className="flex space-x-2">
                 <input
                   type="number"
-                  placeholder="From"
+                  placeholder={translateInterfaceLabel('From')}
                   value={priceMin}
                   onChange={(e) => setPriceMin(e.target.value)}
                   className="w-full text-sm border border-gray-300 rounded px-2 py-1 text-gray-900 focus:ring-2 focus:ring-dbc-light-green focus:border-transparent"
                 />
                 <input
                   type="number"
-                  placeholder="To"
+                  placeholder={translateInterfaceLabel('To')}
                   value={priceMax}
                   onChange={(e) => setPriceMax(e.target.value)}
                   className="w-full text-sm border border-gray-300 rounded px-2 py-1 text-gray-900 focus:ring-2 focus:ring-dbc-light-green focus:border-transparent"
@@ -2321,19 +2962,20 @@ function AdminCatalogPage() {
               </div>
             </div>
 
+            {/* Quantity filters */}
             <div className="col-span-2 md:col-span-1">
-              <label className="block text-sm font-medium text-gray-900 mb-2">Quantity</label>
+              <label className="block text-sm font-medium text-gray-900 mb-2">{translateInterfaceLabel('Quantity')}</label>
               <div className="flex space-x-2">
                 <input
                   type="number"
-                  placeholder="From"
+                  placeholder={translateInterfaceLabel('From')}
                   value={quantityMin}
                   onChange={(e) => setQuantityMin(e.target.value)}
                   className="w-full text-sm border border-gray-300 rounded px-2 py-1 text-gray-900 focus:ring-2 focus:ring-dbc-light-green focus:border-transparent"
                 />
                 <input
                   type="number"
-                  placeholder="To"
+                  placeholder={translateInterfaceLabel('To')}
                   value={quantityMax}
                   onChange={(e) => setQuantityMax(e.target.value)}
                   className="w-full text-sm border border-gray-300 rounded px-2 py-1 text-gray-900 focus:ring-2 focus:ring-dbc-light-green focus:border-transparent"
@@ -2342,7 +2984,67 @@ function AdminCatalogPage() {
             </div>
           </div>
         </div>
-      </div>
+
+        {/* Navigation en haut simplifiée */}
+        {totalPages > 1 && (
+          <div className="flex items-center justify-center sm:justify-end gap-1 sm:gap-2 mb-4">
+            {/* Version mobile */}
+            <div className="flex sm:hidden items-center gap-2">
+              <button
+                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                disabled={currentPage === 1}
+                className="p-2 text-sm bg-white bg-opacity-80 backdrop-blur-sm border border-white border-opacity-30 rounded-lg disabled:bg-opacity-50 disabled:text-gray-400 text-gray-700 hover:bg-opacity-90 transition-all duration-200"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <span className="px-3 py-1 text-sm text-gray-700 bg-white bg-opacity-60 backdrop-blur-sm rounded-lg border border-white border-opacity-20">
+                {currentPage} / {totalPages}
+              </span>
+              <button
+                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                disabled={currentPage === totalPages}
+                className="p-2 text-sm bg-white bg-opacity-80 backdrop-blur-sm border border-white border-opacity-30 rounded-lg disabled:bg-opacity-50 disabled:text-gray-400 text-gray-700 hover:bg-opacity-90 transition-all duration-200"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
+            
+            {/* Version desktop */}
+            <div className="hidden sm:flex items-center gap-2">
+              <button
+                onClick={() => setCurrentPage(1)}
+                disabled={currentPage === 1}
+                className="px-3 py-1 text-sm bg-white bg-opacity-80 backdrop-blur-sm border border-white border-opacity-30 rounded-lg disabled:bg-opacity-50 disabled:text-gray-400 text-gray-700 hover:bg-opacity-90 transition-all duration-200"
+              >
+                Premier
+              </button>
+              <button
+                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                disabled={currentPage === 1}
+                className="px-3 py-1 text-sm bg-white bg-opacity-80 backdrop-blur-sm border border-white border-opacity-30 rounded-lg disabled:bg-opacity-50 disabled:text-gray-400 text-gray-700 hover:bg-opacity-90 transition-all duration-200"
+              >
+                ←
+              </button>
+              <span className="px-3 py-1 text-sm text-gray-700 bg-white bg-opacity-60 backdrop-blur-sm rounded-lg border border-white border-opacity-20">
+                Page {currentPage} sur {totalPages}
+              </span>
+              <button
+                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                disabled={currentPage === totalPages}
+                className="px-3 py-1 text-sm bg-white bg-opacity-80 backdrop-blur-sm border border-white border-opacity-30 rounded-lg disabled:bg-opacity-50 disabled:text-gray-400 text-gray-700 hover:bg-opacity-90 transition-all duration-200"
+              >
+                →
+              </button>
+              <button
+                onClick={() => setCurrentPage(totalPages)}
+                disabled={currentPage === totalPages}
+                className="px-3 py-1 text-sm bg-white bg-opacity-80 backdrop-blur-sm border border-white border-opacity-30 rounded-lg disabled:bg-opacity-50 disabled:text-gray-400 text-gray-700 hover:bg-opacity-90 transition-all duration-200"
+              >
+                Dernier
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Vue responsive : Cartes jusqu'à lg, table sur lg+ */}
         {loading && !products.length ? (
@@ -2358,35 +3060,6 @@ function AdminCatalogPage() {
           <>
             {/* Vue cartes (≤1023px) - Permet de voir toutes les infos importantes */}
             <div className="lg:hidden">
-              {/* Sélection globale sur mobile */}
-              <div className="bg-white rounded-lg shadow-sm border p-4 mb-4 flex items-center justify-between">
-                <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
-                  <input
-                    type="checkbox"
-                    checked={selectedProducts && paginatedProducts.length > 0 && paginatedProducts.every(p => selectedProducts[p.sku])}
-                    onChange={(e) => {
-                      if (e.target.checked) {
-                        const newSelection: {[key: string]: boolean} = {};
-                        const newQuantities: {[key: string]: number} = {};
-                        paginatedProducts.forEach(product => {
-                          newSelection[product.sku] = true;
-                          newQuantities[product.sku] = product.quantity;
-                        });
-                        setSelectedProducts(newSelection);
-                        setQuantities(newQuantities);
-                      } else {
-                        setSelectedProducts({});
-                        setQuantities({});
-                      }
-                    }}
-                    className="rounded border-gray-300"
-                  />
-                  Tout sélectionner
-                </label>
-                <span className="text-xs text-gray-500">
-                  {Object.keys(selectedProducts).filter(key => selectedProducts[key]).length} sélectionnés
-                </span>
-              </div>
 
               {/* Grille de cartes responsive */}
               <div className="grid grid-cols-1 gap-2">
@@ -2402,33 +3075,10 @@ function AdminCatalogPage() {
                 <table className="w-full">
                   <thead className="bg-gray-50">
                     <tr className="border-b border-gray-200">
-                      <th className="sticky left-0 z-10 bg-gray-50 w-8 px-1 py-1.5 text-left text-xs font-medium text-gray-500 uppercase">
-                        <input
-                          type="checkbox"
-                          checked={selectedProducts && paginatedProducts.length > 0 && paginatedProducts.every(p => selectedProducts[p.sku])}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              const newSelection: {[key: string]: boolean} = {};
-                              const newQuantities: {[key: string]: number} = {};
-                              paginatedProducts.forEach(product => {
-                                newSelection[product.sku] = true;
-                                newQuantities[product.sku] = product.quantity;
-                              });
-                              setSelectedProducts(newSelection);
-                              setQuantities(newQuantities);
-                            } else {
-                              setSelectedProducts({});
-                              setQuantities({});
-                            }
-                          }}
-                          className="rounded border-gray-300 scale-75"
-                        />
-                      </th>
                       <th className="px-1 py-1.5 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">SKU</th>
                       <th className="px-1 py-1.5 text-left text-xs font-medium text-gray-500 uppercase min-w-[180px]">Nom du produit</th>
                       <th className="px-1 py-1.5 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap hidden md:table-cell">Apparence</th>
                       <th className="px-1 py-1.5 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap hidden lg:table-cell">Add. Info</th>
-                      <th className="px-1 py-1.5 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap hidden lg:table-cell">Fonction.</th>
                       <th className="px-1 py-1.5 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap hidden lg:table-cell">Couleur</th>
                       <th className="px-1 py-1.5 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap hidden 2xl:table-cell">Emballage</th>
                       <th className="px-1 py-1.5 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">Prix</th>
@@ -2447,46 +3097,6 @@ function AdminCatalogPage() {
                           key={product.sku} 
                           className={`border-b border-gray-100 hover:bg-gray-50 ${isHighlighted ? 'bg-green-50 border-l-2 border-dbc-light-green' : ''}`}
                         >
-                          <td className="sticky left-0 z-10 bg-inherit px-1 py-1">
-                            <input
-                              type="checkbox"
-                              checked={isChecked}
-                              onChange={async (e) => {
-                                e.stopPropagation();
-                                const isChecked = e.target.checked;
-                                
-                                if (isChecked) {
-                                  await selectFullQuantity(product.sku, product.quantity);
-                                  setSelectedProducts(prev => ({ ...prev, [product.sku]: true }));
-                                } else {
-                                  if (currentDraftOrder && draftOrders[currentDraftOrder]) {
-                                    const newItems = { ...draftOrders[currentDraftOrder].items };
-                                    delete newItems[product.sku];
-                                    
-                                    const newDraftOrders = {
-                                      ...draftOrders,
-                                      [currentDraftOrder]: {
-                                        ...draftOrders[currentDraftOrder],
-                                        items: newItems
-                                      }
-                                    };
-                                    
-                                    setDraftOrders(newDraftOrders);
-                                    
-                                    setQuantities(prev => {
-                                      const newQuantities = { ...prev };
-                                      delete newQuantities[product.sku];
-                                      return newQuantities;
-                                    });
-                                    
-                                    await saveDraftOrdersToLocalStorage(newDraftOrders);
-                                  }
-                                  setSelectedProducts(prev => ({ ...prev, [product.sku]: false }));
-                                }
-                              }}
-                              className="rounded border-gray-300 scale-75"
-                            />
-                          </td>
                           <td className="px-1 py-1 text-xs font-mono text-gray-900 whitespace-nowrap">{product.sku}</td>
                           <td className="px-1 py-1 text-xs text-gray-900">
                             <div className="break-words max-w-[160px]" title={product.product_name}>
@@ -2500,7 +3110,7 @@ function AdminCatalogPage() {
                               product.appearance.includes('B') ? 'bg-yellow-100 text-yellow-800' :
                               'bg-orange-100 text-orange-800'
                             }`}>
-                              {product.appearance.replace('Grade ', '')}
+                              {getDisplayAppearance(product.appearance, product.functionality).replace('Grade ', '')}
                             </span>
                           </td>
                           <td className="px-1 py-1 text-xs text-gray-900 hidden lg:table-cell text-center">
@@ -2511,13 +3121,6 @@ function AdminCatalogPage() {
                             ) : (
                               <span className="text-xs text-gray-400">-</span>
                             )}
-                          </td>
-                          <td className="px-1 py-1 text-xs text-gray-900 hidden lg:table-cell">
-                            <div className={`text-center font-medium ${
-                              product.functionality.includes('Working') ? 'text-green-600' : 'text-amber-600'
-                            }`}>
-                              {product.functionality.includes('Working') ? 'Working' : 'Minor Fault'}
-                            </div>
                           </td>
                           <td className="px-1 py-1 hidden lg:table-cell">
                             {product.color ? (
@@ -2532,7 +3135,17 @@ function AdminCatalogPage() {
                             )}
                           </td>
                           <td className="px-1 py-1 text-xs text-gray-900 hidden 2xl:table-cell text-center">{product.boxed}</td>
-                          <td className="px-1 py-1 text-xs text-center font-medium text-gray-900 whitespace-nowrap">{product.price_dbc.toFixed(2)}€</td>
+                          <td className="px-1 py-1 text-xs text-center font-medium text-gray-900 whitespace-nowrap">
+                            {product.supplier_price ? (
+                              <div className="text-xs">
+                                <span className="text-gray-600">{product.supplier_price.toFixed(2)}€</span>
+                                <span className="text-gray-400 mx-1">-</span>
+                                <span className="font-medium">{product.price_dbc.toFixed(2)}€</span>
+                              </div>
+                            ) : (
+                              <span>{product.price_dbc.toFixed(2)}€</span>
+                            )}
+                          </td>
                           <td className="px-1 py-1">
                             <div className="flex items-center justify-center gap-1">
                               <input
@@ -2592,6 +3205,31 @@ function AdminCatalogPage() {
             </div>
           </>
         )}
+
+        {/* Statistiques et contrôles en bas */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mt-6 pt-4 border-t border-gray-200">
+          <div className="text-sm text-gray-700">
+            <span className="font-semibold text-lg">{filteredAndSortedProducts.length.toLocaleString('fr-FR')}</span> produits affichés
+            {totalProductsCount && filteredAndSortedProducts.length !== totalProductsCount && (
+              <span className="text-gray-500 block sm:inline">
+                {' '}(filtrés sur <span className="font-medium">{totalProductsCount.toLocaleString('fr-FR')}</span> total)
+              </span>
+            )}
+          </div>
+          <select
+            value={itemsPerPage}
+            onChange={(e) => {
+              setItemsPerPage(Number(e.target.value));
+              setCurrentPage(1);
+            }}
+            className="text-sm border border-gray-300 rounded px-3 py-1 text-gray-600 w-full sm:w-auto bg-white"
+          >
+            <option value={50}>50 par page</option>
+            <option value={100}>100 par page</option>
+            <option value={250}>250 par page</option>
+            <option value={500}>500 par page</option>
+          </select>
+        </div>
 
         {/* Pagination en bas */}
         {totalPages > 1 && (

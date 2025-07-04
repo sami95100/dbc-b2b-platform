@@ -1,5 +1,42 @@
 -- Fonctions SQL pour les statistiques du dashboard admin (version debug)
 
+-- Table pour l'historique des imports de catalogue
+CREATE TABLE IF NOT EXISTS catalog_imports (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  import_date TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  total_imported INTEGER DEFAULT 0,
+  total_updated INTEGER DEFAULT 0,
+  new_skus TEXT[] DEFAULT '{}', -- Liste des nouveaux SKU
+  restocked_skus TEXT[] DEFAULT '{}', -- Liste des SKU remis en stock
+  missing_skus TEXT[] DEFAULT '{}', -- Liste des SKU en rupture (absents du nouveau catalogue)
+  import_summary JSONB, -- Résumé complet de l'import
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Index pour optimiser les requêtes
+CREATE INDEX IF NOT EXISTS idx_catalog_imports_date ON catalog_imports(import_date DESC);
+
+-- Fonction pour récupérer le dernier import
+CREATE OR REPLACE FUNCTION get_latest_import_info()
+RETURNS TABLE (
+  import_date TIMESTAMP WITH TIME ZONE,
+  total_new_products INTEGER,
+  new_skus TEXT[],
+  restocked_skus TEXT[]
+)
+LANGUAGE SQL
+STABLE
+AS $$
+  SELECT 
+    ci.import_date,
+    (array_length(ci.new_skus, 1) + array_length(ci.restocked_skus, 1)) as total_new_products,
+    ci.new_skus,
+    ci.restocked_skus
+  FROM catalog_imports ci
+  ORDER BY ci.import_date DESC
+  LIMIT 1;
+$$;
+
 -- 1. Fonction pour calculer la marge totale des commandes completed avec debug
 CREATE OR REPLACE FUNCTION get_total_margin_completed_orders()
 RETURNS NUMERIC

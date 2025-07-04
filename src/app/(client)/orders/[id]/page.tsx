@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { useAuth, withAuth } from '../../../../lib/auth-context';
+import AppHeader from '@/components/AppHeader';
 import { supabase, Product } from '../../../../lib/supabase';
 import { 
   Package, 
@@ -18,7 +19,8 @@ import {
   FileText,
   Eye,
   FileSpreadsheet,
-  Trash2
+  Trash2,
+  ExternalLink
 } from 'lucide-react';
 
 function ClientOrderDetailPage() {
@@ -34,6 +36,11 @@ function ClientOrderDetailPage() {
   const [viewMode, setViewMode] = useState<'sku' | 'imei'>('sku');
   const [imeiData, setImeiData] = useState<any[]>([]);
   const [validating, setValidating] = useState(false);
+
+  // Fonction pour générer l'URL de tracking FedEx
+  const getFedExTrackingUrl = (trackingNumber: string) => {
+    return `https://www.fedex.com/fedextrack/?trknbr=${trackingNumber}&trkqual=${trackingNumber}~FX`;
+  };
 
   const loadOrderDetail = async () => {
     try {
@@ -343,6 +350,7 @@ function ClientOrderDetailPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-gray-50 to-emerald-50">
+      <AppHeader />
       <div className="max-w-[2000px] mx-auto px-8 py-6">
         {/* Navigation */}
         <div className="flex items-center space-x-4 mb-6">
@@ -389,10 +397,16 @@ function ClientOrderDetailPage() {
                   <span className="truncate">Créée le {formatDate(orderDetail.createdAt)}</span>
                 </div>
                 {orderDetail.tracking_number && (
-                  <div className="flex items-center space-x-1 text-xs sm:text-sm text-blue-600 bg-blue-50 px-2 py-1 rounded-full w-fit">
-                    <Truck className="h-3 w-3 sm:h-4 sm:w-4" />
-                    <span className="truncate">Tracking: {orderDetail.tracking_number}</span>
-                  </div>
+                  <a
+                    href={getFedExTrackingUrl(orderDetail.tracking_number)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center space-x-1 text-xs sm:text-sm text-blue-700 bg-blue-50/70 px-3 py-1.5 rounded-lg backdrop-blur-sm hover:bg-blue-100/80 hover:text-blue-800 transition-all duration-200 cursor-pointer group border border-blue-200/50 hover:border-blue-300/60 w-fit"
+                  >
+                    <Truck className="h-3 w-3 sm:h-4 sm:w-4 group-hover:scale-110 transition-transform" />
+                    <span className="truncate font-medium">Tracking: {orderDetail.tracking_number}</span>
+                    <ExternalLink className="h-3 w-3 opacity-60 group-hover:opacity-100 transition-opacity" />
+                  </a>
                 )}
               </div>
             </div>
@@ -410,7 +424,7 @@ function ClientOrderDetailPage() {
                   <button
                     onClick={validateOrder}
                     disabled={validating}
-                    className="flex items-center justify-center space-x-1 px-3 py-2 bg-gradient-to-r from-dbc-bright-green to-emerald-400 text-dbc-dark-green rounded-lg hover:from-emerald-300 hover:to-emerald-500 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed font-semibold transition-all duration-200 text-sm"
+                    className="flex items-center justify-center space-x-1 px-3 py-2 bg-white/50 hover:bg-white/70 text-gray-800 hover:text-gray-900 rounded-lg font-semibold transition-all duration-200 text-sm backdrop-blur-md border border-white/60 hover:border-white/80 hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {validating ? (
                       <>
@@ -426,7 +440,7 @@ function ClientOrderDetailPage() {
                   </button>
                   <button
                     onClick={exportToExcel}
-                    className="flex items-center justify-center space-x-1 px-3 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-700 transition-all duration-200 text-sm"
+                    className="flex items-center justify-center space-x-1 px-3 py-2 bg-white/50 hover:bg-white/70 text-gray-800 hover:text-gray-900 rounded-lg transition-all duration-200 text-sm backdrop-blur-md border border-white/60 hover:border-white/80 hover:shadow-md"
                   >
                     <FileSpreadsheet className="h-4 w-4" />
                     <span>Excel</span>
@@ -438,14 +452,14 @@ function ClientOrderDetailPage() {
                 <>
                   <button
                     onClick={() => exportData(viewMode, 'csv')}
-                    className="flex items-center justify-center space-x-1 px-3 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-700 transition-all duration-200 text-sm"
+                    className="flex items-center justify-center space-x-1 px-3 py-2 bg-white/50 hover:bg-white/70 text-gray-800 hover:text-gray-900 rounded-lg transition-all duration-200 text-sm backdrop-blur-md border border-white/60 hover:border-white/80 hover:shadow-md"
                   >
                     <Download className="h-4 w-4" />
                     <span>CSV</span>
                   </button>
                   <button
                     onClick={() => exportData(viewMode, 'xlsx')}
-                    className="flex items-center justify-center space-x-1 px-3 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-700 transition-all duration-200 text-sm"
+                    className="flex items-center justify-center space-x-1 px-3 py-2 bg-white/50 hover:bg-white/70 text-gray-800 hover:text-gray-900 rounded-lg transition-all duration-200 text-sm backdrop-blur-md border border-white/60 hover:border-white/80 hover:shadow-md"
                   >
                     <FileSpreadsheet className="h-4 w-4" />
                     <span>Excel</span>
@@ -456,10 +470,13 @@ function ClientOrderDetailPage() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div>
-              <p className="text-sm text-gray-800 mb-1 font-medium">Référence client</p>
-              <p className="font-medium text-gray-900">{orderDetail.customerRef}</p>
-            </div>
+            {/* Afficher la référence client seulement si elle ne commence pas par TRACKING: */}
+            {orderDetail.customerRef && !orderDetail.customerRef.startsWith('TRACKING:') && (
+              <div>
+                <p className="text-sm text-gray-800 mb-1 font-medium">Référence client</p>
+                <p className="font-medium text-gray-900">{orderDetail.customerRef}</p>
+              </div>
+            )}
             <div>
               <p className="text-sm text-gray-800 mb-1 font-medium">Régime TVA</p>
               <p className="text-sm text-gray-700">{orderDetail.vatType}</p>
@@ -503,14 +520,14 @@ function ClientOrderDetailPage() {
                   <div className="flex items-center space-x-2">
                     <button
                       onClick={() => exportData(viewMode, 'csv')}
-                      className="flex items-center space-x-1 px-3 py-1 text-sm bg-green-600 text-white rounded hover:bg-green-700 transition-colors"
+                      className="flex items-center justify-center space-x-1 px-3 py-2 bg-white/50 hover:bg-white/70 text-gray-800 hover:text-gray-900 rounded-lg transition-all duration-200 text-sm backdrop-blur-md border border-white/60 hover:border-white/80 hover:shadow-md"
                     >
                       <Download className="h-4 w-4" />
                       <span>CSV</span>
                     </button>
                     <button
                       onClick={() => exportData(viewMode, 'xlsx')}
-                      className="flex items-center space-x-1 px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+                      className="flex items-center justify-center space-x-1 px-3 py-2 bg-white/50 hover:bg-white/70 text-gray-800 hover:text-gray-900 rounded-lg transition-all duration-200 text-sm backdrop-blur-md border border-white/60 hover:border-white/80 hover:shadow-md"
                     >
                       <FileSpreadsheet className="h-4 w-4" />
                       <span>Excel</span>
@@ -550,13 +567,6 @@ function ClientOrderDetailPage() {
                         {/* Ligne avec états et couleur */}
                         <div className="flex items-center justify-between mb-2">
                           <div className="flex items-center gap-2 flex-wrap">
-                            {/* Fonctionnalité */}
-                            <span className={`text-xs font-medium ${
-                              item.functionality === 'Working' ? 'text-green-600' : 'text-amber-600'
-                            }`}>
-                              {item.functionality === 'Working' ? 'Working' : 'Minor Fault'}
-                            </span>
-                            
                             {/* Grade */}
                             <span className={`text-xs font-medium px-1 py-0.5 rounded ${
                               item.appearance?.includes('A+') ? 'bg-green-100 text-green-800' :
@@ -659,9 +669,6 @@ function ClientOrderDetailPage() {
                               }`}>
                                 {item.appearance?.replace('Grade ', '') || 'N/A'}
                               </span>
-                              <span className="inline-flex px-2 py-1 text-xs font-medium rounded bg-green-100 text-green-800">
-                                {item.functionality || 'N/A'}
-                              </span>
                             </div>
                           </td>
 
@@ -740,13 +747,6 @@ function ClientOrderDetailPage() {
                           {/* Ligne avec états et couleur */}
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-2 flex-wrap">
-                              {/* Fonctionnalité */}
-                              <span className={`text-xs font-medium ${
-                                imei.functionality === 'Working' ? 'text-green-600' : 'text-amber-600'
-                              }`}>
-                                {imei.functionality === 'Working' ? 'Working' : 'Minor Fault'}
-                              </span>
-                              
                               {/* Grade */}
                               <span className={`text-xs font-medium px-1 py-0.5 rounded ${
                                 imei.appearance?.includes('A+') ? 'bg-green-100 text-green-800' :
@@ -808,9 +808,6 @@ function ClientOrderDetailPage() {
                                 }`}>
                                   {imei.appearance.replace('Grade ', '')}
                                 </span>
-                                <span className="inline-flex px-1.5 py-0.5 text-xs font-medium rounded bg-green-100 text-green-800">
-                                  {imei.functionality}
-                                </span>
                               </div>
                             </td>
                             <td className="hidden xl:table-cell px-3 py-3">
@@ -821,9 +818,6 @@ function ClientOrderDetailPage() {
                                   'bg-yellow-100 text-yellow-800'
                                 }`}>
                                   {imei.appearance.replace('Grade ', '')}
-                                </span>
-                                <span className="inline-flex px-2 py-1 text-xs font-medium rounded bg-green-100 text-green-800">
-                                  {imei.functionality}
                                 </span>
                               </div>
                             </td>
@@ -876,4 +870,4 @@ function ClientOrderDetailPage() {
   );
 }
 
-export default withAuth(ClientOrderDetailPage, 'client'); 
+export default withAuth(ClientOrderDetailPage, 'client');

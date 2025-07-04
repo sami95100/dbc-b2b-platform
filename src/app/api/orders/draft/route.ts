@@ -112,6 +112,7 @@ export async function POST(request: NextRequest) {
     console.log('- Nombre d\'items:', Object.keys(items || {}).length);
     console.log('- Montant total:', totalAmount);
     console.log('- Items total:', totalItems);
+    console.log('- User ID:', userId || 'NON FOURNI');
 
     // Validation des données
     if (!name || typeof name !== 'string') {
@@ -120,6 +121,10 @@ export async function POST(request: NextRequest) {
 
     if (!items || typeof items !== 'object') {
       throw new Error('Items de commande requis');
+    }
+
+    if (!userId) {
+      console.warn('⚠️ ATTENTION: Commande créée sans userId - cela peut causer des problèmes');
     }
 
     // Calculer les totaux si non fournis
@@ -394,5 +399,67 @@ export async function PUT(request: NextRequest) {
       },
       { status: 500 }
     );
+  }
+}
+
+// Supprimer toutes les commandes en brouillon
+export async function DELETE(request: Request) {
+  try {
+    console.log('🗑️ Suppression des commandes en brouillon...');
+
+    const admin = getSupabaseAdmin();
+
+    // Récupérer toutes les commandes en brouillon
+    const { data: draftOrders, error: fetchError } = await admin
+      .from('orders')
+      .select('id, name')
+      .eq('status', 'draft');
+
+    if (fetchError) {
+      console.error('❌ Erreur récupération commandes brouillon:', fetchError);
+      return NextResponse.json({ 
+        error: 'Erreur récupération commandes brouillon',
+        details: fetchError.message 
+      }, { status: 500 });
+    }
+
+    if (!draftOrders || draftOrders.length === 0) {
+      console.log('ℹ️ Aucune commande en brouillon à supprimer');
+      return NextResponse.json({ 
+        message: 'Aucune commande en brouillon trouvée',
+        deletedCount: 0 
+      });
+    }
+
+    console.log(`🔍 ${draftOrders.length} commande(s) en brouillon trouvée(s):`, draftOrders.map((order: any) => order.name));
+
+    // Supprimer toutes les commandes en brouillon
+    const { error: deleteError } = await admin
+      .from('orders')
+      .delete()
+      .eq('status', 'draft');
+
+    if (deleteError) {
+      console.error('❌ Erreur suppression commandes brouillon:', deleteError);
+      return NextResponse.json({ 
+        error: 'Erreur suppression commandes brouillon',
+        details: deleteError.message 
+      }, { status: 500 });
+    }
+
+    console.log(`✅ ${draftOrders.length} commande(s) en brouillon supprimée(s)`);
+
+    return NextResponse.json({ 
+      message: `${draftOrders.length} commande(s) en brouillon supprimée(s)`,
+      deletedCount: draftOrders.length,
+      deletedOrders: draftOrders
+    });
+
+  } catch (error) {
+    console.error('❌ Erreur suppression commandes brouillon:', error);
+    return NextResponse.json({ 
+      error: 'Erreur serveur lors de la suppression',
+      details: error instanceof Error ? error.message : 'Erreur inconnue'
+    }, { status: 500 });
   }
 } 
