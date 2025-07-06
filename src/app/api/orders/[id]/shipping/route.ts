@@ -15,7 +15,8 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
     console.log('🚚 Mise à jour livraison pour commande:', params.id);
 
     const body = await request.json();
-    const { tracking_number, shipping_cost, status } = body;
+    const { tracking_number, status } = body;
+    // Note: shipping_cost n'est plus requis car calculé automatiquement
 
     // Si on passe directement au statut completed, le tracking number n'est pas obligatoire
     if (!tracking_number && status !== 'completed') {
