@@ -332,13 +332,24 @@ function ClientOrderDetailPage() {
   const getDisplayAppearance = (appearance: string, functionality: string) => {
     if (functionality === 'Minor Fault') {
       // Ajouter 'x' minuscule après le grade pour les Minor Fault
-      // Grade C → Grade Cx, Grade BC → Grade BCx, Grade C+ → Grade Cx+
+      // Gérer différents formats: "Grade C", "C", "Grade BC", "BC", etc.
+      
+      // Cas 1: Format "Grade X..." 
       const gradeMatch = appearance.match(/^(Grade [A-Z]+)(\+?)/i);
       if (gradeMatch) {
         const grade = gradeMatch[1]; // "Grade C"
         const plus = gradeMatch[2] || ''; // "+" ou ""
         const rest = appearance.substring(grade.length + plus.length).trim();
         return rest ? `${grade}x${plus} ${rest}` : `${grade}x${plus}`;
+      }
+      
+      // Cas 2: Format simple "C...", "BC...", etc.
+      const simpleGradeMatch = appearance.match(/^([A-Z]+)(\+?)(\s+.*)?$/i);
+      if (simpleGradeMatch) {
+        const grade = simpleGradeMatch[1]; // "C" ou "BC"
+        const plus = simpleGradeMatch[2] || ''; // "+" ou ""
+        const rest = simpleGradeMatch[3] || ''; // " reduced battery performance" ou ""
+        return rest ? `${grade}x${plus}${rest}` : `${grade}x${plus}`;
       }
     }
     // Pour Working ou si pas de grade détecté, retourner tel quel
@@ -718,7 +729,7 @@ function ClientOrderDetailPage() {
 
                           {/* Infos - Visible 2XL+ */}
                           <td className="hidden 2xl:table-cell px-3 py-3 text-sm text-gray-800 max-w-32 truncate">
-                            {item.additional_info && item.additional_info !== '-' ? item.additional_info : 'N/A'}
+                            {item.additional_info && item.additional_info !== '-' ? item.additional_info : ''}
                           </td>
 
                           {/* Quantité - Toujours visible */}

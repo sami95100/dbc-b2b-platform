@@ -80,7 +80,7 @@ function ClientCatalogPage() {
     }
     return {};
   });
-  const [selectedProducts, setSelectedProducts] = useState<{[key: string]: boolean}>({});
+  // Supprimé selectedProducts - on utilise maintenant uniquement les quantités dans la commande
   
   // État pour éviter les erreurs d'hydratation
   const [isClientSide, setIsClientSide] = useState(false);
@@ -172,13 +172,24 @@ function ClientCatalogPage() {
   const getDisplayAppearance = (appearance: string, functionality: string) => {
     if (functionality === 'Minor Fault') {
       // Ajouter 'x' minuscule après le grade pour les Minor Fault
-      // Grade C → Grade Cx, Grade BC → Grade BCx, Grade C+ → Grade Cx+
+      // Gérer différents formats: "Grade C", "C", "Grade BC", "BC", etc.
+      
+      // Cas 1: Format "Grade X..." 
       const gradeMatch = appearance.match(/^(Grade [A-Z]+)(\+?)/i);
       if (gradeMatch) {
         const grade = gradeMatch[1]; // "Grade C"
         const plus = gradeMatch[2] || ''; // "+" ou ""
         const rest = appearance.substring(grade.length + plus.length).trim();
         return rest ? `${grade}x${plus} ${rest}` : `${grade}x${plus}`;
+      }
+      
+      // Cas 2: Format simple "C...", "BC...", etc.
+      const simpleGradeMatch = appearance.match(/^([A-Z]+)(\+?)(\s+.*)?$/i);
+      if (simpleGradeMatch) {
+        const grade = simpleGradeMatch[1]; // "C" ou "BC"
+        const plus = simpleGradeMatch[2] || ''; // "+" ou ""
+        const rest = simpleGradeMatch[3] || ''; // " reduced battery performance" ou ""
+        return rest ? `${grade}x${plus}${rest}` : `${grade}x${plus}`;
       }
     }
     // Pour Working ou si pas de grade détecté, retourner tel quel
@@ -273,22 +284,70 @@ function ClientCatalogPage() {
         if (supabaseDrafts.length > 0) {
           console.log('🔄 Synchronisation avec commandes Supabase:', supabaseDrafts.length);
           
-          // Si on a des commandes en brouillon en base, les synchroniser avec le localStorage
+          // CORRECTION : Récupérer les données locales pour fusionner intelligemment
+          const localDraftOrders = localStorage.getItem('draftOrders');
+          const parsedLocalDrafts = localDraftOrders ? JSON.parse(localDraftOrders) : {};
+          
+          // Fusionner les données Supabase avec les données locales
           const syncedDraftOrders: {[key: string]: any} = {};
           
           for (const draft of supabaseDrafts) {
-            syncedDraftOrders[draft.id] = {
-              id: draft.id,
-              name: draft.name,
-              status: 'draft',
-              status_label: 'Brouillon',
-              createdAt: draft.created_at,
-              items: draft.items || {}, // Utiliser les items récupérés depuis l'API
-              supabaseId: draft.id,
-              source: 'supabase',
-              total_amount: draft.total_amount,
-              total_items: draft.total_items
-            };
+            const localOrder = parsedLocalDrafts[draft.id];
+            
+            // Si on a une version locale de cette commande, comparer les timestamps
+            if (localOrder && localOrder.source === 'manual') {
+              // Privilégier les données locales si elles sont plus récentes ou ont plus d'items
+              const localItemsCount = Object.keys(localOrder.items || {}).length;
+              const supabaseItemsCount = Object.keys(draft.items || {}).length;
+              
+              if (localItemsCount > supabaseItemsCount) {
+                console.log(`🔄 Privilégier données locales pour commande ${draft.id} (${localItemsCount} vs ${supabaseItemsCount} items)`);
+                syncedDraftOrders[draft.id] = {
+                  ...localOrder,
+                  // Garder les métadonnées Supabase à jour
+                  name: draft.name,
+                  created_at: draft.created_at,
+                  total_amount: draft.total_amount,
+                  total_items: draft.total_items
+                };
+                
+                // Synchroniser immédiatement avec Supabase
+                console.log('🔄 Sync immédiate des données locales vers Supabase');
+                try {
+                  await syncOrderWithSupabase(localOrder);
+                } catch (error) {
+                  console.warn('⚠️ Erreur sync immédiate:', error);
+                }
+              } else {
+                // Utiliser les données Supabase
+                syncedDraftOrders[draft.id] = {
+                  id: draft.id,
+                  name: draft.name,
+                  status: 'draft',
+                  status_label: 'Brouillon',
+                  createdAt: draft.created_at,
+                  items: draft.items || {},
+                  supabaseId: draft.id,
+                  source: 'supabase',
+                  total_amount: draft.total_amount,
+                  total_items: draft.total_items
+                };
+              }
+            } else {
+              // Pas de version locale, utiliser les données Supabase
+              syncedDraftOrders[draft.id] = {
+                id: draft.id,
+                name: draft.name,
+                status: 'draft',
+                status_label: 'Brouillon',
+                createdAt: draft.created_at,
+                items: draft.items || {},
+                supabaseId: draft.id,
+                source: 'supabase',
+                total_amount: draft.total_amount,
+                total_items: draft.total_items
+              };
+            }
           }
           
           // Mettre à jour les states
@@ -301,7 +360,8 @@ function ClientCatalogPage() {
             saveCurrentOrderToLocalStorage(latestDraft.id);
             
             // Mettre à jour les quantités avec les items de la commande active
-            setQuantities(latestDraft.items || {});
+            const orderToUse = syncedDraftOrders[latestDraft.id];
+            setQuantities(orderToUse.items || {});
           } else if (currentDraftOrder && syncedDraftOrders[currentDraftOrder]) {
             // Si on a déjà une commande active, synchroniser ses quantités
             setQuantities(syncedDraftOrders[currentDraftOrder].items || {});
@@ -359,18 +419,34 @@ function ClientCatalogPage() {
   }, []); // Exécuter seulement au montage
 
   // Resynchroniser quand la page devient visible (retour d'un autre onglet/page)
+  // AMÉLIORATION : Debounce pour éviter les resync trop fréquentes
+  const lastSyncRef = useRef<number>(0);
+  const SYNC_DEBOUNCE_MS = 5000; // 5 secondes minimum entre les sync
+  
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (!document.hidden && isClient) {
-        console.log('🔄 Page visible - resynchronisation...');
-        syncDraftOrdersWithSupabase();
+        const now = Date.now();
+        if (now - lastSyncRef.current > SYNC_DEBOUNCE_MS) {
+          console.log('🔄 Page visible - resynchronisation...');
+          lastSyncRef.current = now;
+          syncDraftOrdersWithSupabase();
+        } else {
+          console.log('⏳ Resync ignorée (debounce)');
+        }
       }
     };
 
     const handleFocus = () => {
       if (isClient) {
-        console.log('🔄 Page focus - resynchronisation...');
-        syncDraftOrdersWithSupabase();
+        const now = Date.now();
+        if (now - lastSyncRef.current > SYNC_DEBOUNCE_MS) {
+          console.log('🔄 Page focus - resynchronisation...');
+          lastSyncRef.current = now;
+          syncDraftOrdersWithSupabase();
+        } else {
+          console.log('⏳ Resync ignorée (debounce)');
+        }
       }
     };
 
@@ -992,8 +1068,7 @@ function ClientCatalogPage() {
             }
           };
           
-          // Mettre à jour les produits sélectionnés
-          setSelectedProducts(prev => ({ ...prev, [sku]: false }));
+          // Quantité mise à 0, pas besoin de gérer selectedProducts
         } else {
           // Sinon, mettre à jour la quantité
           newDraftOrders = {
@@ -1007,14 +1082,7 @@ function ClientCatalogPage() {
             }
           };
           
-          // Vérifier si c'est la quantité maximale pour cocher la case
-          const product = products.find(p => p.sku === sku);
-          if (product) {
-            setSelectedProducts(prev => ({ 
-              ...prev, 
-              [sku]: newQuantity === product.quantity && newQuantity > 0 
-            }));
-          }
+          // La case sera automatiquement cochée si newQuantity === product.quantity
         }
         
         setDraftOrders(newDraftOrders);
@@ -1039,6 +1107,56 @@ function ClientCatalogPage() {
     const currentQuantity = quantities[sku] || 0;
     const newQuantity = typeof currentQuantity === 'string' ? parseInt(currentQuantity) + 1 : currentQuantity + 1;
     await addToCartWithQuantity(sku, newQuantity, true); // Replace avec la nouvelle quantité
+  };
+
+  const removeFromCart = async (sku: string) => {
+    if (!currentDraftOrder || !user?.id) {
+      console.warn('❌ Aucune commande active ou utilisateur non connecté');
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/orders/draft/remove-item', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          sku,
+          orderId: currentDraftOrder,
+          userId: user.id
+        }),
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Erreur lors de la suppression du produit');
+      }
+      
+      const result = await response.json();
+      
+      // Mettre à jour l'état local après succès
+      setQuantities(prev => ({ ...prev, [sku]: 0 }));
+      
+      const newDraftOrders = {
+        ...draftOrders,
+        [currentDraftOrder]: {
+          ...draftOrders[currentDraftOrder],
+          items: { ...draftOrders[currentDraftOrder].items }
+        }
+      };
+      
+      // Supprimer l'item de la commande locale
+      delete newDraftOrders[currentDraftOrder].items[sku];
+      
+      setDraftOrders(newDraftOrders);
+      
+      console.log(`✅ Produit ${sku} supprimé de la base:`, result.message);
+      
+    } catch (error) {
+      console.error('❌ Erreur suppression produit:', error);
+      alert(`Erreur: ${error instanceof Error ? error.message : 'Erreur inconnue'}`);
+    }
   };
 
   const addToCartWithQuantity = async (sku: string, quantity: number, replace: boolean = false) => {
@@ -1067,6 +1185,12 @@ function ClientCatalogPage() {
     
     const newQuantity = replace ? quantity : currentQuantity + quantity;
     
+    // Si la quantité est 0, supprimer le produit
+    if (newQuantity <= 0) {
+      await removeFromCart(sku);
+      return;
+    }
+    
     // Vérifier le stock disponible
     if (newQuantity > product.quantity) {
       alert(`Stock insuffisant. Stock disponible: ${product.quantity}`);
@@ -1076,19 +1200,55 @@ function ClientCatalogPage() {
     // Mettre à jour l'état local immédiatement pour une réactivité instantanée
     setQuantities(prev => ({ ...prev, [sku]: newQuantity }));
     
-    // Mettre à jour dans draftOrders
-    const newDraftOrders = {
-      ...draftOrders,
-      [currentDraftOrder]: {
-        ...draftOrders[currentDraftOrder],
-        items: { ...draftOrders[currentDraftOrder].items, [sku]: newQuantity }
+    // Sauvegarder directement dans Supabase
+    try {
+      const response = await fetch('/api/orders/draft/add-item', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          sku,
+          quantity: newQuantity,
+          orderId: currentDraftOrder,
+          userId: user?.id
+        }),
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Erreur lors de l\'ajout du produit');
       }
-    };
-    
-    setDraftOrders(newDraftOrders);
-    
-    // Sauvegarder de manière asynchrone sans bloquer l'interface
-    saveDraftOrdersToLocalStorage(newDraftOrders);
+      
+      const result = await response.json();
+      
+      // Mettre à jour dans draftOrders seulement après succès en base
+      const newDraftOrders = {
+        ...draftOrders,
+        [currentDraftOrder]: {
+          ...draftOrders[currentDraftOrder],
+          items: { ...draftOrders[currentDraftOrder].items, [sku]: newQuantity }
+        }
+      };
+      
+      setDraftOrders(newDraftOrders);
+      
+      console.log(`✅ Produit ${sku} sauvé en base (${newQuantity}):`, result.message);
+      
+    } catch (error) {
+      console.error('❌ Erreur sauvegarde produit:', error);
+      
+      // Revenir à l'état précédent en cas d'erreur
+      const currentQuantity = typeof quantities[sku] === 'number' 
+        ? quantities[sku] as number
+        : parseInt(quantities[sku] as string) || 0;
+      const previousQuantity = replace ? 0 : currentQuantity - quantity;
+      
+      setQuantities(prev => ({ ...prev, [sku]: previousQuantity }));
+      
+      // Afficher l'erreur à l'utilisateur
+      alert(`Erreur: ${error instanceof Error ? error.message : 'Erreur inconnue'}`);
+    }
   };
 
   // Fonction pour sélectionner toute la quantité disponible (case à cocher)
@@ -1187,7 +1347,7 @@ function ClientCatalogPage() {
         } else {
           setQuantities(prev => ({ ...prev, [sku]: (prev[sku] || 0) + quantity }));
         }
-        setSelectedProducts(prev => ({ ...prev, [sku]: true }));
+        // Case automatiquement cochée si quantité = max
         sessionStorage.removeItem('pendingProduct');
       }
 
@@ -1231,7 +1391,7 @@ function ClientCatalogPage() {
         } else {
           setQuantities(prev => ({ ...prev, [sku]: (prev[sku] || 0) + quantity }));
         }
-        setSelectedProducts(prev => ({ ...prev, [sku]: true }));
+        // Case automatiquement cochée si quantité = max
         sessionStorage.removeItem('pendingProduct');
         
         saveDraftOrdersToLocalStorage(newDraftOrders);
@@ -1418,29 +1578,12 @@ function ClientCatalogPage() {
         
         saveDraftOrdersToLocalStorage(newDraftOrders);
       }
-      setSelectedProducts(prev => ({ ...prev, [sku]: false }));
+      // Case automatiquement décochée quand quantité = 0
     }
   };
 
-  // Synchroniser les cases à cocher avec la commande active
-  useEffect(() => {
-    if (currentDraftOrder && draftOrders[currentDraftOrder]) {
-      const items = draftOrders[currentDraftOrder].items || {};
-      
-      const newSelectedProducts: {[key: string]: boolean} = {};
-      
-      // Pour chaque produit du catalogue, vérifier s'il est sélectionné
-      products.forEach(product => {
-        const quantityInCart = items[product.sku] || 0;
-        // Case cochée SEULEMENT si on a TOUTE la quantité disponible
-        newSelectedProducts[product.sku] = quantityInCart === product.quantity && quantityInCart > 0;
-      });
-      
-      setSelectedProducts(newSelectedProducts);
-    } else {
-      setSelectedProducts({});
-    }
-  }, [currentDraftOrder, draftOrders, products]);
+  // Les cases à cocher sont maintenant calculées directement basées sur les quantités
+  // Plus besoin de useEffect pour synchroniser selectedProducts
 
   // Fonction pour obtenir la classe CSS de la couleur avec les vraies couleurs Apple
   const getColorClass = (color: string | null) => {
@@ -1707,7 +1850,7 @@ function ClientCatalogPage() {
     const quantityInCart: number = typeof quantities[product.sku] === 'number' 
       ? quantities[product.sku] as number
       : parseInt(quantities[product.sku] as string) || 0;
-    const isChecked = selectedProducts[product.sku] || false;
+    const isChecked = quantityInCart === product.quantity && quantityInCart > 0;
     const isHighlighted = quantityInCart > 0;
     const [isPressed, setIsPressed] = useState(false);
 
@@ -1772,31 +1915,8 @@ function ClientCatalogPage() {
                   
                   if (isChecked) {
                     await selectFullQuantity(product.sku, product.quantity);
-                    setSelectedProducts(prev => ({ ...prev, [product.sku]: true }));
                   } else {
-                    if (currentDraftOrder && draftOrders[currentDraftOrder]) {
-                      const newItems = { ...draftOrders[currentDraftOrder].items };
-                      delete newItems[product.sku];
-                      
-                      const newDraftOrders = {
-                        ...draftOrders,
-                        [currentDraftOrder]: {
-                          ...draftOrders[currentDraftOrder],
-                          items: newItems
-                        }
-                      };
-                      
-                      setDraftOrders(newDraftOrders);
-                      
-                      setQuantities(prev => {
-                        const newQuantities = { ...prev };
-                        delete newQuantities[product.sku];
-                        return newQuantities;
-                      });
-                      
-                      await saveDraftOrdersToLocalStorage(newDraftOrders);
-                    }
-                    setSelectedProducts(prev => ({ ...prev, [product.sku]: false }));
+                    await updateQuantity(product.sku, '0');
                   }
                 }}
                 className="scale-75 rounded border-gray-300 text-dbc-light-green focus:ring-dbc-light-green touch-manipulation"
@@ -2538,43 +2658,25 @@ function ClientCatalogPage() {
                           className={`border-b border-gray-100 hover:bg-gray-50 ${isHighlighted ? 'bg-green-50 border-l-2 border-dbc-light-green' : ''}`}
                         >
                           <td className="px-1 py-1 text-center">
-                            <input
-                              type="checkbox"
-                              checked={isChecked}
-                              onChange={async (e) => {
-                                const isChecked = e.target.checked;
-                                
-                                if (isChecked) {
-                                  await selectFullQuantity(product.sku, product.quantity);
-                                  setSelectedProducts(prev => ({ ...prev, [product.sku]: true }));
-                                } else {
-                                  if (currentDraftOrder && draftOrders[currentDraftOrder]) {
-                                    const newItems = { ...draftOrders[currentDraftOrder].items };
-                                    delete newItems[product.sku];
-                                    
-                                    const newDraftOrders = {
-                                      ...draftOrders,
-                                      [currentDraftOrder]: {
-                                        ...draftOrders[currentDraftOrder],
-                                        items: newItems
-                                      }
-                                    };
-                                    
-                                    setDraftOrders(newDraftOrders);
-                                    
-                                    setQuantities(prev => {
-                                      const newQuantities = { ...prev };
-                                      delete newQuantities[product.sku];
-                                      return newQuantities;
-                                    });
-                                    
-                                    await saveDraftOrdersToLocalStorage(newDraftOrders);
+                            <div className="flex items-center justify-center">
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={async (e) => {
+                                  const checked = e.target.checked;
+                                  
+                                  if (checked) {
+                                    // Sélectionner toute la quantité disponible
+                                    await selectFullQuantity(product.sku, product.quantity);
+                                  } else {
+                                    // Retirer complètement le produit
+                                    await updateQuantity(product.sku, '0');
                                   }
-                                  setSelectedProducts(prev => ({ ...prev, [product.sku]: false }));
-                                }
-                              }}
-                              className="scale-75 rounded border-gray-300 text-dbc-light-green focus:ring-dbc-light-green"
-                            />
+                                }}
+                                className="w-4 h-4 rounded border-2 border-gray-400 text-dbc-light-green focus:ring-2 focus:ring-dbc-light-green focus:border-dbc-light-green cursor-pointer"
+                                title="Sélectionner toute la quantité disponible"
+                              />
+                            </div>
                           </td>
                           <td className="px-1 py-1 text-xs font-mono text-gray-900 whitespace-nowrap">{product.sku}</td>
                           <td className="px-1 py-1 text-xs text-gray-900">
@@ -2764,7 +2866,7 @@ function ClientCatalogPage() {
                   setOrderName('');
                   sessionStorage.removeItem('pendingProduct');
                   // Nettoyer aussi la sélection visuelle temporaire
-                  setSelectedProducts({});
+                  // Cases automatiquement décochées lors de l'annulation
                   // Ne pas créer de commande fantôme
                   console.log('🚫 Création de commande annulée - état nettoyé');
                 }}

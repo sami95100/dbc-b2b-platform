@@ -1,70 +1,58 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '../../../lib/supabase';
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    const admin = supabaseAdmin;
-    
-    if (!admin) {
+    if (!supabaseAdmin) {
       return NextResponse.json({ error: 'Supabase admin not configured' }, { status: 500 });
     }
-
-    // Statistiques générales
-    const { count: totalProducts } = await admin
+    
+    const { searchParams } = new URL(request.url);
+    const sku = searchParams.get('sku');
+    
+    if (sku) {
+      // Récupérer un SKU spécifique avec toutes ses données
+      const { data: product, error } = await supabaseAdmin
+        .from('products')
+        .select('*')
+        .eq('sku', sku)
+        .single();
+      
+      if (error) {
+        return NextResponse.json({ error: `SKU ${sku} non trouvé: ${error.message}` }, { status: 404 });
+      }
+      
+      return NextResponse.json({ 
+        sku: product.sku,
+        product_name: product.product_name,
+        appearance: product.appearance,
+        functionality: product.functionality,
+        additional_info: product.additional_info,
+        quantity: product.quantity,
+        price_dbc: product.price_dbc,
+        is_active: product.is_active,
+        created_at: product.created_at,
+        full_data: product
+      });
+    }
+    
+    // Code original pour récupérer tous les produits
+    const { data: products, error } = await supabaseAdmin
       .from('products')
-      .select('*', { count: 'exact', head: true });
-
-    const { count: zeroQuantityProducts } = await admin
-      .from('products')
-      .select('*', { count: 'exact', head: true })
-      .eq('quantity', 0);
-
-    const { count: activeProducts } = await admin
-      .from('products')
-      .select('*', { count: 'exact', head: true })
-      .gt('quantity', 0);
-
-    // Récupérer quelques exemples de produits à quantité 0
-    const { data: zeroQuantityExamples } = await admin
-      .from('products')
-      .select('sku, product_name, quantity, is_active')
-      .eq('quantity', 0)
-      .limit(20);
-
-    // Récupérer quelques exemples de produits actifs
-    const { data: activeExamples } = await admin
-      .from('products')
-      .select('sku, product_name, quantity, is_active')
-      .gt('quantity', 0)
-      .limit(10);
-
-    // Récupérer le dernier import
-    const { data: lastImport } = await admin
-      .from('catalog_imports')
-      .select('*')
-      .order('import_date', { ascending: false })
-      .limit(1);
-
-    return NextResponse.json({
-      success: true,
-      stats: {
-        totalProducts: totalProducts || 0,
-        zeroQuantityProducts: zeroQuantityProducts || 0,
-        activeProducts: activeProducts || 0,
-        percentageZeroQuantity: (totalProducts && totalProducts > 0) ? (((zeroQuantityProducts || 0) / totalProducts) * 100).toFixed(1) : 0
-      },
-      examples: {
-        zeroQuantityExamples: zeroQuantityExamples || [],
-        activeExamples: activeExamples || []
-      },
-      lastImport: lastImport?.[0] || null
+      .select('sku, product_name, appearance, functionality, quantity, price_dbc, is_active')
+      .limit(100);
+    
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+    
+    return NextResponse.json({ 
+      total_products: products?.length || 0,
+      sample_products: products || []
     });
     
   } catch (error) {
-    console.error('Error in debug catalog:', error);
-    return NextResponse.json({ 
-      error: 'Internal server error',
-      details: error instanceof Error ? error.message : String(error)
-    }, { status: 500 });
+    console.error('Erreur debug catalog:', error);
+    return NextResponse.json({ error: 'Erreur interne' }, { status: 500 });
   }
 } 
