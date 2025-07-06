@@ -48,6 +48,7 @@ function ClientCatalogPage() {
   const [showNewProductsOnly, setShowNewProductsOnly] = useState(false);
   const [includeZeroStock, setIncludeZeroStock] = useState(false);
   const [showStandardCapacityOnly, setShowStandardCapacityOnly] = useState(false);
+  const [showMinorFaultOnly, setShowMinorFaultOnly] = useState(false);
   const [importInfo, setImportInfo] = useState<{ importDate: string; totalNewProducts: number; newSkus: string[]; restockedSkus: string[]; missingSkus: string[]; totalMissingProducts: number } | null>(null);
   
   // États de tri et pagination
@@ -256,7 +257,12 @@ function ClientCatalogPage() {
   // Fonction pour synchroniser les commandes brouillon avec Supabase
   const syncDraftOrdersWithSupabase = async () => {
     try {
-      const response = await fetch('/api/orders/draft', {
+      if (!user?.id) {
+        console.warn('❌ User ID non disponible pour sync draft orders');
+        return;
+      }
+      
+      const response = await fetch(`/api/orders/draft?userId=${user.id}`, {
         method: 'GET'
       });
       
@@ -414,12 +420,16 @@ function ClientCatalogPage() {
       } finally {
         setIsSaving(false);
       }
-    }, 800); // Debounce plus long pour éviter les appels trop fréquents
+    }, 200); // Debounce plus court pour une meilleure réactivité
   };
 
   // Fonction pour synchroniser une commande avec Supabase
   const syncOrderWithSupabase = async (order: any) => {
     try {
+      if (!user?.id) {
+        console.warn('❌ User ID non disponible pour sync order');
+        return;
+      }
       
       const response = await fetch('/api/orders/draft', {
         method: 'PUT',
@@ -432,7 +442,8 @@ function ClientCatalogPage() {
           items: order.items || {},
           totalItems: Object.values(order.items || {}).reduce((sum: number, qty: any) => 
             sum + (typeof qty === 'number' ? qty : 0), 0
-          )
+          ),
+          userId: user.id
         })
       });
 
@@ -764,11 +775,15 @@ function ClientCatalogPage() {
         ? product.quantity === 0  // Afficher tous les produits avec quantité 0
         : product.quantity > 0;   // Afficher seulement les produits avec stock > 0
       
+              // Filtre Grades X : par défaut Working seulement, si activé Minor Fault seulement
+        const matchesBoxedFilter = 
+            showMinorFaultOnly ? product.functionality === 'Minor Fault' : product.functionality === 'Working';
+      
       return matchesSearch && matchesManufacturer && matchesAppearance && 
              matchesColor && matchesBoxed &&
              matchesAdditionalInfo && matchesPriceMin && matchesPriceMax && 
              matchesQuantityMin && matchesQuantityMax && 
-             matchesStandardCapacity && matchesStock;
+             matchesStandardCapacity && matchesStock && matchesBoxedFilter;
     });
 
     // Tri avec groupement par product_name puis Minor Fault > Working par produit
@@ -819,6 +834,7 @@ function ClientCatalogPage() {
     quantityMin,
     quantityMax,
     showStandardCapacityOnly,
+    showMinorFaultOnly,
     sortField,
     sortDirection,
     getStandardCapacities
@@ -1009,6 +1025,15 @@ function ClientCatalogPage() {
     }
   };
 
+  // Créer un Map pour un accès rapide aux produits par SKU
+  const productsMap = useMemo(() => {
+    const map = new Map<string, Product>();
+    products.forEach(product => {
+      map.set(product.sku, product);
+    });
+    return map;
+  }, [products]);
+
   const addToCart = async (sku: string) => {
     // Le bouton ajouter incrémente de 1
     const currentQuantity = quantities[sku] || 0;
@@ -1029,62 +1054,47 @@ function ClientCatalogPage() {
       return;
     }
     
-    // Sauvegarder la position de scroll actuelle
-    const scrollPosition = window.pageYOffset || document.documentElement.scrollTop;
-    
-    // Empêcher le body de bouger pendant la mise à jour
-    document.body.style.position = 'fixed';
-    document.body.style.top = `-${scrollPosition}px`;
-    document.body.style.width = '100%';
-    
-    try {
-      const currentQuantity = typeof quantities[sku] === 'number' 
-        ? quantities[sku] as number
-        : parseInt(quantities[sku] as string) || 0;
-      
-      const newQuantity = replace ? quantity : currentQuantity + quantity;
-      
-      // Vérifier le stock disponible
-      const product = filteredAndSortedProducts.find((p: Product) => p.sku === sku);
-      if (!product) return;
-      
-      if (newQuantity > product.quantity) {
-        alert(`Stock insuffisant. Stock disponible: ${product.quantity}`);
-        return;
-      }
-      
-      // Mettre à jour l'état local immédiatement
-      const newQuantities = { ...quantities, [sku]: newQuantity };
-      setQuantities(newQuantities);
-      
-      // Mettre à jour dans draftOrders
-      const newDraftOrders = {
-        ...draftOrders,
-        [currentDraftOrder]: {
-          ...draftOrders[currentDraftOrder],
-          items: { ...draftOrders[currentDraftOrder].items, [sku]: newQuantity }
-        }
-      };
-      
-      setDraftOrders(newDraftOrders);
-      
-      // Sauvegarder de manière asynchrone
-      await saveDraftOrdersToLocalStorage(newDraftOrders);
-    } finally {
-      // Restaurer la position de scroll
-      document.body.style.position = '';
-      document.body.style.top = '';
-      document.body.style.width = '';
-      window.scrollTo(0, scrollPosition);
+    // Utiliser le Map pour un accès rapide au produit
+    const product = productsMap.get(sku);
+    if (!product) {
+      console.warn('Produit non trouvé:', sku);
+      return;
     }
+    
+    const currentQuantity = typeof quantities[sku] === 'number' 
+      ? quantities[sku] as number
+      : parseInt(quantities[sku] as string) || 0;
+    
+    const newQuantity = replace ? quantity : currentQuantity + quantity;
+    
+    // Vérifier le stock disponible
+    if (newQuantity > product.quantity) {
+      alert(`Stock insuffisant. Stock disponible: ${product.quantity}`);
+      return;
+    }
+    
+    // Mettre à jour l'état local immédiatement pour une réactivité instantanée
+    setQuantities(prev => ({ ...prev, [sku]: newQuantity }));
+    
+    // Mettre à jour dans draftOrders
+    const newDraftOrders = {
+      ...draftOrders,
+      [currentDraftOrder]: {
+        ...draftOrders[currentDraftOrder],
+        items: { ...draftOrders[currentDraftOrder].items, [sku]: newQuantity }
+      }
+    };
+    
+    setDraftOrders(newDraftOrders);
+    
+    // Sauvegarder de manière asynchrone sans bloquer l'interface
+    saveDraftOrdersToLocalStorage(newDraftOrders);
   };
 
   // Fonction pour sélectionner toute la quantité disponible (case à cocher)
   const selectFullQuantity = async (sku: string, productQuantity: number) => {
     await addToCartWithQuantity(sku, productQuantity, true); // Replace avec toute la quantité
   };
-
-
 
   const createNewOrder = async () => {
     // Protection contre les double-clics
@@ -1261,6 +1271,7 @@ function ClientCatalogPage() {
     setShowNewProductsOnly(false);
     setIncludeZeroStock(false);
     setShowStandardCapacityOnly(false);
+    setShowMinorFaultOnly(false);
     setCurrentPage(1);
   };
 
@@ -1368,7 +1379,22 @@ function ClientCatalogPage() {
     const numQuantity = typeof currentQuantity === 'string' ? parseInt(currentQuantity) : currentQuantity;
     
     if (numQuantity > 1) {
-      await addToCartWithQuantity(sku, numQuantity - 1, true);
+      // Mettre à jour l'état immédiatement
+      const newQuantity = numQuantity - 1;
+      setQuantities(prev => ({ ...prev, [sku]: newQuantity }));
+      
+      // Mettre à jour dans draftOrders
+      if (currentDraftOrder && draftOrders[currentDraftOrder]) {
+        const newDraftOrders = {
+          ...draftOrders,
+          [currentDraftOrder]: {
+            ...draftOrders[currentDraftOrder],
+            items: { ...draftOrders[currentDraftOrder].items, [sku]: newQuantity }
+          }
+        };
+        setDraftOrders(newDraftOrders);
+        saveDraftOrdersToLocalStorage(newDraftOrders);
+      }
     } else if (numQuantity === 1) {
       // Retirer complètement du panier
       if (currentDraftOrder && draftOrders[currentDraftOrder]) {
@@ -1390,7 +1416,7 @@ function ClientCatalogPage() {
           return newQuantities;
         });
         
-        await saveDraftOrdersToLocalStorage(newDraftOrders);
+        saveDraftOrdersToLocalStorage(newDraftOrders);
       }
       setSelectedProducts(prev => ({ ...prev, [sku]: false }));
     }
@@ -1684,12 +1710,8 @@ function ClientCatalogPage() {
     const isChecked = selectedProducts[product.sku] || false;
     const isHighlighted = quantityInCart > 0;
     const [isPressed, setIsPressed] = useState(false);
-    const [isProcessing, setIsProcessing] = useState(false);
 
     const handleCardClick = useCallback(async (e: React.MouseEvent | React.TouchEvent) => {
-      // Empêcher le traitement si déjà en cours
-      if (isProcessing) return;
-      
       // Ne pas ajouter si on clique sur des boutons, inputs ou leurs conteneurs
       if (e.target instanceof HTMLElement && 
           (e.target.tagName === 'BUTTON' || 
@@ -1703,27 +1725,22 @@ function ClientCatalogPage() {
       e.preventDefault();
       e.stopPropagation();
       
-      // Empêcher les clics multiples
-      setIsProcessing(true);
+      // Feedback immédiat très court
+      setIsPressed(true);
       
-      try {
-        // Feedback immédiat
-        setIsPressed(true);
-        
-        // Haptic feedback sur iOS si disponible
-        if ('vibrate' in navigator) {
-          navigator.vibrate(10);
-        }
-        
-        // Ajouter le produit
-        await addToCartWithQuantity(product.sku, 1, false);
-      } finally {
-        setTimeout(() => {
-          setIsPressed(false);
-          setIsProcessing(false);
-        }, 150);
+      // Haptic feedback sur iOS si disponible
+      if ('vibrate' in navigator) {
+        navigator.vibrate(10);
       }
-    }, [product.sku, isProcessing]);
+      
+      // Ajouter le produit immédiatement
+      addToCartWithQuantity(product.sku, 1, false);
+      
+      // Retirer le feedback rapidement
+      setTimeout(() => {
+        setIsPressed(false);
+      }, 30);
+    }, [product.sku]);
 
     return (
       <>
@@ -1732,7 +1749,6 @@ function ClientCatalogPage() {
             product-card bg-white rounded-lg border shadow-sm p-2 transition-all duration-100 cursor-pointer touch-manipulation
             ${isPressed ? 'pressed scale-[0.98] shadow-lg bg-gray-50' : ''}
             ${isHighlighted ? 'ring-2 ring-dbc-light-green bg-green-50/30 shadow-md' : 'hover:shadow-md hover:border-dbc-light-green/50'}
-            ${isProcessing ? 'opacity-80' : ''}
           `}
           onClick={handleCardClick}
           onTouchStart={(e) => {
@@ -1805,9 +1821,10 @@ function ClientCatalogPage() {
           <div className="flex flex-wrap gap-1 mb-2">
             {/* Grade */}
             <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${
-              product.appearance.includes('A+') ? 'bg-green-100 text-green-800' :
+              product.appearance.includes('A+') ? 'bg-purple-100 text-purple-800' :
               product.appearance.includes('A') && !product.appearance.includes('AB') ? 'bg-blue-100 text-blue-800' :
-              product.appearance.includes('B') ? 'bg-yellow-100 text-yellow-800' :
+              product.appearance.includes('B') ? 'bg-green-100 text-green-800' :
+              product.appearance.includes('C+') ? 'bg-yellow-100 text-yellow-800' :
               'bg-orange-100 text-orange-800'
             }`}>
               {translateCatalogTerm('appearance', getDisplayAppearance(product.appearance, product.functionality))}
@@ -1829,6 +1846,13 @@ function ClientCatalogPage() {
                   <span className="text-xs text-gray-700">{getColorName(product.color)}</span>
                 </div>
               )}
+
+              {/* Indication Boxed si applicable */}
+              {(product.boxed === 'Yes' || product.boxed === 'Oui') && (
+                <span className="text-xs px-1.5 py-0.5 bg-blue-100 text-blue-800 rounded-full font-medium">
+                  📦 Boxed
+                </span>
+              )}
             </div>
           </div>
 
@@ -1849,13 +1873,13 @@ function ClientCatalogPage() {
               {/* Bouton décrémenter */}
               {quantityInCart > 0 && (
                 <button
-                  onClick={async (e) => {
+                  onClick={(e) => {
                     e.stopPropagation();
                     e.preventDefault();
-                    await decrementQuantity(product.sku);
+                    decrementQuantity(product.sku);
                   }}
                   onTouchStart={(e) => e.stopPropagation()}
-                  className="w-10 h-10 flex items-center justify-center bg-red-100 text-red-600 rounded-full hover:bg-red-200 active:scale-95 transition-transform duration-100 touch-manipulation touch-target"
+                  className="w-10 h-10 flex items-center justify-center bg-red-100 text-red-600 rounded-full hover:bg-red-200 active:scale-95 transition-transform duration-75 touch-manipulation touch-target"
                 >
                   <Minus className="h-3 w-3" />
                 </button>
@@ -1864,12 +1888,12 @@ function ClientCatalogPage() {
               {/* Nouveau composant de quantité optimisé pour mobile */}
               <MobileQuantityInput
                 value={quantityInCart}
-                onChange={async (value) => {
+                onChange={(value) => {
                   const numValue = parseInt(value) || 0;
                   if (numValue > 0) {
-                    await addToCartWithQuantity(product.sku, numValue, true);
+                    addToCartWithQuantity(product.sku, numValue, true);
                   } else {
-                    await updateQuantity(product.sku, value);
+                    updateQuantity(product.sku, value);
                   }
                 }}
                 max={product.quantity}
@@ -1878,14 +1902,14 @@ function ClientCatalogPage() {
               
               {/* Bouton ajouter principal */}
               <button
-                onClick={async (e) => {
+                onClick={(e) => {
                   e.stopPropagation();
                   e.preventDefault();
-                  await addToCart(product.sku);
+                  addToCart(product.sku);
                 }}
                 onTouchStart={(e) => e.stopPropagation()}
                 disabled={quantityInCart >= product.quantity}
-                className={`w-10 h-10 flex items-center justify-center rounded-full transition-all duration-100 touch-manipulation touch-target ${
+                className={`w-10 h-10 flex items-center justify-center rounded-full transition-all duration-75 touch-manipulation touch-target ${
                   quantityInCart >= product.quantity 
                     ? 'bg-gray-200 text-gray-400 cursor-not-allowed' 
                     : 'bg-gradient-to-r from-dbc-bright-green to-emerald-400 text-white hover:from-emerald-400 hover:to-emerald-500 active:scale-95 shadow-md'
@@ -2043,7 +2067,7 @@ function ClientCatalogPage() {
                 onChange={(e) => handleSearchChange(e.target.value)}
                 onFocus={() => searchTerm.length >= 2 && setShowSuggestions(true)}
                 onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
-                className="block w-full pl-12 pr-6 py-4 text-base border border-gray-200 rounded-2xl bg-white bg-opacity-80 backdrop-blur-sm focus:ring-2 focus:ring-dbc-light-green focus:border-transparent placeholder-gray-500 shadow-sm transition-all duration-200"
+                className="block w-full pl-12 pr-6 py-4 text-base text-gray-900 border border-gray-200 rounded-2xl bg-white bg-opacity-80 backdrop-blur-sm focus:ring-2 focus:ring-dbc-light-green focus:border-transparent placeholder-gray-500 shadow-sm transition-all duration-200"
               />
               
               {/* Suggestions de recherche */}
@@ -2139,61 +2163,86 @@ function ClientCatalogPage() {
             </div>
           </div>
 
-          {/* Ligne 3: Filtres spécialisés - Version compacte */}
-          <div className="flex flex-wrap items-center justify-center gap-3 max-w-4xl mx-auto">
-            {/* Stockage de base */}
-            <button
-              onClick={toggleStandardCapacityFilter}
-              className={`px-4 py-2 rounded-xl border-2 transition-all duration-300 text-xs font-medium flex items-center gap-2 hover:scale-105 ${
-                showStandardCapacityOnly 
-                  ? 'bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-100 shadow-md' 
-                  : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50 hover:border-gray-300 shadow-sm'
-              }`}
-            >
-              💾 {showStandardCapacityOnly && <span className="text-purple-600">✓</span>}
-              <span className="font-semibold">Stockage de base</span>
-            </button>
+          {/* Ligne 3: Filtres spécialisés - Organisation symétrique */}
+          <div className="max-w-4xl mx-auto">
+            {/* Ligne 1: Stockage de base + Grades X */}
+            <div className="flex items-center justify-center gap-6 mb-4">
+              {/* Stockage de base */}
+                              <button
+                onClick={toggleStandardCapacityFilter}
+                className={`w-48 h-16 rounded-xl border-2 transition-all duration-300 text-sm font-medium flex items-center justify-center gap-2 hover:scale-105 ${
+                  showStandardCapacityOnly 
+                    ? 'bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-100 shadow-md' 
+                    : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50 hover:border-gray-300 shadow-sm'
+                }`}
+              >
+                💾 {showStandardCapacityOnly && <span className="text-purple-600">✓</span>}
+                <span className="font-semibold text-xs">Stockage de base</span>
+              </button>
 
-            {/* Rupture de stock */}
-            <button
-              onClick={toggleZeroStockProducts}
-              className={`px-4 py-2 rounded-xl border-2 transition-all duration-300 text-xs font-medium flex items-center gap-2 hover:scale-105 ${
-                includeZeroStock 
-                  ? 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100 shadow-md' 
-                  : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50 hover:border-gray-300 shadow-sm'
-              }`}
-            >
-              📦 {includeZeroStock && <span className="text-red-600">✓</span>}
-              <span className="font-semibold">Rupture de stock</span>
-            </button>
+              {/* Grades X - Avec PROMO */}
+                              <button
+                onClick={() => {
+                  setShowMinorFaultOnly(!showMinorFaultOnly);
+                  setCurrentPage(1);
+                }}
+                className={`w-48 h-16 rounded-xl border-2 transition-all duration-300 text-sm font-medium flex items-center justify-center gap-2 hover:scale-105 ${
+                  showMinorFaultOnly 
+                    ? 'bg-violet-50 text-violet-700 border-violet-200 hover:bg-violet-100 shadow-md' 
+                    : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50 hover:border-gray-300 shadow-sm'
+                }`}
+                title="Afficher seulement les Grades x (Minor Fault)"
+              >
+                💎 {showMinorFaultOnly && <span className="text-violet-600">✓</span>}
+                <span className="font-semibold text-xs">Grades x</span>
+                <span className="text-xs bg-violet-100 text-violet-700 px-2 py-0.5 rounded-full ml-1">PROMO</span>
+              </button>
+            </div>
 
-            {/* Nouveaux produits - Compact mais lisible */}
-            <button
-              onClick={toggleNewProductsFilter}
-              className={`px-3 py-2 rounded-xl border-2 transition-all duration-300 text-xs font-medium flex items-center gap-2 hover:scale-105 ${
-                showNewProductsOnly 
-                  ? 'bg-yellow-50 text-yellow-700 border-yellow-200 hover:bg-yellow-100 shadow-md' 
-                  : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50 hover:border-gray-300 shadow-sm'
-              }`}
-              title={importInfo ? 
-                `Dernière mise à jour: ${new Date(importInfo.importDate).toLocaleString('fr-FR')}` : 
-                'Information d\'import en cours de chargement'
-              }
-            >
-              <div className="flex items-center gap-1.5">
-                ✨ {showNewProductsOnly && <span className="text-yellow-600">✓</span>}
-                <div className="text-left">
-                  <div className="font-semibold whitespace-nowrap">
-                    Nouveaux {importInfo ? importInfo.totalNewProducts : '...'}
-                  </div>
+            {/* Ligne 2: Rupture de stock + Nouveaux (plus petits) */}
+            <div className="flex items-center justify-center gap-6">
+              {/* Rupture de stock */}
+              <button
+                onClick={toggleZeroStockProducts}
+                className={`w-44 h-12 rounded-lg border-2 transition-all duration-300 text-xs font-medium flex items-center justify-center gap-1 hover:scale-105 ${
+                  includeZeroStock 
+                    ? 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100 shadow-md' 
+                    : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50 hover:border-gray-300 shadow-sm'
+                }`}
+              >
+                📦 {includeZeroStock && <span className="text-red-600">✓</span>}
+                <span className="font-semibold">Rupture de stock</span>
+              </button>
+
+              {/* Nouveaux produits */}
+              <button
+                onClick={toggleNewProductsFilter}
+                className={`w-44 h-12 rounded-lg border-2 transition-all duration-300 text-xs font-medium flex flex-col items-center justify-center hover:scale-105 ${
+                  showNewProductsOnly 
+                    ? 'bg-yellow-50 text-yellow-700 border-yellow-200 hover:bg-yellow-100 shadow-md' 
+                    : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50 hover:border-gray-300 shadow-sm'
+                }`}
+                title={importInfo ? 
+                  `Dernière mise à jour: ${new Date(importInfo.importDate).toLocaleString('fr-FR')}` : 
+                  'Information d\'import en cours de chargement'
+                }
+              >
+                <div className="flex items-center gap-1">
+                  ✨ {showNewProductsOnly && <span className="text-yellow-600">✓</span>}
+                  <span className="font-semibold">Nouveaux</span>
                   {importInfo && (
-                    <div className="text-[10px] opacity-75 leading-tight">
-                      {new Date(importInfo.importDate).toLocaleDateString('fr-FR')} {new Date(importInfo.importDate).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
-                    </div>
+                    <span className="bg-green-100 text-green-800 text-xs px-1.5 py-0.5 rounded-full font-normal">
+                      +{importInfo.totalNewProducts}
+                    </span>
                   )}
                 </div>
-              </div>
-            </button>
+                {importInfo && (
+                  <div className="text-[10px] text-gray-500 leading-tight">
+                    {new Date(importInfo.importDate).toLocaleDateString('fr-FR')} {new Date(importInfo.importDate).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                  </div>
+                )}
+              </button>
+            </div>
           </div>
 
           {/* Filtres avancés avec dropdowns cliquables - cachés sur mobile par défaut */}
@@ -2465,6 +2514,7 @@ function ClientCatalogPage() {
                 <table className="w-full">
                   <thead className="bg-gray-50">
                     <tr className="border-b border-gray-200">
+                      <th className="px-1 py-1.5 text-center text-xs font-medium text-gray-500 uppercase whitespace-nowrap w-8">Sél.</th>
                       <th className="px-1 py-1.5 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">SKU</th>
                       <th className="px-1 py-1.5 text-left text-xs font-medium text-gray-500 uppercase min-w-[180px]">Nom du produit</th>
                       <th className="px-1 py-1.5 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap hidden md:table-cell">Apparence</th>
@@ -2487,6 +2537,45 @@ function ClientCatalogPage() {
                           key={product.sku} 
                           className={`border-b border-gray-100 hover:bg-gray-50 ${isHighlighted ? 'bg-green-50 border-l-2 border-dbc-light-green' : ''}`}
                         >
+                          <td className="px-1 py-1 text-center">
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={async (e) => {
+                                const isChecked = e.target.checked;
+                                
+                                if (isChecked) {
+                                  await selectFullQuantity(product.sku, product.quantity);
+                                  setSelectedProducts(prev => ({ ...prev, [product.sku]: true }));
+                                } else {
+                                  if (currentDraftOrder && draftOrders[currentDraftOrder]) {
+                                    const newItems = { ...draftOrders[currentDraftOrder].items };
+                                    delete newItems[product.sku];
+                                    
+                                    const newDraftOrders = {
+                                      ...draftOrders,
+                                      [currentDraftOrder]: {
+                                        ...draftOrders[currentDraftOrder],
+                                        items: newItems
+                                      }
+                                    };
+                                    
+                                    setDraftOrders(newDraftOrders);
+                                    
+                                    setQuantities(prev => {
+                                      const newQuantities = { ...prev };
+                                      delete newQuantities[product.sku];
+                                      return newQuantities;
+                                    });
+                                    
+                                    await saveDraftOrdersToLocalStorage(newDraftOrders);
+                                  }
+                                  setSelectedProducts(prev => ({ ...prev, [product.sku]: false }));
+                                }
+                              }}
+                              className="scale-75 rounded border-gray-300 text-dbc-light-green focus:ring-dbc-light-green"
+                            />
+                          </td>
                           <td className="px-1 py-1 text-xs font-mono text-gray-900 whitespace-nowrap">{product.sku}</td>
                           <td className="px-1 py-1 text-xs text-gray-900">
                             <div className="break-words max-w-[160px]" title={product.product_name}>
@@ -2495,9 +2584,10 @@ function ClientCatalogPage() {
                           </td>
                           <td className="px-1 py-1 hidden md:table-cell">
                             <span className={`inline-flex px-1 py-0.5 text-xs font-medium rounded-md ${
-                              product.appearance.includes('A+') ? 'bg-green-100 text-green-800' :
+                              product.appearance.includes('A+') ? 'bg-purple-100 text-purple-800' :
                               product.appearance.includes('A') && !product.appearance.includes('AB') ? 'bg-blue-100 text-blue-800' :
-                              product.appearance.includes('B') ? 'bg-yellow-100 text-yellow-800' :
+                              product.appearance.includes('B') ? 'bg-green-100 text-green-800' :
+                              product.appearance.includes('C+') ? 'bg-yellow-100 text-yellow-800' :
                               'bg-orange-100 text-orange-800'
                             }`}>
                               {getDisplayAppearance(product.appearance, product.functionality).replace('Grade ', '')}

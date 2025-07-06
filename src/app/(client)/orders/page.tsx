@@ -256,8 +256,8 @@ function ClientOrdersPage() {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-50 via-gray-50 to-emerald-50 flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-dbc-light-green mx-auto mb-4"></div>
-          <p className="text-gray-600">Vérification de l'authentification...</p>
+                          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-400 mx-auto mb-4"></div>
+                <p className="text-gray-600">Vérification de l'authentification...</p>
         </div>
       </div>
     );
@@ -273,7 +273,7 @@ function ClientOrdersPage() {
         <div className="flex items-center space-x-4 mb-6">
           <button
             onClick={() => router.push('/catalog')}
-            className="text-dbc-light-green hover:text-dbc-dark-green"
+            className="text-gray-700 hover:text-gray-900"
           >
             Catalogue
           </button>
@@ -293,40 +293,45 @@ function ClientOrdersPage() {
         />
 
         {/* Tableau des commandes - Version Responsive */}
-        <div className="bg-white/40 backdrop-blur-md rounded-2xl shadow-xl border border-white/50 overflow-hidden">
+        <div className="bg-white/10 backdrop-blur-2xl rounded-2xl shadow-2xl border border-white/20 overflow-hidden">
           {loading ? (
             <div className="flex items-center justify-center py-12">
               <div className="text-center">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-dbc-light-green mx-auto mb-4"></div>
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-400 mx-auto mb-4"></div>
                 <p className="text-gray-600">Chargement de vos commandes...</p>
               </div>
             </div>
           ) : (
             <>
               {/* Vue Mobile - Cards (≤1023px) */}
-              <div className="lg:hidden space-y-6 p-4">
+              <div className="lg:hidden space-y-4 p-4">
                 {filteredOrders.map((order) => {
-                  const getGlassBackground = (status: string) => {
+                  const getStatusBorder = (status: string) => {
                     switch (status) {
                       case 'completed': 
-                        return 'bg-gradient-to-br from-green-50/70 via-white/80 to-emerald-50/70 border-green-200/50';
+                        return 'border-l-green-500';
                       case 'shipping': 
-                        return 'bg-gradient-to-br from-blue-50/70 via-white/80 to-sky-50/70 border-blue-200/50';
+                        return 'border-l-blue-500';
                       case 'pending_payment': 
                       case 'validated': 
-                        return 'bg-gradient-to-br from-amber-50/70 via-white/80 to-yellow-50/70 border-amber-200/50';
+                        return 'border-l-amber-500';
                       case 'draft': 
-                        return 'bg-gradient-to-br from-gray-50/70 via-white/80 to-slate-50/70 border-gray-200/50';
+                        return 'border-l-gray-400';
                       default: 
-                        return 'bg-gradient-to-br from-gray-50/70 via-white/80 to-slate-50/70 border-gray-200/50';
+                        return 'border-l-gray-400';
                     }
                   };
 
                   return (
-                    <div key={order.id} className={`${getGlassBackground(order.status)} border backdrop-blur-md rounded-2xl shadow-lg hover:shadow-xl transition-all duration-300 p-5 hover:scale-[1.01] transform`}>
+                    <div key={order.id} className={`
+                      relative bg-white/10 backdrop-blur-xl rounded-2xl shadow-xl hover:shadow-2xl 
+                      transition-all duration-300 p-6 hover:scale-[1.02] transform
+                      border border-white/20 hover:border-white/40 hover:bg-white/20
+                      ${getStatusBorder(order.status)} border-l-4
+                    `}>
                       {/* Header - Statut principal */}
                       <div className="flex items-center justify-between mb-4">
-                        <span className={`inline-flex items-center space-x-2 px-4 py-2 rounded-xl text-sm font-medium backdrop-blur-sm border ${getStatusColor(order.status)} shadow-sm`}>
+                        <span className={`inline-flex items-center space-x-2 px-4 py-2 rounded-xl text-sm font-semibold bg-white/20 backdrop-blur-sm border border-white/20 ${getStatusColor(order.status)} shadow-sm`}>
                           {getStatusIcon(order.status)}
                           <span>{order.status_label}</span>
                         </span>
@@ -334,7 +339,7 @@ function ClientOrdersPage() {
                           <div className="text-xl font-bold text-gray-900">
                             {order.totalAmount?.toFixed(2)} €
                           </div>
-                          <div className="text-xs text-gray-500 font-medium">
+                          <div className="text-xs text-gray-700 font-medium">
                             {order.totalItems} article{order.totalItems > 1 ? 's' : ''}
                           </div>
                         </div>
@@ -342,8 +347,8 @@ function ClientOrdersPage() {
 
                       {/* Infos principales */}
                       <div className="space-y-3 mb-5">
-                        <div className="flex items-center text-sm text-gray-700">
-                          <Calendar className="h-4 w-4 mr-2 text-gray-500" />
+                        <div className="flex items-center text-sm text-gray-800">
+                          <Calendar className="h-4 w-4 mr-2 text-gray-600" />
                           <span className="font-medium">{new Date(order.createdAt).toLocaleDateString('fr-FR')}</span>
                         </div>
                         
@@ -352,7 +357,7 @@ function ClientOrdersPage() {
                             href={getFedExTrackingUrl(order.tracking_number)}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="flex items-center text-sm text-blue-700 bg-blue-50/50 px-3 py-1.5 rounded-lg backdrop-blur-sm hover:bg-blue-100/60 hover:text-blue-800 transition-all duration-200 cursor-pointer group border border-blue-200/50 hover:border-blue-300/60"
+                            className="flex items-center text-sm text-blue-700 bg-blue-50/40 px-3 py-2 rounded-lg backdrop-blur-sm hover:bg-blue-100/50 hover:text-blue-800 transition-all duration-200 cursor-pointer group border border-blue-200/40 hover:border-blue-300/60"
                           >
                             <Truck className="h-4 w-4 mr-2 group-hover:scale-110 transition-transform" />
                             <span className="font-medium">Tracking: {order.tracking_number}</span>
@@ -360,7 +365,7 @@ function ClientOrdersPage() {
                           </a>
                         )}
 
-                        <div className="text-xs text-gray-600 font-mono bg-white/50 px-3 py-2 rounded-lg backdrop-blur-sm border border-gray-200/50">
+                        <div className="text-xs text-gray-700 font-mono bg-white/40 px-3 py-2 rounded-lg backdrop-blur-sm border border-gray-200/40">
                           {order.name || order.id}
                         </div>
                       </div>
@@ -369,7 +374,22 @@ function ClientOrdersPage() {
                       <div className="flex flex-col space-y-3">
                         <button
                           onClick={() => handleOrderClick(order.id)}
-                          className="w-full px-6 py-3 bg-white/40 hover:bg-white/60 text-gray-800 hover:text-gray-900 rounded-xl text-sm font-semibold transition-all duration-200 shadow-sm backdrop-blur-md border border-white/50 hover:border-white/80 hover:shadow-md"
+                          className="w-full px-6 py-3 !bg-white/20 hover:!bg-white/40 !text-gray-800 hover:!text-gray-900 rounded-xl text-sm font-semibold transition-all duration-200 shadow-sm backdrop-blur-md border border-white/30 hover:border-white/50 hover:shadow-md"
+                          style={{ 
+                            background: 'rgba(255, 255, 255, 0.2)', 
+                            color: '#1f2937',
+                            backgroundImage: 'none'
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.background = 'rgba(255, 255, 255, 0.4)';
+                            e.currentTarget.style.color = '#111827';
+                            e.currentTarget.style.backgroundImage = 'none';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.background = 'rgba(255, 255, 255, 0.2)';
+                            e.currentTarget.style.color = '#1f2937';
+                            e.currentTarget.style.backgroundImage = 'none';
+                          }}
                         >
                           <Eye className="h-4 w-4 inline mr-2" />
                           Voir les détails
@@ -377,7 +397,7 @@ function ClientOrdersPage() {
                         {order.status === 'draft' && (
                           <button
                             onClick={() => deleteOrder(order.id, order.name || order.id)}
-                            className="w-full px-6 py-3 bg-red-50/50 hover:bg-red-100/70 text-red-600 hover:text-red-700 rounded-xl text-sm font-semibold transition-all duration-200 shadow-sm backdrop-blur-md border border-red-200/50 hover:border-red-300/50"
+                            className="w-full px-6 py-3 bg-white/20 hover:bg-white/40 text-red-600 hover:text-red-700 rounded-xl text-sm font-semibold transition-all duration-200 shadow-sm backdrop-blur-md border border-red-200/30 hover:border-red-300/50"
                           >
                             <Trash2 className="h-4 w-4 inline mr-2" />
                             Supprimer la commande
@@ -392,45 +412,45 @@ function ClientOrdersPage() {
               {/* Vue Desktop - Tableau Responsive (≥1024px) */}
               <div className="hidden lg:block overflow-x-auto">
                 <table className="w-full">
-                  <thead className="bg-gradient-to-r from-white/80 via-gray-50/80 to-white/80 backdrop-blur-sm border-b border-gray-200/50">
+                  <thead className="bg-white/40 backdrop-blur-sm border-b border-gray-200/40">
                     <tr>
                       {/* Colonnes visibles selon breakpoints */}
-                      <th className="hidden xl:table-cell px-4 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                      <th className="hidden xl:table-cell px-4 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
                         Numéro
                       </th>
-                      <th className="px-4 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                      <th className="px-4 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
                         Statut
                       </th>
-                      <th className="px-4 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                      <th className="px-4 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
                         Date
                       </th>
-                      <th className="hidden xl:table-cell px-4 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                      <th className="hidden xl:table-cell px-4 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
                         Articles
                       </th>
-                      <th className="px-4 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                      <th className="px-4 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
                         Montant
                       </th>
-                      <th className="px-4 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                      <th className="px-4 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
                         Actions
                       </th>
                     </tr>
                   </thead>
-                  <tbody className="bg-gradient-to-b from-white/90 to-white/70 backdrop-blur-sm divide-y divide-gray-200/50">
+                  <tbody className="bg-white/20 backdrop-blur-sm divide-y divide-gray-200/40">
                     {filteredOrders.map((order, index) => {
                       const getRowBackground = (status: string, index: number) => {
-                        const baseClass = index % 2 === 0 ? 'bg-white/30' : 'bg-gray-50/30';
-                        const hoverClass = 'hover:bg-white/60';
-                        const statusGlow = (() => {
+                        const baseClass = index % 2 === 0 ? 'bg-white/10' : 'bg-white/20';
+                        const hoverClass = 'hover:bg-white/30';
+                        const statusAccent = (() => {
                           switch (status) {
-                            case 'completed': return 'hover:shadow-green-100/50';
-                            case 'shipping': return 'hover:shadow-blue-100/50';
+                            case 'completed': return 'hover:border-l-green-500';
+                            case 'shipping': return 'hover:border-l-blue-500';
                             case 'pending_payment':
-                            case 'validated': return 'hover:shadow-amber-100/50';
-                            case 'draft': return 'hover:shadow-gray-100/50';
-                            default: return 'hover:shadow-gray-100/50';
+                            case 'validated': return 'hover:border-l-amber-500';
+                            case 'draft': return 'hover:border-l-gray-400';
+                            default: return 'hover:border-l-gray-400';
                           }
                         })();
-                        return `${baseClass} ${hoverClass} ${statusGlow} backdrop-blur-sm transition-all duration-200 hover:shadow-lg`;
+                        return `${baseClass} ${hoverClass} ${statusAccent} backdrop-blur-sm transition-all duration-200 hover:shadow-lg border-l-2 border-l-transparent hover:border-l-4`;
                       };
 
                       return (
@@ -440,7 +460,7 @@ function ClientOrdersPage() {
                             <div className="max-w-xs">
                               <div className="text-sm font-medium text-gray-900 truncate">{order.id}</div>
                               {order.name && (
-                                <div className="text-xs text-gray-500 truncate">{order.name}</div>
+                                <div className="text-xs text-gray-600 truncate">{order.name}</div>
                               )}
                             </div>
                           </td>
@@ -448,7 +468,7 @@ function ClientOrdersPage() {
                           {/* Statut - Toujours visible */}
                           <td className="px-4 py-4">
                             <div className="flex flex-col space-y-1">
-                              <span className={`inline-flex items-center space-x-1 px-3 py-1.5 rounded-xl text-xs font-medium backdrop-blur-sm border ${getStatusColor(order.status)} w-fit shadow-sm`}>
+                              <span className={`inline-flex items-center space-x-1 px-3 py-1.5 rounded-xl text-xs font-semibold backdrop-blur-sm border ${getStatusColor(order.status)} w-fit shadow-sm`}>
                                 {getStatusIcon(order.status)}
                                 <span className="hidden lg:inline">{order.status_label}</span>
                               </span>
@@ -457,7 +477,7 @@ function ClientOrdersPage() {
                                   href={getFedExTrackingUrl(order.tracking_number)}
                                   target="_blank"
                                   rel="noopener noreferrer"
-                                  className="flex items-center space-x-1 text-xs text-blue-700 bg-blue-50/50 px-2 py-1 rounded-lg backdrop-blur-sm hover:bg-blue-100/60 hover:text-blue-800 transition-all duration-200 cursor-pointer group border border-blue-200/50 hover:border-blue-300/60"
+                                  className="flex items-center space-x-1 text-xs text-blue-700 bg-blue-50/60 px-2 py-1 rounded-lg backdrop-blur-sm hover:bg-blue-100/70 hover:text-blue-800 transition-all duration-200 cursor-pointer group border border-blue-200/60 hover:border-blue-300/70"
                                 >
                                   <Truck className="h-3 w-3 group-hover:scale-110 transition-transform" />
                                   <span className="hidden xl:inline">Tracking: </span>
@@ -471,7 +491,7 @@ function ClientOrdersPage() {
                           {/* Date - Toujours visible */}
                           <td className="px-4 py-4">
                             <div className="flex items-center text-sm text-gray-900">
-                              <Calendar className="h-4 w-4 mr-1 text-gray-400" />
+                              <Calendar className="h-4 w-4 mr-1 text-gray-500" />
                               <span className="hidden xl:inline">
                                 {new Date(order.createdAt).toLocaleDateString('fr-FR')}
                               </span>
@@ -487,7 +507,7 @@ function ClientOrdersPage() {
                           {/* Articles - Visible XL+ */}
                           <td className="hidden xl:table-cell px-4 py-4">
                             <div className="flex items-center text-sm text-gray-900">
-                              <Package className="h-4 w-4 mr-1 text-gray-400" />
+                              <Package className="h-4 w-4 mr-1 text-gray-500" />
                               {order.totalItems} article{order.totalItems > 1 ? 's' : ''}
                             </div>
                           </td>
@@ -496,7 +516,7 @@ function ClientOrdersPage() {
                           <td className="px-4 py-4">
                             <div className="text-sm font-semibold text-gray-900">
                               <div className="flex items-center">
-                                <Euro className="h-4 w-4 mr-1 text-gray-400" />
+                                <Euro className="h-4 w-4 mr-1 text-gray-500" />
                                 {order.totalAmount?.toFixed(2)} €
                               </div>
                               <div className="xl:hidden text-xs text-gray-500 mt-1">
@@ -510,7 +530,22 @@ function ClientOrdersPage() {
                             <div className="flex items-center space-x-2">
                               <button
                                 onClick={() => handleOrderClick(order.id)}
-                                className="px-4 py-2 bg-white/50 hover:bg-white/70 text-gray-800 hover:text-gray-900 rounded-lg text-sm font-semibold transition-all duration-200 shadow-sm backdrop-blur-md border border-white/60 hover:border-white/80 hover:shadow-md whitespace-nowrap"
+                                className="px-4 py-2 !bg-white/20 hover:!bg-white/40 !text-gray-800 hover:!text-gray-900 rounded-lg text-sm font-semibold transition-all duration-200 shadow-sm backdrop-blur-md border border-white/30 hover:border-white/50 hover:shadow-md whitespace-nowrap"
+                                style={{ 
+                                  background: 'rgba(255, 255, 255, 0.2)', 
+                                  color: '#1f2937',
+                                  backgroundImage: 'none'
+                                }}
+                                onMouseEnter={(e) => {
+                                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.4)';
+                                  e.currentTarget.style.color = '#111827';
+                                  e.currentTarget.style.backgroundImage = 'none';
+                                }}
+                                onMouseLeave={(e) => {
+                                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.2)';
+                                  e.currentTarget.style.color = '#1f2937';
+                                  e.currentTarget.style.backgroundImage = 'none';
+                                }}
                               >
                                 <Eye className="h-4 w-4 inline mr-1" />
                                 <span className="hidden xl:inline">Détails</span>
@@ -518,7 +553,7 @@ function ClientOrdersPage() {
                               {order.status === 'draft' && (
                                 <button
                                   onClick={() => deleteOrder(order.id, order.name || order.id)}
-                                  className="p-2 bg-red-50/50 hover:bg-red-100/70 text-red-600 hover:text-red-700 rounded-lg transition-all duration-200 backdrop-blur-md border border-red-200/50 hover:border-red-300/50"
+                                  className="p-2 bg-white/20 hover:bg-white/40 text-red-600 hover:text-red-700 rounded-lg transition-all duration-200 backdrop-blur-md border border-red-200/30 hover:border-red-300/50"
                                   title="Supprimer"
                                 >
                                   <Trash2 className="h-4 w-4" />
@@ -548,7 +583,22 @@ function ClientOrdersPage() {
             </p>
             <button
               onClick={() => router.push('/catalog')}
-              className="bg-white/50 hover:bg-white/70 text-gray-800 hover:text-gray-900 py-3 px-8 rounded-xl font-semibold shadow-lg backdrop-blur-md border border-white/60 hover:border-white/80 hover:shadow-xl transition-all duration-200"
+              className="!bg-white/20 hover:!bg-white/40 !text-gray-800 hover:!text-gray-900 py-3 px-8 rounded-xl font-semibold shadow-lg backdrop-blur-md border border-white/30 hover:border-white/50 hover:shadow-xl transition-all duration-200"
+              style={{ 
+                background: 'rgba(255, 255, 255, 0.2)', 
+                color: '#1f2937',
+                backgroundImage: 'none'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.4)';
+                e.currentTarget.style.color = '#111827';
+                e.currentTarget.style.backgroundImage = 'none';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.2)';
+                e.currentTarget.style.color = '#1f2937';
+                e.currentTarget.style.backgroundImage = 'none';
+              }}
             >
               Voir le catalogue
             </button>

@@ -602,6 +602,32 @@ function AdminOrderDetailPage() {
     });
   };
 
+  const getDisplayFunctionality = (functionality: string) => {
+    if (functionality === 'Minor Fault') {
+      return 'Grades X';
+    }
+    if (functionality === 'Working') {
+      return 'Stockage de base';
+    }
+    return functionality;
+  };
+
+  const getDisplayAppearance = (appearance: string, functionality: string) => {
+    if (functionality === 'Minor Fault') {
+      // Ajouter 'x' minuscule après le grade pour les Minor Fault
+      // Grade C → Grade Cx, Grade BC → Grade BCx, Grade C+ → Grade Cx+
+      const gradeMatch = appearance.match(/^(Grade [A-Z]+)(\+?)/i);
+      if (gradeMatch) {
+        const grade = gradeMatch[1]; // "Grade C"
+        const plus = gradeMatch[2] || ''; // "+" ou ""
+        const rest = appearance.substring(grade.length + plus.length).trim();
+        return rest ? `${grade}x${plus} ${rest}` : `${grade}x${plus}`;
+      }
+    }
+    // Pour Working ou si pas de grade détecté, retourner tel quel
+    return appearance;
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -965,12 +991,13 @@ function AdminOrderDetailPage() {
                           <div className="flex items-center gap-2 flex-wrap">
                             {/* Grade */}
                             <span className={`text-xs font-medium px-1 py-0.5 rounded ${
-                              item.appearance?.includes('A+') ? 'bg-green-100 text-green-800' :
+                              item.appearance?.includes('A+') ? 'bg-purple-100 text-purple-800' :
                               item.appearance?.includes('A') && !item.appearance?.includes('AB') ? 'bg-blue-100 text-blue-800' :
-                              item.appearance?.includes('B') ? 'bg-yellow-100 text-yellow-800' :
+                              item.appearance?.includes('B') ? 'bg-green-100 text-green-800' :
+                              item.appearance?.includes('C+') ? 'bg-yellow-100 text-yellow-800' :
                               'bg-orange-100 text-orange-800'
                             }`}>
-                              {item.appearance?.replace('Grade ', '') || ''}
+                              {getDisplayAppearance(item.appearance, item.functionality)?.replace('Grade ', '') || ''}
                             </span>
 
                             {/* Additional Info - seulement si non vide */}
@@ -1283,12 +1310,13 @@ function AdminOrderDetailPage() {
                             <div className="flex items-center gap-2 flex-wrap">
                               {/* Grade */}
                               <span className={`text-xs font-medium px-1 py-0.5 rounded ${
-                                imei.appearance?.includes('A+') ? 'bg-green-100 text-green-800' :
+                                imei.appearance?.includes('A+') ? 'bg-purple-100 text-purple-800' :
                                 imei.appearance?.includes('A') && !imei.appearance?.includes('AB') ? 'bg-blue-100 text-blue-800' :
-                                imei.appearance?.includes('B') ? 'bg-yellow-100 text-yellow-800' :
+                                imei.appearance?.includes('B') ? 'bg-green-100 text-green-800' :
+                                imei.appearance?.includes('C+') ? 'bg-yellow-100 text-yellow-800' :
                                 'bg-orange-100 text-orange-800'
                               }`}>
-                                {imei.appearance?.replace('Grade ', '') || ''}
+                                {getDisplayAppearance(imei.appearance, imei.functionality)?.replace('Grade ', '') || ''}
                               </span>
                             </div>
 
@@ -1300,6 +1328,15 @@ function AdminOrderDetailPage() {
                               </div>
                             )}
                           </div>
+
+                          {/* Info supplémentaire */}
+                          {imei.additional_info && (
+                            <div className="mb-2">
+                              <span className="text-xs text-gray-600 bg-gray-50 px-2 py-1 rounded">
+                                {imei.additional_info}
+                              </span>
+                            </div>
+                          )}
 
                           {/* Prix et marge sur même ligne */}
                           <div className="flex items-center justify-between pt-2 border-t border-gray-100">
@@ -1365,12 +1402,19 @@ function AdminOrderDetailPage() {
                             <td className="hidden xl:table-cell px-3 py-3">
                               <div className="flex flex-wrap gap-1">
                                 <span className={`inline-flex px-2 py-1 text-xs font-medium rounded ${
-                                  imei.appearance === 'Grade A+' ? 'bg-green-100 text-green-800' :
-                                  imei.appearance === 'Grade A' ? 'bg-blue-100 text-blue-800' :
-                                  'bg-yellow-100 text-yellow-800'
+                                  imei.appearance?.includes('A+') ? 'bg-purple-100 text-purple-800' :
+                                  imei.appearance?.includes('A') && !imei.appearance?.includes('AB') ? 'bg-blue-100 text-blue-800' :
+                                  imei.appearance?.includes('B') ? 'bg-green-100 text-green-800' :
+                                  imei.appearance?.includes('C+') ? 'bg-yellow-100 text-yellow-800' :
+                                  'bg-orange-100 text-orange-800'
                                 }`}>
-                                  {imei.appearance.replace('Grade ', '')}
+                                  {getDisplayAppearance(imei.appearance, imei.functionality)?.replace('Grade ', '') || ''}
                                 </span>
+                                {imei.additional_info && (
+                                  <span className="text-xs text-gray-600 bg-gray-50 px-2 py-1 rounded">
+                                    {imei.additional_info}
+                                  </span>
+                                )}
                               </div>
                             </td>
                             <td className="hidden 2xl:table-cell px-3 py-3">

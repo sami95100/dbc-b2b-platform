@@ -122,7 +122,7 @@ const ProductTableRow = memo(function ProductTableRow({
         <span className={`px-2 py-1 rounded text-xs font-medium ${
           product.functionality === 'Working' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
         }`}>
-          {product.functionality}
+          {product.functionality === 'Minor Fault' ? 'Grades X' : product.functionality === 'Working' ? 'Stockage de base' : product.functionality}
         </span>
       </td>
       <td className="px-2 py-3 text-sm text-gray-700">

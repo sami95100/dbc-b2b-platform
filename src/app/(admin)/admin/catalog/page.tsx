@@ -268,7 +268,7 @@ Stock zéro: ${summary?.stats?.out_of_stock || 0}`;
 
 
 // Composant pour les outils d'import
-const ImportTools = () => {
+const ImportTools = ({ onImportSuccess }: { onImportSuccess?: () => void }) => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [summaryData, setSummaryData] = useState<any>(null);
   const [showSummary, setShowSummary] = useState(false);
@@ -323,6 +323,11 @@ const ImportTools = () => {
           
           setImportProgress({ step: 'complete', current: 100, total: 100, message: 'Import terminé !' });
           
+          // Appeler le callback pour rafraîchir les données
+          if (onImportSuccess) {
+            onImportSuccess();
+          }
+          
           setTimeout(() => {
             setSummaryData(result.summary);
             setShowSummary(true);
@@ -357,10 +362,10 @@ const ImportTools = () => {
         <button
           onClick={handleCatalogImport}
           disabled={isProcessing}
-          className="px-6 py-3 bg-white bg-opacity-90 backdrop-blur-sm border border-white border-opacity-40 rounded-xl hover:bg-opacity-95 hover:shadow-lg text-base text-gray-700 transition-all duration-200 shadow-md flex items-center gap-3 font-medium"
+          className="px-5 py-3 bg-white bg-opacity-90 backdrop-blur-sm border border-gray-200 rounded-xl hover:bg-opacity-100 hover:shadow-md text-sm text-gray-700 transition-all duration-200 flex items-center gap-2.5"
         >
-          <FileSpreadsheet className="h-5 w-5" />
-          {isProcessing ? 'Import en cours...' : 'Importer Catalogue Excel'}
+          <FileSpreadsheet className="h-4 w-4" />
+          {isProcessing ? 'Import en cours...' : 'Importer Catalogue'}
         </button>
         
 
@@ -436,6 +441,7 @@ function AdminCatalogPage() {
   const [showNewProductsOnly, setShowNewProductsOnly] = useState(false);
   const [includeZeroStock, setIncludeZeroStock] = useState(false);
   const [showStandardCapacityOnly, setShowStandardCapacityOnly] = useState(false);
+  const [showMinorFaultOnly, setShowMinorFaultOnly] = useState(false);
   const [importInfo, setImportInfo] = useState<{ importDate: string; totalNewProducts: number; newSkus: string[]; restockedSkus: string[]; missingSkus: string[]; totalMissingProducts: number } | null>(null);
   
   // États de tri et pagination
@@ -630,7 +636,12 @@ function AdminCatalogPage() {
   // Fonction pour synchroniser les commandes brouillon avec Supabase
   const syncDraftOrdersWithSupabase = async () => {
     try {
-      const response = await fetch('/api/orders/draft', {
+      if (!user?.id) {
+        console.warn('❌ User ID non disponible pour sync draft orders');
+        return;
+      }
+      
+      const response = await fetch(`/api/orders/draft?userId=${user.id}`, {
         method: 'GET'
       });
       
@@ -790,6 +801,10 @@ function AdminCatalogPage() {
   // Fonction pour synchroniser une commande avec Supabase
   const syncOrderWithSupabase = async (order: any) => {
     try {
+      if (!user?.id) {
+        console.warn('❌ User ID non disponible pour sync order');
+        return;
+      }
       
       const response = await fetch('/api/orders/draft', {
         method: 'PUT',
@@ -802,7 +817,8 @@ function AdminCatalogPage() {
           items: order.items || {},
           totalItems: Object.values(order.items || {}).reduce((sum: number, qty: any) => 
             sum + (typeof qty === 'number' ? qty : 0), 0
-          )
+          ),
+          userId: user.id
         })
       });
 
@@ -1156,11 +1172,15 @@ function AdminCatalogPage() {
         ? product.quantity === 0  // Afficher tous les produits avec quantité 0
         : product.quantity > 0;   // Afficher seulement les produits avec stock > 0
       
+              // Filtre Grades X : par défaut Working seulement, si activé Minor Fault seulement
+        const matchesBoxedFilter = 
+            showMinorFaultOnly ? product.functionality === 'Minor Fault' : product.functionality === 'Working';
+      
       return matchesSearch && matchesManufacturer && matchesAppearance && 
              matchesColor && matchesBoxed &&
              matchesAdditionalInfo && matchesPriceMin && matchesPriceMax && 
              matchesQuantityMin && matchesQuantityMax && 
-             matchesStandardCapacity && matchesStock;
+             matchesStandardCapacity && matchesStock && matchesBoxedFilter;
     });
 
     // Tri avec groupement par product_name puis Minor Fault > Working par produit
@@ -1211,6 +1231,7 @@ function AdminCatalogPage() {
     quantityMin,
     quantityMax,
     showStandardCapacityOnly,
+    showMinorFaultOnly,
     sortField,
     sortDirection,
     getStandardCapacities
@@ -1453,63 +1474,68 @@ function AdminCatalogPage() {
       
       // Vérifier s'il existe une commande brouillon dans Supabase
       try {
-        const response = await fetch('/api/orders/draft', {
-          method: 'GET'
-        });
+        if (!user?.id) {
+          console.warn('❌ User ID non disponible pour vérification draft orders');
+          // Continuer en mode dégradé
+        } else {
+          const response = await fetch(`/api/orders/draft?userId=${user.id}`, {
+            method: 'GET'
+          });
         
-        if (response.ok) {
-          const result = await response.json();
-          if (result.draftOrders && result.draftOrders.length > 0) {
-            // Utiliser automatiquement la commande en brouillon la plus récente
-            const existingDraft = result.draftOrders[0];
-            console.log('📋 Utilisation de la commande en brouillon existante:', existingDraft.name);
-            
-            // Charger cette commande comme commande active
-            setCurrentDraftOrder(existingDraft.id);
-            saveCurrentOrderToLocalStorage(existingDraft.id);
-            
-            // Synchroniser avec les données existantes
-            const syncedDraftOrders = { ...draftOrders };
-            syncedDraftOrders[existingDraft.id] = {
-              id: existingDraft.id,
-              name: existingDraft.name,
-              status: 'draft',
-              status_label: 'Brouillon',
-              createdAt: existingDraft.created_at,
-              items: existingDraft.items || {},
-              supabaseId: existingDraft.id,
-              source: 'supabase',
-              total_amount: existingDraft.total_amount,
-              total_items: existingDraft.total_items
-            };
-            
-            setDraftOrders(syncedDraftOrders);
-            setQuantities(existingDraft.items || {});
-            await saveDraftOrdersToLocalStorage(syncedDraftOrders);
-            
-            // Maintenant continuer avec l'ajout du produit
-            const currentQuantity = existingDraft.items?.[sku] || 0;
-            const newQuantity = replace ? quantity : currentQuantity + quantity;
-            
-            const updatedItems = {
-              ...existingDraft.items,
-              [sku]: newQuantity
-            };
-            
-            const updatedDraftOrders = {
-              ...syncedDraftOrders,
-              [existingDraft.id]: {
-                ...syncedDraftOrders[existingDraft.id],
-                items: updatedItems
-              }
-            };
-            
-            setDraftOrders(updatedDraftOrders);
-            setQuantities(prev => ({ ...prev, [sku]: newQuantity }));
-            setSelectedProducts(prev => ({ ...prev, [sku]: true }));
-            
-            await saveDraftOrdersToLocalStorage(updatedDraftOrders);
-            return;
+          if (response.ok) {
+            const result = await response.json();
+            if (result.draftOrders && result.draftOrders.length > 0) {
+              // Utiliser automatiquement la commande en brouillon la plus récente
+              const existingDraft = result.draftOrders[0];
+              console.log('📋 Utilisation de la commande en brouillon existante:', existingDraft.name);
+              
+              // Charger cette commande comme commande active
+              setCurrentDraftOrder(existingDraft.id);
+              saveCurrentOrderToLocalStorage(existingDraft.id);
+              
+              // Synchroniser avec les données existantes
+              const syncedDraftOrders = { ...draftOrders };
+              syncedDraftOrders[existingDraft.id] = {
+                id: existingDraft.id,
+                name: existingDraft.name,
+                status: 'draft',
+                status_label: 'Brouillon',
+                createdAt: existingDraft.created_at,
+                items: existingDraft.items || {},
+                supabaseId: existingDraft.id,
+                source: 'supabase',
+                total_amount: existingDraft.total_amount,
+                total_items: existingDraft.total_items
+              };
+              
+              setDraftOrders(syncedDraftOrders);
+              setQuantities(existingDraft.items || {});
+              await saveDraftOrdersToLocalStorage(syncedDraftOrders);
+              
+              // Maintenant continuer avec l'ajout du produit
+              const currentQuantity = existingDraft.items?.[sku] || 0;
+              const newQuantity = replace ? quantity : currentQuantity + quantity;
+              
+              const updatedItems = {
+                ...existingDraft.items,
+                [sku]: newQuantity
+              };
+              
+              const updatedDraftOrders = {
+                ...syncedDraftOrders,
+                [existingDraft.id]: {
+                  ...syncedDraftOrders[existingDraft.id],
+                  items: updatedItems
+                }
+              };
+              
+              setDraftOrders(updatedDraftOrders);
+              setQuantities(prev => ({ ...prev, [sku]: newQuantity }));
+              setSelectedProducts(prev => ({ ...prev, [sku]: true }));
+              
+              await saveDraftOrdersToLocalStorage(updatedDraftOrders);
+              return;
+            }
           }
         }
       } catch (error) {
@@ -1578,7 +1604,7 @@ function AdminCatalogPage() {
           name: finalOrderName,
           items: {},
           totalItems: 0,
-          userId: selectedClientId
+          userId: selectedClientId // Pour l'admin, c'est le client sélectionné
         })
       });
 
@@ -1675,6 +1701,7 @@ function AdminCatalogPage() {
     setShowNewProductsOnly(false);
     setIncludeZeroStock(false);
     setShowStandardCapacityOnly(false);
+    setShowMinorFaultOnly(false);
     setCurrentPage(1);
   };
 
@@ -2176,9 +2203,10 @@ function AdminCatalogPage() {
           <div className="flex items-center gap-2 flex-wrap">
             {/* Grade */}
             <span className={`text-sm font-medium px-1 py-0.5 rounded ${
-              product.appearance.includes('A+') ? 'bg-green-100 text-green-800' :
+              product.appearance.includes('A+') ? 'bg-purple-100 text-purple-800' :
               product.appearance.includes('A') && !product.appearance.includes('AB') ? 'bg-blue-100 text-blue-800' :
-              product.appearance.includes('B') ? 'bg-yellow-100 text-yellow-800' :
+              product.appearance.includes('B') ? 'bg-green-100 text-green-800' :
+              product.appearance.includes('C+') ? 'bg-yellow-100 text-yellow-800' :
               'bg-orange-100 text-orange-800'
             }`}>
               {getDisplayAppearance(product.appearance, product.functionality).replace('Grade ', '')}
@@ -2199,6 +2227,13 @@ function AdminCatalogPage() {
                   <div className={`w-3 h-3 rounded-full border ${getColorClass(product.color)}`}></div>
                   <span className="text-xs text-gray-700">{getColorName(product.color)}</span>
                 </div>
+              )}
+
+              {/* Indication Boxed si applicable */}
+              {(product.boxed === 'Yes' || product.boxed === 'Oui') && (
+                <span className="text-xs px-1.5 py-0.5 bg-blue-100 text-blue-800 rounded-full font-medium">
+                  📦 Boxed
+                </span>
               )}
             </div>
           </div>
@@ -2614,7 +2649,7 @@ function AdminCatalogPage() {
                   // Délai pour permettre le clic sur une suggestion
                   setTimeout(() => setShowSuggestions(false), 200);
                 }}
-                className="block w-full pl-12 pr-6 py-4 text-base border border-gray-200 rounded-2xl bg-white bg-opacity-80 backdrop-blur-sm focus:ring-2 focus:ring-dbc-light-green focus:border-transparent placeholder-gray-500 shadow-sm transition-all duration-200"
+                className="block w-full pl-12 pr-6 py-4 text-base text-gray-900 border border-gray-200 rounded-2xl bg-white bg-opacity-80 backdrop-blur-sm focus:ring-2 focus:ring-dbc-light-green focus:border-transparent placeholder-gray-500 shadow-sm transition-all duration-200"
               />
               
               {/* Dropdown des suggestions */}
@@ -2660,7 +2695,7 @@ function AdminCatalogPage() {
 
             {/* Groupe Import + Export */}
             <div className="flex items-center gap-3 bg-white bg-opacity-60 backdrop-blur-sm rounded-2xl p-3 shadow-sm border border-white border-opacity-40">
-              <ImportTools />
+              <ImportTools onImportSuccess={calculateNewProducts} />
               
               <div className="relative dropdown-container">
                 <button
@@ -2706,66 +2741,91 @@ function AdminCatalogPage() {
             </div>
           </div>
 
-          {/* Ligne 3: Filtres spécialisés - Version compacte */}
-          <div className="flex flex-wrap items-center justify-center gap-3 max-w-4xl mx-auto">
-            {/* Stockage de base */}
-            <button
-              onClick={toggleStandardCapacityFilter}
-              className={`px-4 py-2 rounded-xl border-2 transition-all duration-300 text-xs font-medium flex items-center gap-2 hover:scale-105 ${
-                showStandardCapacityOnly 
-                  ? 'bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-100 shadow-md' 
-                  : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50 hover:border-gray-300 shadow-sm'
-              }`}
-            >
-              💾 {showStandardCapacityOnly && <span className="text-purple-600">✓</span>}
-              <span className="font-semibold">Stockage de base</span>
-            </button>
+          {/* Ligne 3: Filtres spécialisés - Organisation symétrique */}
+          <div className="max-w-4xl mx-auto">
+            {/* Ligne 1: Stockage de base + Grades X */}
+            <div className="flex items-center justify-center gap-6 mb-4">
+              {/* Stockage de base */}
+                              <button
+                onClick={toggleStandardCapacityFilter}
+                className={`w-48 h-16 rounded-xl border-2 transition-all duration-300 text-sm font-medium flex items-center justify-center gap-2 hover:scale-105 ${
+                  showStandardCapacityOnly 
+                    ? 'bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-100 shadow-md' 
+                    : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50 hover:border-gray-300 shadow-sm'
+                }`}
+              >
+                💾 {showStandardCapacityOnly && <span className="text-purple-600">✓</span>}
+                <span className="font-semibold text-xs">Stockage de base</span>
+              </button>
 
-            {/* Rupture de stock */}
-            <button
-              onClick={toggleZeroStockProducts}
-              className={`px-4 py-2 rounded-xl border-2 transition-all duration-300 text-xs font-medium flex items-center gap-2 hover:scale-105 ${
-                includeZeroStock 
-                  ? 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100 shadow-md' 
-                  : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50 hover:border-gray-300 shadow-sm'
-              }`}
-            >
-              📦 {includeZeroStock && <span className="text-red-600">✓</span>}
-              <span className="font-semibold">Rupture de stock</span>
-              {!includeZeroStock && filteredOutOfStockProducts.length > 0 && (
-                <span className="bg-red-100 text-red-800 text-xs px-2 py-0.5 rounded-full font-normal">
-                  +{filteredOutOfStockProducts.length}
-                </span>
-              )}
-            </button>
+              {/* Grades X - Avec PROMO */}
+                              <button
+                onClick={() => {
+                  setShowMinorFaultOnly(!showMinorFaultOnly);
+                  setCurrentPage(1);
+                }}
+                className={`w-48 h-16 rounded-xl border-2 transition-all duration-300 text-sm font-medium flex items-center justify-center gap-2 hover:scale-105 ${
+                  showMinorFaultOnly 
+                    ? 'bg-violet-50 text-violet-700 border-violet-200 hover:bg-violet-100 shadow-md' 
+                    : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50 hover:border-gray-300 shadow-sm'
+                }`}
+                title="Afficher seulement les Grades x (Minor Fault)"
+              >
+                💎 {showMinorFaultOnly && <span className="text-violet-600">✓</span>}
+                <span className="font-semibold text-xs">Grades x</span>
+                <span className="text-xs bg-violet-100 text-violet-700 px-2 py-0.5 rounded-full ml-1">PROMO</span>
+              </button>
+            </div>
 
-            {/* Nouveaux produits - Compact mais lisible */}
-            <button
-              onClick={() => setShowNewProductsOnly(!showNewProductsOnly)}
-              className={`px-3 py-2 rounded-xl border-2 transition-all duration-300 text-xs font-medium flex items-center gap-2 hover:scale-105 ${
-                showNewProductsOnly 
-                  ? 'bg-yellow-50 text-yellow-700 border-yellow-200 hover:bg-yellow-100 shadow-md' 
-                  : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50 hover:border-gray-300 shadow-sm'
-              }`}
-              title={importInfo ? 
-                `Dernière mise à jour: ${new Date(importInfo.importDate).toLocaleString('fr-FR')}` : 
-                'Information d\'import en cours de chargement'
-              }
-            >
-              <div className="flex items-center gap-1.5">
-                ✨ {showNewProductsOnly && <span className="text-yellow-600">✓</span>}
-                <div className="text-left">
-                  <div className="font-semibold whitespace-nowrap">
-                    Nouveaux {importInfo ? importInfo.totalNewProducts : '...'}
-                  </div>
+            {/* Ligne 2: Rupture de stock + Nouveaux (plus petits) */}
+            <div className="flex items-center justify-center gap-6">
+              {/* Rupture de stock */}
+              <button
+                onClick={toggleZeroStockProducts}
+                className={`w-44 h-12 rounded-lg border-2 transition-all duration-300 text-xs font-medium flex items-center justify-center gap-1 hover:scale-105 ${
+                  includeZeroStock 
+                    ? 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100 shadow-md' 
+                    : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50 hover:border-gray-300 shadow-sm'
+                }`}
+              >
+                📦 {includeZeroStock && <span className="text-red-600">✓</span>}
+                <span className="font-semibold">Rupture de stock</span>
+                {!includeZeroStock && filteredOutOfStockProducts.length > 0 && (
+                  <span className="bg-red-100 text-red-800 text-xs px-1.5 py-0.5 rounded-full font-normal ml-1">
+                    +{filteredOutOfStockProducts.length}
+                  </span>
+                )}
+              </button>
+
+              {/* Nouveaux produits */}
+              <button
+                onClick={() => setShowNewProductsOnly(!showNewProductsOnly)}
+                className={`w-44 h-12 rounded-lg border-2 transition-all duration-300 text-xs font-medium flex flex-col items-center justify-center hover:scale-105 ${
+                  showNewProductsOnly 
+                    ? 'bg-yellow-50 text-yellow-700 border-yellow-200 hover:bg-yellow-100 shadow-md' 
+                    : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50 hover:border-gray-300 shadow-sm'
+                }`}
+                title={importInfo ? 
+                  `Dernière mise à jour: ${new Date(importInfo.importDate).toLocaleString('fr-FR')}` : 
+                  'Information d\'import en cours de chargement'
+                }
+              >
+                <div className="flex items-center gap-1">
+                  ✨ {showNewProductsOnly && <span className="text-yellow-600">✓</span>}
+                  <span className="font-semibold">Nouveaux</span>
                   {importInfo && (
-                    <div className="text-[10px] opacity-75 leading-tight">
-                      {new Date(importInfo.importDate).toLocaleDateString('fr-FR')} {new Date(importInfo.importDate).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
-                    </div>
+                    <span className="bg-green-100 text-green-800 text-xs px-1.5 py-0.5 rounded-full font-normal">
+                      +{importInfo.totalNewProducts}
+                    </span>
                   )}
                 </div>
-              </div>
-            </button>
+                {importInfo && (
+                  <div className="text-[10px] text-gray-500 leading-tight">
+                    {new Date(importInfo.importDate).toLocaleDateString('fr-FR')} {new Date(importInfo.importDate).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                  </div>
+                )}
+              </button>
+            </div>
           </div>
         </div>
 
@@ -3075,6 +3135,7 @@ function AdminCatalogPage() {
                 <table className="w-full">
                   <thead className="bg-gray-50">
                     <tr className="border-b border-gray-200">
+                      <th className="px-1 py-1.5 text-center text-xs font-medium text-gray-500 uppercase whitespace-nowrap w-8">Sél.</th>
                       <th className="px-1 py-1.5 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">SKU</th>
                       <th className="px-1 py-1.5 text-left text-xs font-medium text-gray-500 uppercase min-w-[180px]">Nom du produit</th>
                       <th className="px-1 py-1.5 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap hidden md:table-cell">Apparence</th>
@@ -3097,6 +3158,45 @@ function AdminCatalogPage() {
                           key={product.sku} 
                           className={`border-b border-gray-100 hover:bg-gray-50 ${isHighlighted ? 'bg-green-50 border-l-2 border-dbc-light-green' : ''}`}
                         >
+                          <td className="px-1 py-1 text-center">
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={async (e) => {
+                                const isChecked = e.target.checked;
+                                
+                                if (isChecked) {
+                                  await selectFullQuantity(product.sku, product.quantity);
+                                  setSelectedProducts(prev => ({ ...prev, [product.sku]: true }));
+                                } else {
+                                  if (currentDraftOrder && draftOrders[currentDraftOrder]) {
+                                    const newItems = { ...draftOrders[currentDraftOrder].items };
+                                    delete newItems[product.sku];
+                                    
+                                    const newDraftOrders = {
+                                      ...draftOrders,
+                                      [currentDraftOrder]: {
+                                        ...draftOrders[currentDraftOrder],
+                                        items: newItems
+                                      }
+                                    };
+                                    
+                                    setDraftOrders(newDraftOrders);
+                                    
+                                    setQuantities(prev => {
+                                      const newQuantities = { ...prev };
+                                      delete newQuantities[product.sku];
+                                      return newQuantities;
+                                    });
+                                    
+                                    await saveDraftOrdersToLocalStorage(newDraftOrders);
+                                  }
+                                  setSelectedProducts(prev => ({ ...prev, [product.sku]: false }));
+                                }
+                              }}
+                              className="scale-75 rounded border-gray-300 text-dbc-light-green focus:ring-dbc-light-green"
+                            />
+                          </td>
                           <td className="px-1 py-1 text-xs font-mono text-gray-900 whitespace-nowrap">{product.sku}</td>
                           <td className="px-1 py-1 text-xs text-gray-900">
                             <div className="break-words max-w-[160px]" title={product.product_name}>
@@ -3105,9 +3205,10 @@ function AdminCatalogPage() {
                           </td>
                           <td className="px-1 py-1 hidden md:table-cell">
                             <span className={`inline-flex px-1 py-0.5 text-xs font-medium rounded-md ${
-                              product.appearance.includes('A+') ? 'bg-green-100 text-green-800' :
+                              product.appearance.includes('A+') ? 'bg-purple-100 text-purple-800' :
                               product.appearance.includes('A') && !product.appearance.includes('AB') ? 'bg-blue-100 text-blue-800' :
-                              product.appearance.includes('B') ? 'bg-yellow-100 text-yellow-800' :
+                              product.appearance.includes('B') ? 'bg-green-100 text-green-800' :
+                              product.appearance.includes('C+') ? 'bg-yellow-100 text-yellow-800' :
                               'bg-orange-100 text-orange-800'
                             }`}>
                               {getDisplayAppearance(product.appearance, product.functionality).replace('Grade ', '')}

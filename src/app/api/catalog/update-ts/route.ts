@@ -82,6 +82,8 @@ export async function POST(request: NextRequest) {
       processedAt: new Date().toISOString(),
       newProducts: newProducts,
       all_new_skus: resultData.all_new_skus || [],
+      missing_skus: resultData.missing_skus || [],
+      restocked_skus: resultData.restocked_skus || [],
       processingMethod: 'TypeScript (natif)'
     };
 

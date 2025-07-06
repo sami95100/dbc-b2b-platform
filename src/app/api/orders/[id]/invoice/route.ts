@@ -14,6 +14,22 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
     const admin = getSupabaseAdmin();
     console.log('📄 Génération facture pour commande:', params.id);
 
+    // Fonctions pour harmoniser la terminologie
+    const getDisplayFunctionality = (functionality: string) => {
+      switch(functionality) {
+        case 'Minor Fault': return 'Grades x';
+        case 'Working': return 'Stockage de base';
+        default: return functionality;
+      }
+    };
+
+    const getDisplayAppearance = (appearance: string, functionality: string) => {
+      if (functionality === 'Minor Fault') {
+        return appearance.replace('Grade ', 'Grade ') + 'x';
+      }
+      return appearance;
+    };
+
     // Récupérer les détails de la commande
     const { data: order, error: orderError } = await admin
       .from('orders')
@@ -371,8 +387,8 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
                 <tr>
                     <td class="text-center">Mobiles</td>
                     <td>${item.product_name}</td>
-                    <td class="text-center">${item.appearance.replace('Grade ', '')}</td>
-                    <td class="text-center">${item.functionality}</td>
+                    <td class="text-center">${getDisplayAppearance(item.appearance, item.functionality).replace('Grade ', '')}</td>
+                    <td class="text-center">${getDisplayFunctionality(item.functionality)}</td>
                     <td class="text-center">${item.boxed}</td>
                     <td class="text-center">${item.color}</td>
                     <td class="text-center">CloudOFF</td>

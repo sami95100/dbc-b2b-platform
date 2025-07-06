@@ -15,11 +15,23 @@ export async function GET(request: NextRequest) {
     
     const admin = getSupabaseAdmin();
     
-    // Récupérer toutes les commandes en brouillon
+    // Récupérer le userId depuis les paramètres URL
+    const searchParams = request.nextUrl.searchParams;
+    const userId = searchParams.get('userId');
+    
+    if (!userId) {
+      console.log('❌ userId manquant dans les paramètres');
+      return NextResponse.json({
+        error: 'userId requis'
+      }, { status: 400 });
+    }
+    
+    // Récupérer les commandes en brouillon pour cet utilisateur uniquement
     const { data: draftOrders, error: draftError } = await admin
       .from('orders')
       .select('id, name, created_at, total_amount, total_items')
       .eq('status', 'draft')
+      .eq('user_id', userId)
       .order('created_at', { ascending: false });
 
     if (draftError) {
@@ -80,11 +92,21 @@ export async function POST(request: NextRequest) {
     
     const admin = getSupabaseAdmin();
     
-    // Vérifier s'il existe déjà une commande en brouillon
+    const body = await request.json();
+    const { name, items, totalAmount, totalItems, userId } = body;
+
+    if (!userId) {
+      return NextResponse.json({
+        error: 'userId requis'
+      }, { status: 400 });
+    }
+    
+    // Vérifier s'il existe déjà une commande en brouillon pour cet utilisateur
     const { data: existingDraftOrders, error: draftCheckError } = await admin
       .from('orders')
       .select('id, name, created_at')
       .eq('status', 'draft')
+      .eq('user_id', userId)
       .order('created_at', { ascending: false });
 
     if (draftCheckError) {
@@ -103,16 +125,13 @@ export async function POST(request: NextRequest) {
         message: `Vous avez déjà une commande en brouillon: "${existingDraft.name}". Veuillez d'abord la supprimer ou la finaliser avant d'en créer une nouvelle.`
       }, { status: 409 });
     }
-    
-    const body = await request.json();
-    const { name, items, totalAmount, totalItems, userId } = body;
 
     console.log('📋 Paramètres reçus:');
     console.log('- Nom:', name);
     console.log('- Nombre d\'items:', Object.keys(items || {}).length);
     console.log('- Montant total:', totalAmount);
     console.log('- Items total:', totalItems);
-    console.log('- User ID:', userId || 'NON FOURNI');
+    console.log('- User ID:', userId);
 
     // Validation des données
     if (!name || typeof name !== 'string') {
@@ -121,10 +140,6 @@ export async function POST(request: NextRequest) {
 
     if (!items || typeof items !== 'object') {
       throw new Error('Items de commande requis');
-    }
-
-    if (!userId) {
-      console.warn('⚠️ ATTENTION: Commande créée sans userId - cela peut causer des problèmes');
     }
 
     // Calculer les totaux si non fournis
@@ -165,13 +180,9 @@ export async function POST(request: NextRequest) {
       total_amount: Math.round(calculatedTotalAmount * 100) / 100,
       total_items: calculatedTotalItems,
       customer_ref: 'DBC-CLIENT-001',
-      vat_type: 'Bien d\'occasion - TVA calculée sur la marge'
+      vat_type: 'Bien d\'occasion - TVA calculée sur la marge',
+      user_id: userId
     };
-
-    // Ajouter le user_id si fourni
-    if (userId) {
-      orderData.user_id = userId;
-    }
 
     const { data: order, error: orderError } = await admin
       .from('orders')
@@ -262,20 +273,42 @@ export async function PUT(request: NextRequest) {
     const admin = getSupabaseAdmin();
     
     const body = await request.json();
-    const { orderId, name, items, totalAmount, totalItems } = body;
+    const { orderId, name, items, totalAmount, totalItems, userId } = body;
 
     console.log('📋 Paramètres de mise à jour:');
     console.log('- ID commande:', orderId);
     console.log('- Nom:', name);
     console.log('- Nombre d\'items:', Object.keys(items || {}).length);
+    console.log('- User ID:', userId);
 
     // Validation
     if (!orderId) {
       throw new Error('ID de commande requis');
     }
 
+    if (!userId) {
+      return NextResponse.json({
+        error: 'userId requis'
+      }, { status: 400 });
+    }
+
     if (!items || typeof items !== 'object') {
       throw new Error('Items de commande requis');
+    }
+
+    // Vérifier que la commande appartient à l'utilisateur
+    const { data: existingOrder, error: checkError } = await admin
+      .from('orders')
+      .select('id, user_id')
+      .eq('id', orderId)
+      .eq('user_id', userId)
+      .single();
+
+    if (checkError || !existingOrder) {
+      console.error('❌ Commande non trouvée ou non autorisée:', checkError);
+      return NextResponse.json({
+        error: 'Commande non trouvée ou non autorisée'
+      }, { status: 404 });
     }
 
     // Calculer les totaux
@@ -318,6 +351,7 @@ export async function PUT(request: NextRequest) {
       .from('orders')
       .update(updateData)
       .eq('id', orderId)
+      .eq('user_id', userId)
       .select()
       .single();
 
@@ -402,18 +436,28 @@ export async function PUT(request: NextRequest) {
   }
 }
 
-// Supprimer toutes les commandes en brouillon
+// Supprimer les commandes en brouillon pour un utilisateur
 export async function DELETE(request: Request) {
   try {
     console.log('🗑️ Suppression des commandes en brouillon...');
 
     const admin = getSupabaseAdmin();
+    
+    const body = await request.json();
+    const { userId } = body;
 
-    // Récupérer toutes les commandes en brouillon
+    if (!userId) {
+      return NextResponse.json({
+        error: 'userId requis'
+      }, { status: 400 });
+    }
+
+    // Récupérer les commandes en brouillon pour cet utilisateur
     const { data: draftOrders, error: fetchError } = await admin
       .from('orders')
       .select('id, name')
-      .eq('status', 'draft');
+      .eq('status', 'draft')
+      .eq('user_id', userId);
 
     if (fetchError) {
       console.error('❌ Erreur récupération commandes brouillon:', fetchError);
@@ -433,11 +477,12 @@ export async function DELETE(request: Request) {
 
     console.log(`🔍 ${draftOrders.length} commande(s) en brouillon trouvée(s):`, draftOrders.map((order: any) => order.name));
 
-    // Supprimer toutes les commandes en brouillon
+    // Supprimer les commandes en brouillon pour cet utilisateur
     const { error: deleteError } = await admin
       .from('orders')
       .delete()
-      .eq('status', 'draft');
+      .eq('status', 'draft')
+      .eq('user_id', userId);
 
     if (deleteError) {
       console.error('❌ Erreur suppression commandes brouillon:', deleteError);
@@ -447,19 +492,22 @@ export async function DELETE(request: Request) {
       }, { status: 500 });
     }
 
-    console.log(`✅ ${draftOrders.length} commande(s) en brouillon supprimée(s)`);
+    console.log('✅ Commandes en brouillon supprimées:', draftOrders.length);
 
-    return NextResponse.json({ 
+    return NextResponse.json({
       message: `${draftOrders.length} commande(s) en brouillon supprimée(s)`,
-      deletedCount: draftOrders.length,
-      deletedOrders: draftOrders
+      deletedCount: draftOrders.length
     });
 
   } catch (error) {
-    console.error('❌ Erreur suppression commandes brouillon:', error);
-    return NextResponse.json({ 
-      error: 'Erreur serveur lors de la suppression',
-      details: error instanceof Error ? error.message : 'Erreur inconnue'
-    }, { status: 500 });
+    console.error('❌ Erreur suppression commandes draft:', error);
+    
+    return NextResponse.json(
+      { 
+        error: error instanceof Error ? error.message : 'Erreur interne', 
+        details: error instanceof Error ? error.stack : 'Erreur inconnue'
+      },
+      { status: 500 }
+    );
   }
 } 
