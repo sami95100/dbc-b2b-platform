@@ -7,6 +7,7 @@ import AppHeader from '@/components/AppHeader';
 import OrderFilters from '@/components/OrderFilters';
 import { supabase, Product } from '../../../lib/supabase';
 import { OrdersUtils } from '../../../lib/orders-utils';
+import { calculateShippingCost } from '../../../lib/shipping';
 import {
   ShoppingCart,
   Package,
@@ -97,7 +98,7 @@ function ClientOrdersPage() {
         }
       };
 
-      // Convertir au format attendu
+      // Convertir au format attendu avec calcul des frais de livraison
       const clientOrders = result.orders?.map((order: any) => ({
         id: order.id,
         name: order.name,
@@ -106,6 +107,7 @@ function ClientOrdersPage() {
         createdAt: order.created_at,
         totalAmount: order.total_amount,
         totalItems: order.total_items,
+        shippingCost: calculateShippingCost(order.total_items),
         customerRef: order.customer_ref,
         vatType: order.vat_type,
         items: order.order_items || [],
@@ -342,6 +344,13 @@ function ClientOrdersPage() {
                           <div className="text-xs text-gray-700 font-medium">
                             {order.totalItems} article{order.totalItems > 1 ? 's' : ''}
                           </div>
+                          {order.shippingCost > 0 && (
+                            <div className="text-xs text-gray-600 mt-1">
+                              <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded-full">
+                                Livraison: {order.shippingCost.toFixed(2)}€
+                              </span>
+                            </div>
+                          )}
                         </div>
                       </div>
 
@@ -522,6 +531,13 @@ function ClientOrdersPage() {
                               <div className="xl:hidden text-xs text-gray-500 mt-1">
                                 {order.totalItems} article{order.totalItems > 1 ? 's' : ''}
                               </div>
+                              {order.shippingCost > 0 && (
+                                <div className="text-xs text-blue-700 mt-1">
+                                  <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded-full">
+                                    Livraison: {order.shippingCost.toFixed(2)}€
+                                  </span>
+                                </div>
+                              )}
                             </div>
                           </td>
 

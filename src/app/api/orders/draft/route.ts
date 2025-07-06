@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '../../../../lib/supabase';
-import { calculateShippingCost } from '../../../../lib/shipping';
 
 // Fonction helper pour vérifier supabaseAdmin
 function getSupabaseAdmin() {
@@ -173,17 +172,13 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Calculer les frais de livraison automatiquement
-    const shippingCost = calculateShippingCost(calculatedTotalItems);
-    
-    // Créer la commande dans Supabase avec frais de livraison pré-calculés
+    // Créer la commande dans Supabase 
     const orderData: any = {
       name,
       status: 'draft' as const,
       status_label: 'Brouillon',
       total_amount: Math.round(calculatedTotalAmount * 100) / 100,
       total_items: calculatedTotalItems,
-      shipping_cost: shippingCost,
       customer_ref: 'DBC-CLIENT-001',
       vat_type: 'Bien d\'occasion - TVA calculée sur la marge',
       user_id: userId
@@ -341,14 +336,10 @@ export async function PUT(request: NextRequest) {
       }
     }
 
-    // Recalculer les frais de livraison automatiquement
-    const shippingCost = calculateShippingCost(calculatedTotalItems);
-    
-    // Mettre à jour la commande avec frais de livraison mis à jour
+    // Mettre à jour la commande
     const updateData: any = {
       total_amount: Math.round(calculatedTotalAmount * 100) / 100,
       total_items: calculatedTotalItems,
-      shipping_cost: shippingCost,
       updated_at: new Date().toISOString()
     };
 

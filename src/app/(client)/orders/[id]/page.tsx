@@ -5,6 +5,7 @@ import { useRouter, useParams } from 'next/navigation';
 import { useAuth, withAuth } from '../../../../lib/auth-context';
 import AppHeader from '@/components/AppHeader';
 import { supabase, Product } from '../../../../lib/supabase';
+import { calculateShippingCost } from '../../../../lib/shipping';
 import { 
   Package, 
   Calendar, 
@@ -134,6 +135,7 @@ function ClientOrderDetailPage() {
         items,
         totalItems: supabaseOrder.total_items,
         totalAmount: supabaseOrder.total_amount,
+        shippingCost: calculateShippingCost(supabaseOrder.total_items),
         customerRef: supabaseOrder.customer_ref,
         vatType: supabaseOrder.vat_type,
         source: 'supabase',
@@ -913,15 +915,23 @@ function ClientOrderDetailPage() {
           <div className="max-w-xs ml-auto">
             <div className="space-y-2">
               <div className="flex justify-between text-sm">
-                <span className="text-gray-800">Total ({orderDetail.totalItems} articles)</span>
+                <span className="text-gray-800">Produits ({orderDetail.totalItems} articles)</span>
                 <span className="font-medium text-gray-900">{orderDetail.totalAmount.toFixed(2)}€</span>
               </div>
+              {orderDetail.shippingCost > 0 && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-800">Frais de livraison</span>
+                  <span className="font-medium text-gray-900">{orderDetail.shippingCost.toFixed(2)}€</span>
+                </div>
+              )}
               <div className="text-xs text-gray-700">
                 Bien d'occasion - TVA calculée sur la marge, non récupérable
               </div>
               <div className="border-t pt-2 flex justify-between">
                 <span className="font-semibold text-gray-900">Total HT</span>
-                <span className="font-bold text-lg text-gray-900">{orderDetail.totalAmount.toFixed(2)}€</span>
+                <span className="font-bold text-lg text-gray-900">
+                  {(orderDetail.totalAmount + (orderDetail.shippingCost || 0)).toFixed(2)}€
+                </span>
               </div>
             </div>
           </div>

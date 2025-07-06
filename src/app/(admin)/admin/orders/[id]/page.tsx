@@ -5,6 +5,7 @@ import { useRouter, useParams } from 'next/navigation';
 import { useAuth, withAuth } from '../../../../../lib/auth-context';
 import AppHeader from '@/components/AppHeader';
 import { supabase, Product, orderService } from '../../../../../lib/supabase';
+import { calculateShippingCost } from '../../../../../lib/shipping';
 import { 
   User, 
   LogOut, 
@@ -48,7 +49,6 @@ function AdminOrderDetailPage() {
   const [imeiData, setImeiData] = useState<any[]>([]);
   const [showShippingModal, setShowShippingModal] = useState(false);
   const [trackingNumber, setTrackingNumber] = useState('');
-  const [shippingCost, setShippingCost] = useState('');
 
   const loadOrderDetail = async () => {
     try {
@@ -145,6 +145,7 @@ function AdminOrderDetailPage() {
         items,
         totalItems: supabaseOrder.total_items,
         totalAmount: supabaseOrder.total_amount,
+        shippingCost: calculateShippingCost(supabaseOrder.total_items),
         customerRef: supabaseOrder.customer_ref,
         vatType: supabaseOrder.vat_type,
         source: 'supabase'
@@ -436,7 +437,7 @@ function AdminOrderDetailPage() {
     }
 
     try {
-      console.log('🚚 Mise à jour tracking:', trackingNumber, shippingCost);
+      console.log('🚚 Mise à jour tracking:', trackingNumber);
 
       const response = await fetch(`/api/orders/${orderDetail.id}/shipping`, {
         method: 'PUT',
@@ -445,7 +446,6 @@ function AdminOrderDetailPage() {
         },
         body: JSON.stringify({
           tracking_number: trackingNumber,
-          shipping_cost: parseFloat(shippingCost) || 0,
           status: 'shipping'
         }),
       });
@@ -467,13 +467,11 @@ function AdminOrderDetailPage() {
         ...orderDetail,
         status: 'shipping',
         status_label: 'En cours de livraison',
-        tracking_number: trackingNumber,
-        shipping_cost: parseFloat(shippingCost) || 0
+        tracking_number: trackingNumber
       });
 
       setShowShippingModal(false);
       setTrackingNumber('');
-      setShippingCost('');
       
       alert('✅ Informations de livraison mises à jour');
 
@@ -1471,15 +1469,23 @@ function AdminOrderDetailPage() {
           <div className="max-w-xs ml-auto">
             <div className="space-y-2">
               <div className="flex justify-between text-sm">
-                <span className="text-gray-800">Total ({orderDetail.totalItems} articles)</span>
+                <span className="text-gray-800">Produits ({orderDetail.totalItems} articles)</span>
                 <span className="font-medium text-gray-900">{orderDetail.totalAmount.toFixed(2)}€</span>
               </div>
+              {orderDetail.shippingCost > 0 && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-800">Frais de livraison</span>
+                  <span className="font-medium text-gray-900">{orderDetail.shippingCost.toFixed(2)}€</span>
+                </div>
+              )}
               <div className="text-xs text-gray-700">
                 Bien d'occasion - TVA calculée sur la marge, non récupérable
               </div>
               <div className="border-t pt-2 flex justify-between">
                 <span className="font-semibold text-gray-900">Total HT</span>
-                <span className="font-bold text-lg text-gray-900">{orderDetail.totalAmount.toFixed(2)}€</span>
+                <span className="font-bold text-lg text-gray-900">
+                  {(orderDetail.totalAmount + (orderDetail.shippingCost || 0)).toFixed(2)}€
+                </span>
               </div>
             </div>
           </div>
@@ -1510,16 +1516,19 @@ function AdminOrderDetailPage() {
               
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Frais de livraison (optionnel)
+                  Frais de livraison (pré-calculés automatiquement)
                 </label>
                 <input
                   type="number"
                   step="0.01"
-                  value={shippingCost}
-                  onChange={(e) => setShippingCost(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="0.00"
+                  value={orderDetail.shippingCost?.toFixed(2) || '0.00'}
+                  readOnly
+                  className="w-full px-3 py-2 border border-gray-200 rounded-md bg-gray-50 text-gray-600"
+                  title="Les frais de livraison sont calculés automatiquement selon le nombre de produits"
                 />
+                <div className="text-xs text-gray-500 mt-1">
+                  Calculé automatiquement: {orderDetail.totalItems} articles = {orderDetail.shippingCost?.toFixed(2) || '0.00'}€
+                </div>
               </div>
             </div>
             
