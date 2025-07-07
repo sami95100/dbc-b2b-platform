@@ -20,7 +20,9 @@ import {
   CheckCircle,
   Truck,
   AlertCircle,
-  Trash2
+  Trash2,
+  Eye,
+  ExternalLink
 } from 'lucide-react';
 
 // Page des commandes - Gestion des commandes client
@@ -249,21 +251,84 @@ function AdminOrdersPage() {
     try {
       const response = await fetch(`/api/orders?userId=${user.id}`);
       const result = await response.json();
-      if (result.success) {
+      
+      if (response.ok) {
         setTotalOrdersCount(result.count || 0);
       }
     } catch (error) {
-      console.error('❌ Erreur chargement compte total:', error);
+      console.error('Erreur chargement total commandes:', error);
     }
   };
 
-  // Fonction pour gérer les changements de filtres avancés
-  const handleAdvancedFiltersChange = useCallback((filters: typeof advancedFilters) => {
-    setAdvancedFilters(filters);
-  }, []);
+  // Charger les commandes au montage et quand les dépendances changent
+  useEffect(() => {
+    if (user?.id) {
+      loadOrders();
+      loadTotalOrdersCount();
+    }
+  }, [user?.id, statusFilter, advancedFilters]);
 
-  // Fonction pour effacer tous les filtres
-  const handleClearFilters = useCallback(() => {
+  // Synchronisation avec les modifications localStorage
+  useEffect(() => {
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'draftOrders' || e.key === 'currentDraftOrder') {
+        console.log('🔄 Changement localStorage détecté, rechargement...');
+        loadOrders(true);
+      }
+    };
+
+    const handleFocus = () => {
+      // Vérifier si les commandes sont "stale" (modifiées il y a plus de 30 secondes)
+      const lastRefresh = localStorage.getItem('ordersLastRefresh');
+      if (lastRefresh) {
+        const lastRefreshTime = parseInt(lastRefresh);
+        const now = Date.now();
+        const timeDiff = now - lastRefreshTime;
+        
+        if (timeDiff > 30000) { // 30 secondes
+          console.log('🔄 Commandes stale détectées, rechargement...');
+          loadOrders(true);
+        }
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        // Même logique que pour le focus
+        const lastRefresh = localStorage.getItem('ordersLastRefresh');
+        if (lastRefresh) {
+          const lastRefreshTime = parseInt(lastRefresh);
+          const now = Date.now();
+          const timeDiff = now - lastRefreshTime;
+          
+          if (timeDiff > 30000) { // 30 secondes
+            console.log('🔄 Page redevenue visible, commandes stale, rechargement...');
+            loadOrders(true);
+          }
+        }
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [user?.id, statusFilter, advancedFilters]);
+
+  // Gestion des filtres avancés
+  const handleAdvancedFiltersChange = (filters: any) => {
+    console.log('🔄 Changement filtres avancés:', filters);
+    setAdvancedFilters(filters);
+  };
+
+  const handleClearFilters = () => {
+    console.log('🔄 Nettoyage des filtres...');
+    setStatusFilter('all');
     setAdvancedFilters({
       client: '',
       dateFrom: '',
@@ -273,250 +338,104 @@ function AdminOrdersPage() {
       amountMin: '',
       amountMax: ''
     });
-  }, []);
+  };
 
-  // Charger les commandes et le compte total quand userId est disponible
-  useEffect(() => {
-    if (user?.id) {
-      loadOrders();
-      loadTotalOrdersCount();
-    }
-  }, [user?.id]);
-
-  // Recharger quand les filtres changent
-  useEffect(() => {
-    if (user?.id) {
-      loadOrders();
-    }
-  }, [statusFilter, advancedFilters]);
-
-  // Écouter les changements du localStorage pour détecter les nouvelles commandes
-  useEffect(() => {
-    const handleStorageChange = (e: StorageEvent) => {
-      // Recharger les commandes quand le localStorage change
-      if (e.key === 'draftOrders' || e.key === 'currentDraftOrder') {
-        console.log('📱 Changement détecté dans le localStorage - rechargement FORCÉ des commandes');
-        loadOrders(true); // Forcer sans cache car changement détecté
-      }
-    };
-
-    window.addEventListener('storage', handleStorageChange);
-    
-    return () => {
-      window.removeEventListener('storage', handleStorageChange);
-    };
-  }, []);
-
-  // Écouter les changements de paramètres URL pour recharger
-  useEffect(() => {
-    const refreshParam = searchParams.get('refresh');
-    if (refreshParam) {
-      console.log('🔄 Paramètre refresh détecté, rechargement FORCÉ des commandes...');
-      loadOrders(true); // Forcer le refresh sans cache
-      
-      // Nettoyer l'URL en supprimant le paramètre refresh
-      const newUrl = window.location.pathname;
-      window.history.replaceState({}, '', newUrl);
-    }
-  }, [searchParams]);
-
-  // Rafraîchir automatiquement quand on revient sur la page
-  useEffect(() => {
-    const handleFocus = () => {
-      // Vérifier si on doit forcer le refresh
-      const shouldRefresh = OrdersUtils.shouldRefreshOrders();
-      if (shouldRefresh) {
-        console.log('👀 Page des commandes refocalisée - REFRESH FORCÉ détecté');
-        loadOrders(true);
-      } else {
-        console.log('👀 Page des commandes refocalisée - rechargement normal');
-        loadOrders();
-      }
-    };
-
-    const handleVisibilityChange = () => {
-      if (!document.hidden) {
-        // Vérifier si on doit forcer le refresh
-        const shouldRefresh = OrdersUtils.shouldRefreshOrders();
-        if (shouldRefresh) {
-          console.log('👀 Page des commandes redevenue visible - REFRESH FORCÉ détecté');
-          loadOrders(true);
-        } else {
-          console.log('👀 Page des commandes redevenue visible - rechargement normal');
-          loadOrders();
-        }
-      }
-    };
-
-    window.addEventListener('focus', handleFocus);
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
-    return () => {
-      window.removeEventListener('focus', handleFocus);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, []);
-
-  // Polling automatique pour détecter les nouvelles commandes (toutes les 30 secondes)
-  useEffect(() => {
-    const interval = setInterval(() => {
-      if (!document.hidden) {
-        // Vérifier si on doit forcer le refresh
-        const shouldRefresh = OrdersUtils.shouldRefreshOrders();
-        if (shouldRefresh) {
-          console.log('🔄 Polling automatique - REFRESH FORCÉ détecté');
-          loadOrders(true);
-        } else {
-          console.log('🔄 Polling automatique - vérification normale');
-          loadOrders();
-        }
-      }
-    }, 30000); // 30 secondes
-
-    return () => clearInterval(interval);
-  }, []);
+  // Filtres appliqués côté client (pour le debug)
+  const filteredOrders = orders.filter(order => {
+    // Tous les filtres sont déjà appliqués côté serveur via l'API
+    return true;
+  });
 
   const deleteOrder = async (orderId: string, orderName?: string) => {
-    // Trouver la commande dans la liste pour avoir plus d'infos
-    const orderToDelete = orders.find(order => order.id === orderId);
-    
-    if (!orderToDelete) {
-      alert('❌ Commande non trouvée');
+    if (!confirm(`Êtes-vous sûr de vouloir supprimer la commande "${orderName || orderId}" ?`)) {
       return;
     }
 
-    if (orderToDelete.status !== 'draft') {
-      alert('❌ Seules les commandes en brouillon peuvent être supprimées');
-      return;
-    }
+    try {
+      const response = await fetch(`/api/orders/${orderId}`, {
+        method: 'DELETE'
+      });
 
-    const displayName = orderName || orderToDelete.name || 'Commande sans nom';
-    const confirmMessage = `Êtes-vous sûr de vouloir supprimer définitivement la commande "${displayName}" ?\n\nCette action est irréversible.`;
-    
-    if (window.confirm(confirmMessage)) {
-      try {
-        console.log('🗑️ Début suppression commande:', orderId);
-        console.log('📋 Détails:', orderToDelete);
-
-        const response = await fetch(`/api/orders/${orderId}`, {
-          method: 'DELETE',
-          headers: {
-            'Content-Type': 'application/json'
-          }
-        });
-
-        console.log('📡 Réponse HTTP:', response.status, response.statusText);
-
-        if (!response.ok) {
-          let errorMessage = 'Erreur de suppression';
-          try {
-            const result = await response.json();
-            errorMessage = result.error || errorMessage;
-            console.error('❌ Erreur API:', result);
-          } catch (parseError) {
-            console.error('❌ Erreur parsing réponse:', parseError);
-          }
-          throw new Error(errorMessage);
-        }
-
-        const result = await response.json();
-        console.log('✅ Réponse suppression:', result);
-
-        // Nettoyer immédiatement le localStorage
-        console.log('🧹 Nettoyage localStorage...');
-        const savedOrders = localStorage.getItem('draftOrders');
-        if (savedOrders) {
-          try {
-            const draftOrders = JSON.parse(savedOrders);
-            if (draftOrders[orderId]) {
-              delete draftOrders[orderId];
-              localStorage.setItem('draftOrders', JSON.stringify(draftOrders));
-              console.log('✅ Commande supprimée de draftOrders');
-            }
-          } catch (error) {
-            console.warn('⚠️ Erreur nettoyage draftOrders:', error);
-          }
-        }
-
-        const currentOrder = localStorage.getItem('currentDraftOrder');
-        if (currentOrder === orderId) {
-          localStorage.removeItem('currentDraftOrder');
-          console.log('✅ currentDraftOrder supprimé');
-        }
-
-        // Supprimer immédiatement de la liste affichée (feedback instantané)
-        console.log('🗑️ Suppression immédiate de la liste affichée...');
-        setOrders(prevOrders => {
-          const newOrders = prevOrders.filter(order => order.id !== orderId);
-          console.log('📋 Liste mise à jour:', prevOrders.length, '->', newOrders.length, 'commandes');
-          return newOrders;
-        });
-
-        // Marquer les commandes comme obsolètes
-        OrdersUtils.markOrdersAsStale();
-
-        // Forcer un rechargement complet pour confirmation
-        await forceCompleteRefresh();
-
-        alert(`✅ Commande "${displayName}" supprimée avec succès`);
-
-      } catch (error) {
-        console.error('❌ Erreur suppression:', error);
-        const errorMessage = error instanceof Error ? error.message : 'Erreur inconnue';
-        alert(`❌ Erreur lors de la suppression de la commande:\n\n${errorMessage}`);
-        
-        // En cas d'erreur, forcer un rechargement complet pour avoir l'état réel
-        await forceCompleteRefresh();
+      if (!response.ok) {
+        throw new Error('Erreur lors de la suppression');
       }
+
+      console.log('✅ Commande supprimée avec succès');
+      
+      // Mettre à jour le state local immédiatement
+      setOrders(currentOrders => currentOrders.filter(order => order.id !== orderId));
+      
+      // Recharger pour s'assurer de la cohérence
+      setTimeout(() => {
+        loadOrders(true);
+      }, 500);
+      
+    } catch (error) {
+      console.error('❌ Erreur suppression:', error);
+      alert('❌ Erreur lors de la suppression de la commande');
     }
   };
 
+  // Vérifier si une commande est modifiable
+  const isOrderEditable = (order: any) => {
+    return order.status === 'draft' || order.status === 'pending_payment';
+  };
+
+  // Gérer la validation d'une commande
+  const validateOrder = async (orderId: string) => {
+    try {
+      const response = await fetch(`/api/orders/${orderId}/validate`, {
+        method: 'POST'
+      });
+
+      if (!response.ok) {
+        throw new Error('Erreur lors de la validation');
+      }
+
+      console.log('✅ Commande validée avec succès');
+      
+      // Recharger les commandes
+      loadOrders(true);
+      
+    } catch (error) {
+      console.error('❌ Erreur validation:', error);
+      alert('❌ Erreur lors de la validation de la commande');
+    }
+  };
+
+  // Gérer la réception d'une commande importée
   const handleImportComplete = async (result: any) => {
-    if (result.success && result.order) {
-      console.log('✅ Import terminé:', result);
-
-      // Marquer les commandes comme obsolètes
-      OrdersUtils.markOrdersAsStale();
-
-      // Forcer un rechargement complet pour voir la nouvelle commande
-      await forceCompleteRefresh();
-
-      // Message de succès avec détails
-      const message = [
-        `${result.message}`,
-        `Commande "${result.orderName}" créée avec ${result.totalItems} articles.`,
-        `Total: ${result.totalAmount?.toFixed(2)}€`
-      ];
-
-      if (result.productsCreated > 0) {
-        message.push(`${result.productsCreated} nouveaux produits ajoutés au catalogue.`);
-      }
-
-      if (result.productsUpdated > 0) {
-        message.push(`${result.productsUpdated} produits mis à jour (stock initialisé).`);
-      }
-
-      alert(message.join('\n\n'));
-
-      // Rediriger vers les détails de la commande (utiliser l'UUID Supabase)
-      router.push(`/admin/orders/${result.order.id}`);
-
-    } else if (result.error) {
-      console.error('❌ Erreur import:', result.error);
-      // L'erreur est déjà gérée dans le composant
+    console.log('📦 Import terminé:', result);
+    
+    if (result.success) {
+      // Recharger les commandes après l'import
+      await loadOrders(true);
+      
+      // Afficher un message de succès
+      alert(`✅ Import réussi ! ${result.ordersCount} commande(s) importée(s)`);
+    } else {
+      alert(`❌ Erreur lors de l'import: ${result.error}`);
     }
   };
 
-  // Les commandes sont déjà filtrées côté serveur
-  const filteredOrders = orders;
+  // Gestion des filtres et de l'affichage
+  const handleStatusChange = (newStatus: string) => {
+    console.log('🔄 Changement statut:', newStatus);
+    setStatusFilter(newStatus);
+  };
+
+  const handleOrderClick = (orderId: string) => {
+    router.push(`/admin/orders/${orderId}`);
+  };
 
   const getStatusIcon = (status: string) => {
     switch (status) {
-      case 'completed': return <CheckCircle className="h-4 w-4" />;
-      case 'shipping': return <Truck className="h-4 w-4" />;
-      case 'validated': return <AlertCircle className="h-4 w-4" />;
-      case 'draft': return <Package className="h-4 w-4" />;
-      default: return <Package className="h-4 w-4" />;
+      case 'completed': return <CheckCircle className="h-4 w-4 text-green-600" />;
+      case 'shipping': return <Truck className="h-4 w-4 text-blue-600" />;
+      case 'pending_payment': 
+      case 'validated': return <Clock className="h-4 w-4 text-yellow-600" />;
+      case 'draft': return <AlertCircle className="h-4 w-4 text-gray-600" />;
+      default: return <AlertCircle className="h-4 w-4 text-gray-600" />;
     }
   };
 
@@ -524,12 +443,16 @@ function AdminOrdersPage() {
     switch (status) {
       case 'completed': return 'bg-green-100 text-green-800';
       case 'shipping': return 'bg-blue-100 text-blue-800';
-      case 'pending': return 'bg-yellow-100 text-yellow-800';
-      case 'pending_payment': return 'bg-yellow-100 text-yellow-800';
+      case 'pending_payment': 
+      case 'validated': return 'bg-yellow-100 text-yellow-800';
       case 'draft': return 'bg-gray-100 text-gray-800';
-      case 'validated': return 'bg-yellow-100 text-yellow-800'; // Support ancien statut
       default: return 'bg-gray-100 text-gray-800';
     }
+  };
+
+  // Fonction pour générer l'URL de tracking FedEx
+  const getFedExTrackingUrl = (trackingNumber: string) => {
+    return `https://www.fedex.com/fedextrack/?trknbr=${trackingNumber}&trkqual=${trackingNumber}~FX`;
   };
 
   // Afficher un loader pendant la vérification d'authentification
@@ -537,7 +460,7 @@ function AdminOrdersPage() {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-50 via-gray-50 to-emerald-50 flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-dbc-light-green mx-auto mb-4"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-400 mx-auto mb-4"></div>
           <p className="text-gray-600">Vérification de l'authentification...</p>
         </div>
       </div>
@@ -558,7 +481,7 @@ function AdminOrdersPage() {
         <div className="flex items-center space-x-4 mb-6">
           <button
             onClick={() => router.push('/admin')}
-            className="text-dbc-light-green hover:text-dbc-dark-green"
+            className="text-gray-700 hover:text-gray-900"
           >
             Admin
           </button>
@@ -581,259 +504,325 @@ function AdminOrdersPage() {
           <OrderImportButton onImportComplete={handleImportComplete} />
         </div>
 
-        {/* Tableau des commandes - Version Responsive */}
-        <div className="bg-white rounded-lg shadow-sm border overflow-hidden">
+        {/* Tableau des commandes - Version Responsive avec style glassmorphism */}
+        <div className="bg-white/10 backdrop-blur-2xl rounded-2xl shadow-2xl border border-white/20 overflow-hidden">
           {loading ? (
             <div className="flex items-center justify-center py-12">
               <div className="text-center">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-dbc-light-green mx-auto mb-4"></div>
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-400 mx-auto mb-4"></div>
                 <p className="text-gray-600">Chargement des commandes...</p>
               </div>
             </div>
           ) : (
             <>
               {/* Vue Mobile - Cards (≤1023px) */}
-              <div className="lg:hidden">
-                {filteredOrders.map((order) => (
-                  <div key={order.id} className="border-b border-gray-200 last:border-b-0 p-4 hover:bg-gray-50 transition-colors">
-                    {/* Header - Statut et montant */}
-                    <div className="flex items-center justify-between mb-3">
-                      <span className={`inline-flex items-center space-x-2 px-3 py-1.5 rounded-full text-sm font-medium ${getStatusColor(order.status)}`}>
-                        {getStatusIcon(order.status)}
-                        <span>{order.status_label}</span>
-                      </span>
-                      <div className="text-right">
-                        <div className="text-lg font-bold text-gray-900">
-                          {order.totalAmount.toFixed(2)} €
-                        </div>
-                        <div className="text-sm font-semibold text-green-600">
-                          +{orderMargins[order.id] !== undefined ? orderMargins[order.id].toFixed(2) : '...'} € marge
-                        </div>
-                      </div>
-                    </div>
+              <div className="lg:hidden space-y-4 p-4">
+                {filteredOrders.map((order) => {
+                  const getStatusBorder = (status: string) => {
+                    switch (status) {
+                      case 'completed': 
+                        return 'border-l-green-500';
+                      case 'shipping': 
+                        return 'border-l-blue-500';
+                      case 'pending_payment': 
+                      case 'validated': 
+                        return 'border-l-amber-500';
+                      case 'draft': 
+                        return 'border-l-gray-400';
+                      default: 
+                        return 'border-l-gray-400';
+                    }
+                  };
 
-                    {/* Infos client */}
-                    <div className="mb-3">
-                      {order.client ? (
-                        <div className="bg-blue-50 rounded-lg p-3">
-                          <div className="flex items-center space-x-2 mb-1">
-                            <User className="h-4 w-4 text-blue-600" />
-                            <span className="font-medium text-blue-900">{order.client.company_name}</span>
+                  return (
+                    <div key={order.id} className={`
+                      relative bg-white/10 backdrop-blur-xl rounded-2xl shadow-xl hover:shadow-2xl 
+                      transition-all duration-300 p-6 hover:scale-[1.02] transform
+                      border border-white/20 hover:border-white/40 hover:bg-white/20
+                      ${getStatusBorder(order.status)} border-l-4
+                    `}>
+                      {/* Header - Statut principal et actions */}
+                      <div className="flex items-start justify-between mb-4">
+                        <div className="flex items-center space-x-2">
+                          <span className={`inline-flex items-center space-x-2 px-4 py-2 rounded-xl text-sm font-semibold bg-white/20 backdrop-blur-sm border border-white/20 ${getStatusColor(order.status)} shadow-sm`}>
+                            {getStatusIcon(order.status)}
+                            <span>{order.status_label}</span>
+                          </span>
+                          {order.status === 'draft' && (
+                            <button
+                              onClick={() => deleteOrder(order.id, order.name)}
+                              className="p-2 bg-red-50 hover:bg-red-100 text-red-600 hover:text-red-700 rounded-lg transition-all duration-200 shadow-sm border border-red-200"
+                              title="Supprimer la commande"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          )}
+                        </div>
+                        <div className="text-right">
+                          <div className="text-xl font-bold text-gray-900">
+                            {order.totalAmount?.toFixed(2)} €
                           </div>
-                          <div className="text-sm text-blue-700">{order.client.contact_name}</div>
-                        </div>
-                      ) : (
-                        <div className="bg-gray-50 rounded-lg p-3">
-                          <span className="text-sm text-gray-500 italic">Client non assigné</span>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Infos commande */}
-                    <div className="space-y-2 mb-4">
-                      <div className="flex items-center justify-between text-sm">
-                        <div className="flex items-center text-gray-600">
-                          <Calendar className="h-4 w-4 mr-2 text-gray-400" />
-                          <span>{new Date(order.createdAt).toLocaleDateString('fr-FR')}</span>
-                        </div>
-                        <div className="flex items-center text-gray-600">
-                          <Package className="h-4 w-4 mr-2 text-gray-400" />
-                          <span>{order.totalItems} article{order.totalItems > 1 ? 's' : ''}</span>
+                          <div className="text-sm font-semibold text-green-600">
+                            +{orderMargins[order.id] !== undefined ? orderMargins[order.id].toFixed(2) : '...'} € marge
+                          </div>
+                          <div className="text-xs text-gray-800 font-medium">
+                            {order.totalItems} article{order.totalItems > 1 ? 's' : ''}
+                          </div>
                         </div>
                       </div>
-                      
-                      {order.tracking_number && (
-                        <div className="flex items-center text-sm text-blue-600">
-                          <Truck className="h-4 w-4 mr-2" />
-                          <span>Tracking: {order.tracking_number}</span>
-                        </div>
-                      )}
 
-                      <div className="text-xs text-gray-500 font-mono bg-gray-50 px-2 py-1 rounded">
-                        {order.name || order.id}
+                      {/* Infos client */}
+                      <div className="mb-3">
+                        {order.client ? (
+                          <div className="bg-blue-50/40 backdrop-blur-sm rounded-lg p-3 border border-blue-200/40">
+                            <div className="flex items-center space-x-2 mb-1">
+                              <User className="h-4 w-4 text-blue-600" />
+                              <span className="font-medium text-blue-900">{order.client.company_name}</span>
+                            </div>
+                            <div className="text-sm text-blue-700">{order.client.contact_name}</div>
+                          </div>
+                        ) : (
+                          <div className="bg-gray-50/40 backdrop-blur-sm rounded-lg p-3 border border-gray-200/40">
+                            <span className="text-sm text-gray-500 italic">Client non assigné</span>
+                          </div>
+                        )}
                       </div>
-                    </div>
 
-                    {/* Actions */}
-                    <div className="flex flex-col space-y-2">
+                      {/* Infos principales */}
+                      <div className="space-y-3 mb-5">
+                        <div className="flex items-center text-sm text-gray-800">
+                          <Calendar className="h-4 w-4 mr-2 text-gray-600" />
+                          <span className="font-medium">{new Date(order.createdAt).toLocaleDateString('fr-FR')}</span>
+                        </div>
+                        
+                        {order.tracking_number && (
+                          <a
+                            href={getFedExTrackingUrl(order.tracking_number)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center text-sm text-blue-700 bg-blue-50/40 px-3 py-2 rounded-lg backdrop-blur-sm hover:bg-blue-100/50 hover:text-blue-800 transition-all duration-200 cursor-pointer group border border-blue-200/40 hover:border-blue-300/60"
+                          >
+                            <Truck className="h-4 w-4 mr-2 group-hover:scale-110 transition-transform" />
+                            <span className="font-medium">Tracking: {order.tracking_number}</span>
+                            <ExternalLink className="h-3 w-3 ml-1 opacity-60 group-hover:opacity-100 transition-opacity" />
+                          </a>
+                        )}
+
+                        <div className="text-xs text-gray-700 font-mono bg-white/40 px-3 py-2 rounded-lg backdrop-blur-sm border border-gray-200/40">
+                          {order.name || order.id}
+                        </div>
+                      </div>
+
+                      {/* Action principale */}
                       <button
-                        onClick={() => router.push(`/admin/orders/${order.id}`)}
-                        className="w-full px-4 py-2 bg-gradient-to-r from-dbc-bright-green to-emerald-400 text-dbc-dark-green hover:from-emerald-300 hover:to-emerald-500 hover:text-white rounded-lg text-sm font-semibold transition-all duration-200 shadow-sm backdrop-blur-sm"
+                        onClick={() => handleOrderClick(order.id)}
+                        className="w-full px-4 py-2 bg-white/20 hover:bg-white/40 text-gray-800 hover:text-gray-900 rounded-xl text-sm font-semibold transition-all duration-200 shadow-sm backdrop-blur-md border border-white/30 hover:border-white/50 hover:shadow-md"
                       >
-                        Voir les détails →
+                        <Eye className="h-4 w-4 inline mr-2" />
+                        Voir les détails
                       </button>
-                      {order.status === 'draft' && (
-                        <button
-                          onClick={() => deleteOrder(order.id, order.name)}
-                          className="w-full px-4 py-2 bg-white border border-red-300 text-red-600 hover:bg-red-50 rounded-lg text-sm font-semibold transition-all duration-200 shadow-sm"
-                        >
-                          <Trash2 className="h-4 w-4 inline mr-2" />
-                          Supprimer la commande
-                        </button>
-                      )}
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
 
               {/* Vue Desktop - Tableau Responsive (≥1024px) */}
               <div className="hidden lg:block overflow-x-auto">
                 <table className="w-full">
-                  <thead className="bg-gray-50 border-b">
+                  <thead className="bg-white/40 backdrop-blur-sm border-b border-gray-200/40">
                     <tr>
                       {/* Colonnes visibles selon breakpoints */}
-                      <th className="hidden xl:table-cell px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="hidden xl:table-cell px-4 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
                         Numéro
                       </th>
-                      <th className="hidden xl:table-cell px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="hidden xl:table-cell px-4 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
                         Client
                       </th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-4 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
                         Statut
                       </th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-4 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
                         Date
                       </th>
-                      <th className="hidden xl:table-cell px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="hidden xl:table-cell px-4 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
                         Articles
                       </th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-4 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
                         Montant
                       </th>
-                      <th className="hidden 2xl:table-cell px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="hidden 2xl:table-cell px-4 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
                         Marge
                       </th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-4 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
                         Actions
                       </th>
                     </tr>
                   </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {filteredOrders.map((order) => (
-                      <tr key={order.id} className="hover:bg-gray-50 transition-colors">
-                        {/* Numéro - Visible XL+ */}
-                        <td className="hidden xl:table-cell px-4 py-3">
-                          <div className="max-w-xs">
-                            <div className="text-sm font-medium text-gray-900 truncate">{order.id}</div>
-                            {order.name && (
-                              <div className="text-xs text-gray-500 truncate">{order.name}</div>
-                            )}
-                          </div>
-                        </td>
+                  <tbody className="bg-white/20 backdrop-blur-sm divide-y divide-gray-200/40">
+                    {filteredOrders.map((order, index) => {
+                      const getRowBackground = (status: string, index: number) => {
+                        const baseClass = index % 2 === 0 ? 'bg-white/10' : 'bg-white/20';
+                        const hoverClass = 'hover:bg-white/30';
+                        const statusAccent = (() => {
+                          switch (status) {
+                            case 'completed': return 'hover:border-l-green-500';
+                            case 'shipping': return 'hover:border-l-blue-500';
+                            case 'pending_payment':
+                            case 'validated': return 'hover:border-l-amber-500';
+                            case 'draft': return 'hover:border-l-gray-400';
+                            default: return 'hover:border-l-gray-400';
+                          }
+                        })();
+                        return `${baseClass} ${hoverClass} ${statusAccent} backdrop-blur-sm transition-all duration-200 hover:shadow-lg border-l-2 border-l-transparent hover:border-l-4`;
+                      };
 
-                        {/* Client - Visible XL+ */}
-                        <td className="hidden xl:table-cell px-4 py-3">
-                          <div className="max-w-xs">
-                            {order.client ? (
-                              <div>
-                                <div className="text-sm font-medium text-gray-900 truncate">{order.client.company_name}</div>
-                                <div className="text-xs text-gray-500 truncate">{order.client.contact_name}</div>
-                              </div>
-                            ) : (
-                              <span className="text-sm text-gray-400 italic">Non assigné</span>
-                            )}
-                          </div>
-                        </td>
-
-                        {/* Statut - Toujours visible */}
-                        <td className="px-4 py-3">
-                          <div className="flex flex-col space-y-1">
-                            <span className={`inline-flex items-center space-x-1 px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(order.status)} w-fit`}>
-                              {getStatusIcon(order.status)}
-                              <span className="hidden lg:inline">{order.status_label}</span>
-                            </span>
-                            {order.tracking_number && (
-                              <div className="flex items-center space-x-1 text-xs text-blue-600">
-                                <Truck className="h-3 w-3" />
-                                <span className="hidden xl:inline">Tracking: </span>
-                                <span className="truncate max-w-20">{order.tracking_number}</span>
-                              </div>
-                            )}
-                            {/* Infos client sur mobile et tablet */}
-                            <div className="xl:hidden">
-                              {order.client ? (
-                                <div className="text-xs text-gray-600 truncate max-w-32">
-                                  {order.client.company_name}
-                                </div>
-                              ) : (
-                                <div className="text-xs text-gray-400 italic">Non assigné</div>
+                      return (
+                        <tr key={order.id} className={getRowBackground(order.status, index)}>
+                          {/* Numéro - Visible XL+ */}
+                          <td className="hidden xl:table-cell px-4 py-4">
+                            <div className="max-w-xs">
+                              <div className="text-sm font-medium text-gray-900 truncate">{order.id}</div>
+                              {order.name && (
+                                <div className="text-xs text-gray-600 truncate">{order.name}</div>
                               )}
                             </div>
-                          </div>
-                        </td>
+                          </td>
 
-                        {/* Date - Toujours visible */}
-                        <td className="px-4 py-3">
-                          <div className="flex items-center text-sm text-gray-900">
-                            <Calendar className="h-4 w-4 mr-1 text-gray-400" />
-                            <span className="hidden xl:inline">
-                              {new Date(order.createdAt).toLocaleDateString('fr-FR')}
-                            </span>
-                            <span className="xl:hidden">
-                              {new Date(order.createdAt).toLocaleDateString('fr-FR', { 
-                                day: '2-digit', 
-                                month: '2-digit' 
-                              })}
-                            </span>
-                          </div>
-                        </td>
-
-                        {/* Articles - Visible XL+ */}
-                        <td className="hidden xl:table-cell px-4 py-3">
-                          <div className="flex items-center text-sm text-gray-900">
-                            <Package className="h-4 w-4 mr-1 text-gray-400" />
-                            {order.totalItems} article{order.totalItems > 1 ? 's' : ''}
-                          </div>
-                        </td>
-
-                        {/* Montant - Toujours visible */}
-                        <td className="px-4 py-3">
-                          <div className="text-sm font-semibold text-gray-900">
-                            <div className="flex items-center">
-                              <Euro className="h-4 w-4 mr-1 text-gray-400" />
-                              {order.totalAmount.toFixed(2)} €
+                          {/* Client - Visible XL+ */}
+                          <td className="hidden xl:table-cell px-4 py-4">
+                            <div className="max-w-xs">
+                              {order.client ? (
+                                <div>
+                                  <div className="text-sm font-medium text-gray-900 truncate">{order.client.company_name}</div>
+                                  <div className="text-xs text-gray-600 truncate">{order.client.contact_name}</div>
+                                </div>
+                              ) : (
+                                <span className="text-sm text-gray-400 italic">Non assigné</span>
+                              )}
                             </div>
-                            <div className="xl:hidden text-xs text-gray-500 mt-1">
+                          </td>
+
+                          {/* Statut - Toujours visible */}
+                          <td className="px-4 py-4">
+                            <div className="flex flex-col space-y-1">
+                              <span className={`inline-flex items-center space-x-1 px-3 py-1.5 rounded-xl text-xs font-semibold backdrop-blur-sm border ${getStatusColor(order.status)} w-fit shadow-sm`}>
+                                {getStatusIcon(order.status)}
+                                <span className="hidden lg:inline">{order.status_label}</span>
+                              </span>
+                              {order.tracking_number && (
+                                <a
+                                  href={getFedExTrackingUrl(order.tracking_number)}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="flex items-center space-x-1 text-xs text-blue-700 bg-blue-50/60 px-2 py-1 rounded-lg backdrop-blur-sm hover:bg-blue-100/70 hover:text-blue-800 transition-all duration-200 cursor-pointer group border border-blue-200/60 hover:border-blue-300/70"
+                                >
+                                  <Truck className="h-3 w-3 group-hover:scale-110 transition-transform" />
+                                  <span className="hidden xl:inline">Tracking: </span>
+                                  <span className="truncate max-w-20">{order.tracking_number}</span>
+                                  <ExternalLink className="h-2 w-2 opacity-60 group-hover:opacity-100 transition-opacity" />
+                                </a>
+                              )}
+                              {/* Infos client sur mobile et tablet */}
+                              <div className="xl:hidden">
+                                {order.client ? (
+                                  <div className="text-xs text-gray-600 truncate max-w-32">
+                                    {order.client.company_name}
+                                  </div>
+                                ) : (
+                                  <div className="text-xs text-gray-400 italic">Non assigné</div>
+                                )}
+                              </div>
+                            </div>
+                          </td>
+
+                          {/* Date - Toujours visible */}
+                          <td className="px-4 py-4">
+                            <div className="flex items-center text-sm text-gray-900">
+                              <Calendar className="h-4 w-4 mr-1 text-gray-500" />
+                              <span className="hidden xl:inline">
+                                {new Date(order.createdAt).toLocaleDateString('fr-FR')}
+                              </span>
+                              <span className="xl:hidden">
+                                {new Date(order.createdAt).toLocaleDateString('fr-FR', { 
+                                  day: '2-digit', 
+                                  month: '2-digit' 
+                                })}
+                              </span>
+                            </div>
+                          </td>
+
+                          {/* Articles - Visible XL+ */}
+                          <td className="hidden xl:table-cell px-4 py-4">
+                            <div className="flex items-center text-sm text-gray-900">
+                              <Package className="h-4 w-4 mr-1 text-gray-500" />
                               {order.totalItems} article{order.totalItems > 1 ? 's' : ''}
                             </div>
-                            {/* Marge sur mobile et tablet */}
-                            <div className="2xl:hidden text-xs text-green-600 font-semibold mt-1">
-                              +{orderMargins[order.id] !== undefined ? orderMargins[order.id].toFixed(2) : '...'} € marge
+                          </td>
+
+                          {/* Montant - Toujours visible */}
+                          <td className="px-4 py-4">
+                            <div className="text-sm font-semibold text-gray-900">
+                              <div className="flex items-center">
+                                <Euro className="h-4 w-4 mr-1 text-gray-500" />
+                                {order.totalAmount?.toFixed(2)} €
+                              </div>
+                              <div className="xl:hidden text-xs text-gray-500 mt-1">
+                                {order.totalItems} article{order.totalItems > 1 ? 's' : ''}
+                              </div>
+                              {/* Marge sur mobile et tablet */}
+                              <div className="2xl:hidden text-xs text-green-600 font-semibold mt-1">
+                                +{orderMargins[order.id] !== undefined ? orderMargins[order.id].toFixed(2) : '...'} € marge
+                              </div>
                             </div>
-                          </div>
-                        </td>
+                          </td>
 
-                        {/* Marge - Visible 2XL+ */}
-                        <td className="hidden 2xl:table-cell px-4 py-3">
-                          <div className="flex items-center text-sm font-semibold text-green-600">
-                            <Euro className="h-4 w-4 mr-1 text-green-400" />
-                            {orderMargins[order.id] !== undefined ? orderMargins[order.id].toFixed(2) : '...'} €
-                          </div>
-                        </td>
+                          {/* Marge - Visible 2XL+ */}
+                          <td className="hidden 2xl:table-cell px-4 py-4">
+                            <div className="flex items-center text-sm font-semibold text-green-600">
+                              <Euro className="h-4 w-4 mr-1 text-green-400" />
+                              {orderMargins[order.id] !== undefined ? orderMargins[order.id].toFixed(2) : '...'} €
+                            </div>
+                          </td>
 
-                        {/* Actions - Toujours visible */}
-                        <td className="px-4 py-3">
-                          <div className="flex items-center space-x-2">
-                            <button
-                              onClick={() => router.push(`/admin/orders/${order.id}`)}
-                              className="px-3 py-1.5 bg-gradient-to-r from-dbc-bright-green to-emerald-400 text-dbc-dark-green hover:from-emerald-300 hover:to-emerald-500 hover:text-white rounded-lg text-sm font-semibold transition-all duration-200 shadow-sm backdrop-blur-sm whitespace-nowrap"
-                            >
-                              <span className="hidden xl:inline">Détails →</span>
-                              <span className="xl:hidden">Voir</span>
-                            </button>
-                            {order.status === 'draft' && (
+                          {/* Actions - Toujours visible */}
+                          <td className="px-4 py-4">
+                            <div className="flex items-center space-x-2">
                               <button
-                                onClick={() => deleteOrder(order.id, order.name)}
-                                className="p-1.5 text-red-600 hover:text-red-800 hover:bg-red-50 rounded-lg transition-colors"
-                                title="Supprimer"
+                                onClick={() => handleOrderClick(order.id)}
+                                className="px-4 py-2 !bg-white/20 hover:!bg-white/40 !text-gray-800 hover:!text-gray-900 rounded-lg text-sm font-semibold transition-all duration-200 shadow-sm backdrop-blur-md border border-white/30 hover:border-white/50 hover:shadow-md whitespace-nowrap"
+                                style={{ 
+                                  background: 'rgba(255, 255, 255, 0.2)', 
+                                  color: '#1f2937',
+                                  backgroundImage: 'none'
+                                }}
+                                onMouseEnter={(e) => {
+                                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.4)';
+                                  e.currentTarget.style.color = '#111827';
+                                  e.currentTarget.style.backgroundImage = 'none';
+                                }}
+                                onMouseLeave={(e) => {
+                                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.2)';
+                                  e.currentTarget.style.color = '#1f2937';
+                                  e.currentTarget.style.backgroundImage = 'none';
+                                }}
                               >
-                                <Trash2 className="h-4 w-4" />
+                                <Eye className="h-4 w-4 inline mr-1" />
+                                <span className="hidden xl:inline">Détails</span>
                               </button>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
+                              {order.status === 'draft' && (
+                                <button
+                                  onClick={() => deleteOrder(order.id, order.name)}
+                                  className="p-2 bg-white/20 hover:bg-white/40 text-red-600 hover:text-red-700 rounded-lg transition-all duration-200 backdrop-blur-md border border-red-200/30 hover:border-red-300/50"
+                                  title="Supprimer"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -845,10 +834,30 @@ function AdminOrdersPage() {
           <div className="text-center py-12">
             <Package className="h-12 w-12 text-gray-400 mx-auto mb-4" />
             <h3 className="text-lg font-medium text-gray-900 mb-2">Aucune commande trouvée</h3>
-            <p className="text-gray-600 mb-4">Vous n'avez pas encore passé de commande</p>
+            <p className="text-gray-600 mb-4">
+              {statusFilter === 'all' 
+                ? 'Aucune commande client trouvée' 
+                : 'Aucune commande ne correspond à vos filtres.'
+              }
+            </p>
             <button
               onClick={() => router.push('/admin/catalog')}
-              className="bg-gradient-to-r from-dbc-bright-green to-emerald-400 text-dbc-dark-green py-2 px-6 rounded-xl hover:from-emerald-300 hover:to-emerald-500 hover:text-white font-semibold shadow-lg backdrop-blur-sm transition-all duration-200"
+              className="!bg-white/20 hover:!bg-white/40 !text-gray-800 hover:!text-gray-900 py-3 px-8 rounded-xl font-semibold shadow-lg backdrop-blur-md border border-white/30 hover:border-white/50 hover:shadow-xl transition-all duration-200"
+              style={{ 
+                background: 'rgba(255, 255, 255, 0.2)', 
+                color: '#1f2937',
+                backgroundImage: 'none'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.4)';
+                e.currentTarget.style.color = '#111827';
+                e.currentTarget.style.backgroundImage = 'none';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.2)';
+                e.currentTarget.style.color = '#1f2937';
+                e.currentTarget.style.backgroundImage = 'none';
+              }}
             >
               Voir le catalogue
             </button>

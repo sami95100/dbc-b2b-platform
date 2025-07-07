@@ -46,6 +46,7 @@ export async function GET(
         total_items,
         vat_type,
         user_id,
+        free_shipping,
         users (
           id,
           company_name,

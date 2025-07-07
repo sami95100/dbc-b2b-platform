@@ -135,7 +135,9 @@ function AdminOrderDetailPage() {
 
       console.log('📦 Items trouvés:', items.length);
 
-      setOrderDetail({
+              const freeShipping = supabaseOrder.free_shipping === true;
+        
+        setOrderDetail({
         id: supabaseOrder.id,
         name: supabaseOrder.name,
         status: supabaseOrder.status,
@@ -145,7 +147,8 @@ function AdminOrderDetailPage() {
         items,
         totalItems: supabaseOrder.total_items,
         totalAmount: supabaseOrder.total_amount,
-        shippingCost: calculateShippingCost(supabaseOrder.total_items),
+        shippingCost: freeShipping ? 0 : calculateShippingCost(supabaseOrder.total_items),
+        freeShipping: freeShipping,
         customerRef: supabaseOrder.customer_ref,
         vatType: supabaseOrder.vat_type,
         source: 'supabase'
@@ -517,6 +520,43 @@ function AdminOrderDetailPage() {
     } catch (error) {
       console.error('❌ Erreur finalisation:', error);
       alert('❌ Erreur lors de la finalisation');
+    }
+  };
+
+  const toggleFreeShipping = async () => {
+    if (!orderDetail) return;
+
+    const newFreeShipping = !orderDetail.freeShipping;
+    
+    try {
+      console.log('🚚 Toggle free shipping:', {
+        orderId: orderDetail.id,
+        currentState: orderDetail.freeShipping,
+        newState: newFreeShipping
+      });
+
+      const response = await fetch(`/api/orders/${orderDetail.id}/free-shipping`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          freeShipping: newFreeShipping
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('Erreur lors de la modification de la livraison');
+      }
+
+      const result = await response.json();
+      console.log('✅ API Response:', result);
+
+      // Recharger les données depuis l'API pour forcer la mise à jour
+      await loadOrderDetail();
+
+      alert(`✅ ${result.message}`);
+    } catch (error) {
+      console.error('❌ Erreur:', error);
+      alert('❌ Erreur lors de la modification de la livraison');
     }
   };
 
@@ -976,17 +1016,26 @@ function AdminOrderDetailPage() {
                   <div className="space-y-3 p-4">
                     {orderDetail.items.map((item: any) => (
                       <div key={item.sku} className="bg-white rounded border shadow-sm p-3 transition-all duration-200">
-                        {/* Header avec SKU et Quantité */}
+                        {/* Header avec SKU, Quantité et Actions */}
                         <div className="flex items-start justify-between mb-2">
                           <div className="flex-1">
                             <div className="text-sm font-mono text-blue-600 bg-blue-50 px-2 py-1 rounded inline-block">
                               {item.sku}
                             </div>
                           </div>
-                          <div className="text-right">
+                          <div className="flex items-center gap-2">
                             <div className="text-sm font-bold text-gray-900">
                               Qté: {isEditing ? editableQuantities[item.sku] : item.quantity}
                             </div>
+                            {orderDetail.status === 'draft' && (
+                              <button
+                                onClick={() => removeItem(item.sku)}
+                                className="p-1 bg-red-50 hover:bg-red-100 text-red-600 hover:text-red-700 rounded transition-colors border border-red-200"
+                                title="Supprimer ce produit"
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </button>
+                            )}
                           </div>
                         </div>
 
@@ -1062,62 +1111,28 @@ function AdminOrderDetailPage() {
 
                         {/* Contrôles d'édition pour brouillons */}
                         {(orderDetail.status === 'draft' || isEditing) && (
-                          <div className="mt-2 pt-2 border-t border-gray-100 space-y-2">
-                            {/* Contrôles quantité */}
-                            <div className="flex items-center justify-center gap-2">
+                          <div className="mt-3 pt-3 border-t border-gray-100">
+                            {/* Contrôles quantité améliorés */}
+                            <div className="flex items-center justify-center gap-2 bg-gray-50 rounded-lg p-3">
                               <button
                                 onClick={() => updateQuantity(item.sku, (isEditing ? editableQuantities[item.sku] : item.quantity) - 1)}
-                                className="flex items-center justify-center w-8 h-8 bg-red-500 text-white rounded hover:bg-red-600 transition-colors"
+                                className="flex items-center justify-center w-10 h-10 bg-white text-red-600 rounded-lg hover:bg-red-50 hover:text-red-700 transition-colors shadow-sm border border-gray-200 hover:border-red-300 disabled:opacity-50 disabled:cursor-not-allowed"
                                 disabled={(isEditing ? editableQuantities[item.sku] : item.quantity) <= 1}
                               >
-                                <Minus className="h-3 w-3" />
+                                <Minus className="h-4 w-4" />
                               </button>
-                              <span className="mx-2 min-w-[2rem] text-center font-medium">
-                                {isEditing ? editableQuantities[item.sku] : item.quantity}
-                              </span>
+                              <div className="mx-3 px-4 py-2 bg-white rounded-lg border border-gray-200 min-w-[3rem] shadow-sm">
+                                <span className="text-lg font-bold text-gray-900 text-center block">
+                                  {isEditing ? editableQuantities[item.sku] : item.quantity}
+                                </span>
+                              </div>
                               <button
                                 onClick={() => updateQuantity(item.sku, (isEditing ? editableQuantities[item.sku] : item.quantity) + 1)}
-                                className="flex items-center justify-center w-8 h-8 bg-green-500 text-white rounded hover:bg-green-600 transition-colors"
+                                className="flex items-center justify-center w-10 h-10 bg-white text-green-600 rounded-lg hover:bg-green-50 hover:text-green-700 transition-colors shadow-sm border border-gray-200 hover:border-green-300"
                               >
-                                <Plus className="h-3 w-3" />
+                                <Plus className="h-4 w-4" />
                               </button>
                             </div>
-
-                            {/* Contrôles prix */}
-                            <div className="grid grid-cols-2 gap-2">
-                              <div>
-                                <label className="block text-xs text-gray-600 mb-1">Prix DBC</label>
-                                <input
-                                  type="number"
-                                  step="0.01"
-                                  value={isEditing ? (editablePrices[item.sku] || item.unitPrice).toFixed(2) : item.unitPrice.toFixed(2)}
-                                  onChange={(e) => updatePrice(item.sku, parseFloat(e.target.value) || 0)}
-                                  className="w-full px-2 py-1 border border-gray-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
-                                  disabled={!isEditing && orderDetail.status !== 'draft'}
-                                />
-                              </div>
-                              <div>
-                                <label className="block text-xs text-gray-600 mb-1">Prix FX</label>
-                                <input
-                                  type="number"
-                                  step="0.01"
-                                  value={item.supplierPrice?.toFixed(2) || '0.00'}
-                                  className="w-full px-2 py-1 border border-gray-300 rounded text-xs bg-gray-50"
-                                  disabled
-                                />
-                              </div>
-                            </div>
-
-                            {/* Bouton supprimer pour brouillons */}
-                            {orderDetail.status === 'draft' && (
-                              <button
-                                onClick={() => removeItem(item.sku)}
-                                className="w-full flex items-center justify-center gap-2 px-3 py-1.5 bg-red-500 text-white rounded hover:bg-red-600 transition-colors text-xs"
-                              >
-                                <Trash2 className="h-3 w-3" />
-                                Supprimer
-                              </button>
-                            )}
                           </div>
                         )}
 
@@ -1138,18 +1153,16 @@ function AdminOrderDetailPage() {
                   <table className="w-full">
                     <thead className="bg-gray-50 border-b">
                       <tr>
-                        <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Produit</th>
-                        <th className="hidden xl:table-cell px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">États</th>
-                        <th className="hidden 2xl:table-cell px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Couleur</th>
-                        <th className="hidden 2xl:table-cell px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Emballage</th>
-                        <th className="hidden 2xl:table-cell px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Infos</th>
-                        <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Qté</th>
-                        <th className="hidden xl:table-cell px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Prix fourn.</th>
-                        <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Prix DBC</th>
-                        <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Total</th>
-                        {orderDetail.status === 'draft' && (
-                          <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-                        )}
+                        <th className="px-3 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Produit</th>
+                        <th className="hidden xl:table-cell px-3 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">États</th>
+                        <th className="hidden 2xl:table-cell px-3 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Couleur</th>
+                        <th className="hidden 2xl:table-cell px-3 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Emballage</th>
+                        <th className="hidden 2xl:table-cell px-3 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Infos</th>
+                        <th className="px-3 py-3 text-center text-xs font-medium text-gray-700 uppercase tracking-wider">Qté</th>
+                        <th className="hidden xl:table-cell px-3 py-3 text-right text-xs font-medium text-gray-700 uppercase tracking-wider">Prix fourn.</th>
+                        <th className="px-3 py-3 text-right text-xs font-medium text-gray-700 uppercase tracking-wider">Prix DBC</th>
+                        <th className="px-3 py-3 text-right text-xs font-medium text-gray-700 uppercase tracking-wider">Total</th>
+                        <th className="px-3 py-3 text-center text-xs font-medium text-gray-700 uppercase tracking-wider">Actions</th>
                       </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
@@ -1268,9 +1281,9 @@ function AdminOrderDetailPage() {
                             {((editablePrices[item.sku] || item.unitPrice) * editableQuantities[item.sku]).toFixed(2)}€
                           </td>
 
-                          {/* Actions - Si brouillon */}
-                          {orderDetail.status === 'draft' && (
-                            <td className="px-3 py-3 text-center">
+                          {/* Actions - Toujours visible */}
+                          <td className="px-3 py-3 text-center">
+                            {orderDetail.status === 'draft' && (
                               <button
                                 onClick={() => removeItem(item.sku)}
                                 className="p-1.5 text-red-600 hover:text-red-800 hover:bg-red-50 rounded-lg transition-colors"
@@ -1278,8 +1291,8 @@ function AdminOrderDetailPage() {
                               >
                                 <Trash2 className="h-4 w-4" />
                               </button>
-                            </td>
-                          )}
+                            )}
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -1294,7 +1307,7 @@ function AdminOrderDetailPage() {
                   {imeiData.length > 0 ? (
                     <div className="space-y-3 p-4">
                       {imeiData.map((imei: any) => (
-                        <div key={imei.imei} className="bg-white rounded border shadow-sm p-3 transition-all duration-200">
+                        <div key={imei.id} className="bg-white rounded border shadow-sm p-3 transition-all duration-200">
                           {/* Header avec SKU et IMEI */}
                           <div className="flex items-start justify-between mb-2">
                             <div className="flex-1 overflow-hidden">
@@ -1392,7 +1405,7 @@ function AdminOrderDetailPage() {
                     <tbody className="bg-white divide-y divide-gray-200">
                       {imeiData.length > 0 ? (
                         imeiData.map((imei: any) => (
-                          <tr key={imei.imei} className="hover:bg-gray-50 transition-colors">
+                          <tr key={imei.id} className="hover:bg-gray-50 transition-colors">
                             <td className="px-3 py-3 text-sm font-mono text-blue-600">{imei.sku}</td>
                             <td className="px-3 py-3 text-sm font-mono text-purple-600">{imei.imei}</td>
                             <td className="px-3 py-3">
@@ -1472,12 +1485,26 @@ function AdminOrderDetailPage() {
                 <span className="text-gray-800">Produits ({orderDetail.totalItems} articles)</span>
                 <span className="font-medium text-gray-900">{orderDetail.totalAmount.toFixed(2)}€</span>
               </div>
-              {orderDetail.shippingCost > 0 && (
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-800">Frais de livraison</span>
-                  <span className="font-medium text-gray-900">{orderDetail.shippingCost.toFixed(2)}€</span>
+              <div className="flex justify-between items-center text-sm">
+                <span className="text-gray-800">Frais de livraison</span>
+                <div className="flex items-center gap-2">
+                  {orderDetail.freeShipping ? (
+                    <span className="font-medium text-green-600">GRATUIT</span>
+                  ) : (
+                    <span className="font-medium text-gray-900">{orderDetail.shippingCost?.toFixed(2) || '0.00'}€</span>
+                  )}
+                  <button
+                    onClick={toggleFreeShipping}
+                    className={`px-2 py-1 text-xs rounded transition-colors ${
+                      orderDetail.freeShipping
+                        ? 'bg-green-100 text-green-700 hover:bg-green-200'
+                        : 'bg-blue-100 text-blue-700 hover:bg-blue-200'
+                    }`}
+                  >
+                    {orderDetail.freeShipping ? 'Annuler' : 'Offrir'}
+                  </button>
                 </div>
-              )}
+              </div>
               <div className="text-xs text-gray-700">
                 Bien d'occasion - TVA calculée sur la marge, non récupérable
               </div>
@@ -1527,7 +1554,7 @@ function AdminOrderDetailPage() {
                   title="Les frais de livraison sont calculés automatiquement selon le nombre de produits"
                 />
                 <div className="text-xs text-gray-500 mt-1">
-                  Calculé automatiquement: {orderDetail.totalItems} articles = {orderDetail.shippingCost?.toFixed(2) || '0.00'}€
+                  {orderDetail.totalItems} articles = {orderDetail.shippingCost?.toFixed(2) || '0.00'}€
                 </div>
               </div>
             </div>

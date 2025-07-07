@@ -125,6 +125,8 @@ function ClientOrderDetailPage() {
 
       console.log('📦 Items trouvés:', items.length);
 
+      const shippingCost = calculateShippingCost(supabaseOrder.total_items);
+
       setOrderDetail({
         id: supabaseOrder.id,
         name: supabaseOrder.name,
@@ -135,7 +137,8 @@ function ClientOrderDetailPage() {
         items,
         totalItems: supabaseOrder.total_items,
         totalAmount: supabaseOrder.total_amount,
-        shippingCost: calculateShippingCost(supabaseOrder.total_items),
+        shippingCost: supabaseOrder.free_shipping ? 0 : shippingCost,
+        freeShipping: supabaseOrder.free_shipping || false,
         customerRef: supabaseOrder.customer_ref,
         vatType: supabaseOrder.vat_type,
         source: 'supabase',
@@ -638,11 +641,11 @@ function ClientOrderDetailPage() {
                         <div className="flex items-center justify-between pt-2 border-t border-gray-100">
                           <div className="text-sm">
                             <span className="font-bold text-gray-900">{item.unitPrice.toFixed(2)}€</span>
-                            <span className="text-xs text-gray-500 ml-1">DBC</span>
+                            <span className="text-xs text-gray-700 ml-1">DBC</span>
                           </div>
                           <div className="text-right">
                             <div className="text-sm font-bold text-gray-900">{item.totalPrice.toFixed(2)}€</div>
-                            <div className="text-xs text-gray-500">Total</div>
+                            <div className="text-xs text-gray-700">Total</div>
                           </div>
                         </div>
 
@@ -655,6 +658,38 @@ function ClientOrderDetailPage() {
                         )}
                       </div>
                     ))}
+                    
+                    {/* Ligne frais de livraison - Vue Mobile */}
+                    {(orderDetail.shippingCost > 0 || orderDetail.freeShipping) && (
+                      <div className="border-t-2 border-gray-200 pt-4 mt-4">
+                        <div className={`rounded-lg p-4 ${orderDetail.freeShipping ? 'bg-green-50' : 'bg-blue-50'}`}>
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center space-x-3">
+                              <Truck className={`h-5 w-5 ${orderDetail.freeShipping ? 'text-green-600' : 'text-blue-600'}`} />
+                              <div>
+                                <div className={`text-sm font-medium ${orderDetail.freeShipping ? 'text-green-900' : 'text-blue-900'}`}>
+                                  Frais de livraison
+                                  {orderDetail.freeShipping && <span className="ml-2 text-xs bg-green-200 text-green-800 px-2 py-0.5 rounded">OFFERTE</span>}
+                                </div>
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              <div className={`text-sm font-medium ${orderDetail.freeShipping ? 'text-green-900' : 'text-blue-900'}`}>Qté: 1</div>
+                              <div className={`text-lg font-bold ${orderDetail.freeShipping ? 'text-green-900' : 'text-blue-900'}`}>
+                                {orderDetail.freeShipping ? (
+                                  <span className="line-through text-gray-500">
+                                    {calculateShippingCost(orderDetail.totalItems).toFixed(2)}€
+                                  </span>
+                                ) : (
+                                  `${orderDetail.shippingCost.toFixed(2)}€`
+                                )}
+                                {orderDetail.freeShipping && <span className="ml-2 text-green-700">GRATUIT</span>}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -663,14 +698,14 @@ function ClientOrderDetailPage() {
                   <table className="w-full">
                     <thead className="bg-gray-50 border-b">
                       <tr>
-                        <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Produit</th>
-                        <th className="hidden xl:table-cell px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">États</th>
-                        <th className="hidden 2xl:table-cell px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Couleur</th>
-                        <th className="hidden 2xl:table-cell px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Emballage</th>
-                        <th className="hidden 2xl:table-cell px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Infos</th>
-                        <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Qté</th>
-                        <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Prix</th>
-                        <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Total</th>
+                        <th className="px-3 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Produit</th>
+                        <th className="hidden xl:table-cell px-3 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">États</th>
+                        <th className="hidden 2xl:table-cell px-3 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Couleur</th>
+                        <th className="hidden 2xl:table-cell px-3 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Emballage</th>
+                        <th className="hidden 2xl:table-cell px-3 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Infos</th>
+                        <th className="px-3 py-3 text-center text-xs font-medium text-gray-700 uppercase tracking-wider">Qté</th>
+                        <th className="px-3 py-3 text-right text-xs font-medium text-gray-700 uppercase tracking-wider">Prix</th>
+                        <th className="px-3 py-3 text-right text-xs font-medium text-gray-700 uppercase tracking-wider">Total</th>
                       </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
@@ -752,6 +787,42 @@ function ClientOrderDetailPage() {
                           </td>
                         </tr>
                       ))}
+                      
+                      {/* Ligne frais de livraison */}
+                      {(orderDetail.shippingCost > 0 || orderDetail.freeShipping) && (
+                        <tr className={`border-t-2 border-gray-200 ${orderDetail.freeShipping ? 'bg-green-50' : 'bg-blue-50'}`}>
+                          <td className="px-3 py-3">
+                            <div className="flex items-center space-x-2">
+                              <Truck className={`h-4 w-4 ${orderDetail.freeShipping ? 'text-green-600' : 'text-blue-600'}`} />
+                              <div className={`text-sm font-medium ${orderDetail.freeShipping ? 'text-green-900' : 'text-blue-900'}`}>
+                                Frais de livraison
+                                {orderDetail.freeShipping && <span className="ml-2 text-xs bg-green-200 text-green-800 px-1 py-0.5 rounded">OFFERTE</span>}
+                              </div>
+                            </div>
+                          </td>
+                          <td className="hidden xl:table-cell px-3 py-3"></td>
+                          <td className="hidden 2xl:table-cell px-3 py-3"></td>
+                          <td className="hidden 2xl:table-cell px-3 py-3"></td>
+                          <td className="hidden 2xl:table-cell px-3 py-3"></td>
+                          <td className="px-3 py-3 text-center">
+                            <span className={`text-sm font-medium px-2 py-1 rounded ${orderDetail.freeShipping ? 'text-green-900 bg-green-100' : 'text-blue-900 bg-blue-100'}`}>
+                              1
+                            </span>
+                          </td>
+                          <td className={`px-3 py-3 text-right text-sm font-medium ${orderDetail.freeShipping ? 'text-green-900' : 'text-blue-900'}`}>
+                            {orderDetail.freeShipping ? (
+                              <span className="line-through text-gray-500">
+                                {calculateShippingCost(orderDetail.totalItems).toFixed(2)}€
+                              </span>
+                            ) : (
+                              `${orderDetail.shippingCost.toFixed(2)}€`
+                            )}
+                          </td>
+                          <td className={`px-3 py-3 text-right text-sm font-semibold ${orderDetail.freeShipping ? 'text-green-900' : 'text-blue-900'}`}>
+                            {orderDetail.freeShipping ? 'GRATUIT' : `${orderDetail.shippingCost.toFixed(2)}€`}
+                          </td>
+                        </tr>
+                      )}
                     </tbody>
                   </table>
                 </div>

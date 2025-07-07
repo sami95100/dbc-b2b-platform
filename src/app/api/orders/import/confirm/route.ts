@@ -213,14 +213,44 @@ export async function POST(request: NextRequest) {
     // 5. AJOUTER LES ITEMS DE COMMANDE
     console.log('📦 Ajout des items de commande...');
     
-    const orderItemsData = allOrderProducts.map(product => ({
+    // Grouper les produits par SKU pour éviter les doublons
+    const groupedProducts = new Map<string, {
+      sku: string;
+      product_name: string;
+      quantity: number;
+      unit_price: number;
+      total_price: number;
+    }>();
+
+    for (const product of allOrderProducts) {
+      const existingProduct = groupedProducts.get(product.sku);
+      
+      if (existingProduct) {
+        // Additionner les quantités et recalculer le total
+        existingProduct.quantity += product.quantity;
+        existingProduct.total_price = existingProduct.unit_price * existingProduct.quantity;
+      } else {
+        // Nouveau produit
+        groupedProducts.set(product.sku, {
+          sku: product.sku,
+          product_name: product.product_name,
+          quantity: product.quantity,
+          unit_price: product.dbc_price,
+          total_price: product.dbc_price * product.quantity
+        });
+      }
+    }
+
+    const orderItemsData = Array.from(groupedProducts.values()).map(product => ({
       order_id: insertedOrder.id,
       sku: product.sku,
       product_name: product.product_name,
       quantity: product.quantity,
-      unit_price: product.dbc_price,
-      total_price: product.dbc_price * product.quantity
+      unit_price: product.unit_price,
+      total_price: product.total_price
     }));
+
+    console.log(`📊 Groupement terminé: ${allOrderProducts.length} produits → ${orderItemsData.length} items uniques`);
 
     const { error: itemsError } = await supabaseAdmin
       .from('order_items')
@@ -231,7 +261,7 @@ export async function POST(request: NextRequest) {
       // Ne pas faire échouer pour ça, juste avertir
       console.warn('⚠️ Items non ajoutés mais commande créée');
     } else {
-      console.log(`✅ ${orderItemsData.length} items ajoutés à la commande`);
+      console.log(`✅ ${orderItemsData.length} items uniques ajoutés à la commande`);
     }
 
     // 6. PRÉPARER LA RÉPONSE

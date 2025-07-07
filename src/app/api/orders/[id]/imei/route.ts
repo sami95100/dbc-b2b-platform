@@ -35,10 +35,14 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     console.log('📱 Début import IMEI pour commande:', params.id);
 
     if (!supabaseAdmin) {
+      console.error('❌ Configuration Supabase admin manquante');
       throw new Error('Configuration Supabase admin manquante');
     }
 
+    console.log('✅ Configuration Supabase OK');
+
     // 1. Vérifier que la commande existe et est en statut 'pending_payment' (après validation)
+    console.log('🔍 Vérification commande...');
     const { data: order, error: orderError } = await supabaseAdmin
       .from('orders')
       .select('id, name, status, total_amount')
@@ -46,56 +50,72 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       .single();
 
     if (orderError || !order) {
+      console.error('❌ Commande non trouvée:', orderError);
       return NextResponse.json({ error: 'Commande non trouvée' }, { status: 404 });
     }
 
+    console.log('✅ Commande trouvée:', order.name, 'statut:', order.status);
+
     if (order.status !== 'pending_payment') {
+      console.error('❌ Statut incorrect:', order.status);
       return NextResponse.json({ 
         error: `Impossible d'importer les IMEI. La commande doit être en statut "En attente de paiement", statut actuel: ${order.status}` 
       }, { status: 400 });
     }
 
     // 2. Récupérer les order_items de la commande
+    console.log('🔍 Récupération des articles...');
     const { data: orderItems, error: itemsError } = await supabaseAdmin
       .from('order_items')
       .select('id, sku, product_name, quantity, unit_price')
       .eq('order_id', params.id);
 
     if (itemsError) {
+      console.error('❌ Erreur récupération articles:', itemsError);
       return NextResponse.json({ error: 'Erreur récupération des articles de commande' }, { status: 500 });
     }
 
     if (!orderItems || orderItems.length === 0) {
+      console.error('❌ Aucun article dans la commande');
       return NextResponse.json({ error: 'Aucun article trouvé dans cette commande' }, { status: 400 });
     }
 
-    console.log(`📦 ${orderItems.length} articles dans la commande`);
+    console.log(`✅ ${orderItems.length} articles trouvés`);
 
     // 3. Lire le fichier Excel des IMEI
+    console.log('🔍 Lecture du fichier...');
     const formData = await request.formData();
     const file = formData.get('file') as File;
 
     if (!file) {
+      console.error('❌ Aucun fichier fourni');
       return NextResponse.json({ error: 'Aucun fichier fourni' }, { status: 400 });
     }
 
-    console.log('📁 Lecture du fichier IMEI:', file.name);
+    console.log('✅ Fichier reçu:', file.name, 'taille:', file.size);
 
+    console.log('🔍 Lecture du fichier Excel...');
     const buffer = await file.arrayBuffer();
     const workbook = XLSX.read(buffer, { type: 'array' });
     const firstSheetName = workbook.SheetNames[0];
     const worksheet = workbook.Sheets[firstSheetName];
     
+    console.log('✅ Fichier Excel lu, première feuille:', firstSheetName);
+    
     const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
     
+    console.log('✅ Données extraites:', jsonData.length, 'lignes');
+    
     if (jsonData.length < 2) {
+      console.error('❌ Fichier Excel insuffisant:', jsonData.length, 'lignes');
       return NextResponse.json({ error: 'Le fichier Excel doit contenir au moins une ligne de headers et une ligne de données' }, { status: 400 });
     }
 
     const headers = jsonData[0] as string[];
-    console.log('📋 Headers IMEI détectés:', headers);
+    console.log('✅ Headers détectés:', headers);
 
     // 4. Mapping des colonnes attendues
+    console.log('🔍 Mapping des colonnes...');
     const columnMapping = {
       sku: headers.findIndex(h => h && h.toLowerCase().includes('sku')),
       id: headers.findIndex(h => h && h.toLowerCase().includes('id')),
@@ -111,16 +131,25 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       price: headers.findIndex(h => h && h.toLowerCase().includes('price'))
     };
 
-    console.log('🗺️ Mapping colonnes IMEI:', columnMapping);
+    console.log('✅ Mapping des colonnes:', columnMapping);
 
     // Validation du mapping
     if (columnMapping.sku === -1 || columnMapping.item_identifier === -1 || columnMapping.quantity === -1 || columnMapping.price === -1) {
+      console.error('❌ Colonnes manquantes:', {
+        sku: columnMapping.sku,
+        item_identifier: columnMapping.item_identifier,
+        quantity: columnMapping.quantity,
+        price: columnMapping.price
+      });
       return NextResponse.json({ 
         error: 'Colonnes requises non trouvées: SKU, Item Identifier (IMEI), Quantity, Price' 
       }, { status: 400 });
     }
 
+    console.log('✅ Validation des colonnes OK');
+
     // 5. Extraire les données IMEI
+    console.log('🔍 Extraction des données IMEI...');
     const extractedImeiData: ExcelImeiData[] = jsonData.slice(1)
       .filter(row => row && row.length > 0 && row[columnMapping.sku] && row[columnMapping.item_identifier])
       .map(row => ({
@@ -138,13 +167,15 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
         price: parseFloat(String(row[columnMapping.price] || '0')) || 0
       }));
 
-    console.log(`📱 ${extractedImeiData.length} IMEI extraits du fichier`);
+    console.log(`✅ ${extractedImeiData.length} IMEI extraits du fichier`);
 
     if (extractedImeiData.length === 0) {
+      console.error('❌ Aucun IMEI valide dans le fichier');
       return NextResponse.json({ error: 'Aucun IMEI valide trouvé dans le fichier' }, { status: 400 });
     }
 
     // 6. Vérifier la correspondance SKU et quantités
+    console.log('🔍 Début validation IMEI/Commande...');
     const orderItemsMap = new Map(orderItems.map(item => [item.sku, item]));
     const imeiCountBySku = new Map<string, number>();
 
@@ -153,6 +184,9 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       const currentCount = imeiCountBySku.get(imei.sku) || 0;
       imeiCountBySku.set(imei.sku, currentCount + 1);
     });
+
+    console.log('📊 Répartition IMEI par SKU:', Object.fromEntries(imeiCountBySku));
+    console.log('📋 Articles commande:', orderItems.map(item => ({ sku: item.sku, quantity: item.quantity })));
 
     // Vérifier que chaque SKU de la commande a le bon nombre d'IMEI
     const validationErrors: string[] = [];
@@ -172,6 +206,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     });
 
     if (validationErrors.length > 0) {
+      console.log('❌ Erreurs de validation:', validationErrors);
       return NextResponse.json({ 
         error: 'Erreurs de validation IMEI/Commande',
         validation_errors: validationErrors

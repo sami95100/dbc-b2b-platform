@@ -331,21 +331,32 @@ function ClientOrdersPage() {
                       border border-white/20 hover:border-white/40 hover:bg-white/20
                       ${getStatusBorder(order.status)} border-l-4
                     `}>
-                      {/* Header - Statut principal */}
-                      <div className="flex items-center justify-between mb-4">
-                        <span className={`inline-flex items-center space-x-2 px-4 py-2 rounded-xl text-sm font-semibold bg-white/20 backdrop-blur-sm border border-white/20 ${getStatusColor(order.status)} shadow-sm`}>
-                          {getStatusIcon(order.status)}
-                          <span>{order.status_label}</span>
-                        </span>
+                      {/* Header - Statut principal et actions */}
+                      <div className="flex items-start justify-between mb-4">
+                        <div className="flex items-center space-x-2">
+                          <span className={`inline-flex items-center space-x-2 px-4 py-2 rounded-xl text-sm font-semibold bg-white/20 backdrop-blur-sm border border-white/20 ${getStatusColor(order.status)} shadow-sm`}>
+                            {getStatusIcon(order.status)}
+                            <span>{order.status_label}</span>
+                          </span>
+                          {order.status === 'draft' && (
+                            <button
+                              onClick={() => deleteOrder(order.id, order.name || order.id)}
+                              className="p-2 bg-red-50 hover:bg-red-100 text-red-600 hover:text-red-700 rounded-lg transition-all duration-200 shadow-sm border border-red-200"
+                              title="Supprimer la commande"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          )}
+                        </div>
                         <div className="text-right">
                           <div className="text-xl font-bold text-gray-900">
                             {order.totalAmount?.toFixed(2)} €
                           </div>
-                          <div className="text-xs text-gray-700 font-medium">
+                          <div className="text-xs text-gray-800 font-medium">
                             {order.totalItems} article{order.totalItems > 1 ? 's' : ''}
                           </div>
                           {order.shippingCost > 0 && (
-                            <div className="text-xs text-gray-600 mt-1">
+                            <div className="text-xs text-gray-700 mt-1">
                               <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded-full">
                                 Livraison: {order.shippingCost.toFixed(2)}€
                               </span>
@@ -379,40 +390,14 @@ function ClientOrdersPage() {
                         </div>
                       </div>
 
-                      {/* Actions */}
-                      <div className="flex flex-col space-y-3">
-                        <button
-                          onClick={() => handleOrderClick(order.id)}
-                          className="w-full px-6 py-3 !bg-white/20 hover:!bg-white/40 !text-gray-800 hover:!text-gray-900 rounded-xl text-sm font-semibold transition-all duration-200 shadow-sm backdrop-blur-md border border-white/30 hover:border-white/50 hover:shadow-md"
-                          style={{ 
-                            background: 'rgba(255, 255, 255, 0.2)', 
-                            color: '#1f2937',
-                            backgroundImage: 'none'
-                          }}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.background = 'rgba(255, 255, 255, 0.4)';
-                            e.currentTarget.style.color = '#111827';
-                            e.currentTarget.style.backgroundImage = 'none';
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.background = 'rgba(255, 255, 255, 0.2)';
-                            e.currentTarget.style.color = '#1f2937';
-                            e.currentTarget.style.backgroundImage = 'none';
-                          }}
-                        >
-                          <Eye className="h-4 w-4 inline mr-2" />
-                          Voir les détails
-                        </button>
-                        {order.status === 'draft' && (
-                          <button
-                            onClick={() => deleteOrder(order.id, order.name || order.id)}
-                            className="w-full px-6 py-3 bg-white/20 hover:bg-white/40 text-red-600 hover:text-red-700 rounded-xl text-sm font-semibold transition-all duration-200 shadow-sm backdrop-blur-md border border-red-200/30 hover:border-red-300/50"
-                          >
-                            <Trash2 className="h-4 w-4 inline mr-2" />
-                            Supprimer la commande
-                          </button>
-                        )}
-                      </div>
+                      {/* Action principale */}
+                      <button
+                        onClick={() => handleOrderClick(order.id)}
+                        className="w-full px-4 py-2 bg-white/20 hover:bg-white/40 text-gray-800 hover:text-gray-900 rounded-xl text-sm font-semibold transition-all duration-200 shadow-sm backdrop-blur-md border border-white/30 hover:border-white/50 hover:shadow-md"
+                      >
+                        <Eye className="h-4 w-4 inline mr-2" />
+                        Voir les détails
+                      </button>
                     </div>
                   );
                 })}
