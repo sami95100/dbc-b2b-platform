@@ -277,6 +277,10 @@ function ClientOrderDetailPage() {
     exportData('sku', 'xlsx');
   };
 
+  const downloadInvoice = () => {
+    window.open(`/api/orders/${orderDetail.id}/invoice`, '_blank');
+  };
+
   const getStatusIcon = (status: string) => {
     switch (status) {
       case 'completed': return <CheckCircle className="h-4 w-4 text-green-600" />;
@@ -322,16 +326,6 @@ function ClientOrderDetailPage() {
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('fr-FR');
-  };
-
-  const getDisplayFunctionality = (functionality: string) => {
-    if (functionality === 'Minor Fault') {
-      return 'Grades X';
-    }
-    if (functionality === 'Working') {
-      return 'Stockage de base';
-    }
-    return functionality;
   };
 
   const getDisplayAppearance = (appearance: string, functionality: string) => {
@@ -492,6 +486,13 @@ function ClientOrderDetailPage() {
               
               {orderDetail.status !== 'draft' && (
                 <>
+                  <button 
+                    onClick={downloadInvoice}
+                    className="flex items-center justify-center space-x-1 px-3 py-2 bg-white/50 hover:bg-white/70 text-gray-800 hover:text-gray-900 rounded-lg transition-all duration-200 text-sm backdrop-blur-md border border-white/60 hover:border-white/80 hover:shadow-md"
+                  >
+                    <FileText className="h-4 w-4" />
+                    <span>Facture</span>
+                  </button>
                   <button
                     onClick={() => exportData(viewMode, 'csv')}
                     className="flex items-center justify-center space-x-1 px-3 py-2 bg-white/50 hover:bg-white/70 text-gray-800 hover:text-gray-900 rounded-lg transition-all duration-200 text-sm backdrop-blur-md border border-white/60 hover:border-white/80 hover:shadow-md"
@@ -607,7 +608,7 @@ function ClientOrderDetailPage() {
                         </h3>
 
                         {/* Ligne avec états et couleur */}
-                        <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2 flex-wrap">
                             {/* Grade */}
                             <span className={`text-xs font-medium px-1 py-0.5 rounded ${
@@ -617,19 +618,19 @@ function ClientOrderDetailPage() {
                               item.appearance?.includes('C+') ? 'bg-yellow-100 text-yellow-800' :
                               'bg-orange-100 text-orange-800'
                             }`}>
-                              {getDisplayAppearance(item.appearance, item.functionality)?.replace('Grade ', '') || ''}
+                              {getDisplayAppearance(item.appearance, item.functionality)?.replace('Grade ', '') || 'N/A'}
                             </span>
-
-                            {/* Additional Info - seulement si non vide */}
-                            {item.additional_info && item.additional_info !== '-' && item.additional_info.trim() && (
-                              <span className="text-xs px-1 py-0.5 bg-gray-100 text-gray-700 rounded border">
+                            
+                            {/* Additional info juste à droite du grade */}
+                            {item.additional_info && item.additional_info !== '-' && item.additional_info !== 'Produit épuisé ou non disponible' && (
+                              <span className="text-xs text-gray-600 bg-gray-50 px-2 py-1 rounded">
                                 {item.additional_info}
                               </span>
                             )}
                           </div>
 
                           {/* Couleur */}
-                          {item.color && (
+                          {item.color && item.color !== 'N/A' && (
                             <div className="flex items-center gap-1">
                               <div className={`w-3 h-3 rounded border-2 border-gray-300 ${getColorClass(item.color)}`} title={item.color}></div>
                               <span className="text-xs text-gray-600">{item.color}</span>
@@ -729,9 +730,13 @@ function ClientOrderDetailPage() {
                                 }`}>
                                   {getDisplayAppearance(item.appearance, item.functionality)?.replace('Grade ', '') || 'N/A'}
                                 </span>
-                                <span className="inline-flex px-1.5 py-0.5 text-xs font-medium rounded bg-blue-100 text-blue-800">
-                                  {getDisplayFunctionality(item.functionality) || 'N/A'}
-                                </span>
+                                
+                                {/* Additional info juste à droite du grade */}
+                                {item.additional_info && item.additional_info !== '-' && item.additional_info !== 'Produit épuisé ou non disponible' && (
+                                  <span className="text-xs text-gray-600 bg-gray-50 px-2 py-1 rounded">
+                                    {item.additional_info}
+                                  </span>
+                                )}
                               </div>
                             </div>
                           </td>
@@ -748,6 +753,13 @@ function ClientOrderDetailPage() {
                               }`}>
                                 {getDisplayAppearance(item.appearance, item.functionality)?.replace('Grade ', '') || 'N/A'}
                               </span>
+                              
+                              {/* Additional info juste à droite du grade sur desktop */}
+                              {item.additional_info && item.additional_info !== '-' && item.additional_info !== 'Produit épuisé ou non disponible' && (
+                                <span className="text-xs text-gray-600 bg-gray-50 px-2 py-1 rounded">
+                                  {item.additional_info}
+                                </span>
+                              )}
                             </div>
                           </td>
 
@@ -760,14 +772,7 @@ function ClientOrderDetailPage() {
                           </td>
 
                           {/* Emballage - Visible 2XL+ */}
-                          <td className="hidden 2xl:table-cell px-3 py-3 text-sm text-gray-900">
-                            {item.boxed || 'N/A'}
-                          </td>
-
-                          {/* Infos - Visible 2XL+ */}
-                          <td className="hidden 2xl:table-cell px-3 py-3 text-sm text-gray-800 max-w-32 truncate">
-                            {item.additional_info && item.additional_info !== '-' ? item.additional_info : ''}
-                          </td>
+                          <td className="hidden 2xl:table-cell px-3 py-3 text-sm text-gray-900">{item.boxed || 'N/A'}</td>
 
                           {/* Quantité - Toujours visible */}
                           <td className="px-3 py-3 text-center">
@@ -872,6 +877,13 @@ function ClientOrderDetailPage() {
                               }`}>
                                 {getDisplayAppearance(imei.appearance, imei.functionality)?.replace('Grade ', '') || ''}
                               </span>
+                              
+                              {/* Additional info juste à droite du grade */}
+                              {imei.additional_info && (
+                                <span className="text-xs text-gray-600 bg-gray-50 px-2 py-1 rounded">
+                                  {imei.additional_info}
+                                </span>
+                              )}
                             </div>
 
                             {/* Couleur */}
@@ -882,15 +894,6 @@ function ClientOrderDetailPage() {
                               </div>
                             )}
                           </div>
-
-                          {/* Info supplémentaire */}
-                          {imei.additional_info && (
-                            <div className="mt-2">
-                              <span className="text-xs text-gray-600 bg-gray-50 px-2 py-1 rounded">
-                                {imei.additional_info}
-                              </span>
-                            </div>
-                          )}
                         </div>
                       ))}
                     </div>
@@ -935,6 +938,13 @@ function ClientOrderDetailPage() {
                                 }`}>
                                   {getDisplayAppearance(imei.appearance, imei.functionality)?.replace('Grade ', '') || ''}
                                 </span>
+                                
+                                {/* Additional info juste à droite du grade */}
+                                {imei.additional_info && (
+                                  <span className="text-xs text-gray-600 bg-gray-50 px-2 py-1 rounded">
+                                    {imei.additional_info}
+                                  </span>
+                                )}
                               </div>
                             </td>
                             <td className="hidden xl:table-cell px-3 py-3">
@@ -948,6 +958,8 @@ function ClientOrderDetailPage() {
                                 }`}>
                                   {getDisplayAppearance(imei.appearance, imei.functionality)?.replace('Grade ', '') || ''}
                                 </span>
+                                
+                                {/* Additional info juste à droite du grade */}
                                 {imei.additional_info && (
                                   <span className="text-xs text-gray-600 bg-gray-50 px-2 py-1 rounded">
                                     {imei.additional_info}

@@ -1,17 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabaseAdmin } from '../../../../../lib/supabase';
-
-// Fonction helper pour vérifier supabaseAdmin
-function getSupabaseAdmin() {
-  if (!supabaseAdmin) {
-    throw new Error('Configuration Supabase admin manquante - vérifiez SUPABASE_SERVICE_ROLE_KEY dans .env.local');
-  }
-  return supabaseAdmin;
-}
+import { getSupabaseAdmin } from '../../../../../lib/supabase';
+import { calculateShippingCost } from '../../../../../lib/shipping';
 
 export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
   try {
     const admin = getSupabaseAdmin();
+    
+    if (!admin) {
+      return NextResponse.json({ error: 'Configuration Supabase admin manquante' }, { status: 500 });
+    }
+    
     console.log('📄 Génération facture pour commande:', params.id);
 
     // Fonctions pour harmoniser la terminologie
@@ -25,12 +23,13 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 
     const getDisplayAppearance = (appearance: string, functionality: string) => {
       if (functionality === 'Minor Fault') {
-        return appearance.replace('Grade ', 'Grade ') + 'x';
+        // Changer C+x en Cx+
+        return appearance.replace('Grade C+', 'Grade Cx') + 'x';
       }
       return appearance;
     };
 
-    // Récupérer les détails de la commande
+    // Récupérer les détails de la commande avec les informations utilisateur
     const { data: order, error: orderError } = await admin
       .from('orders')
       .select(`
@@ -41,8 +40,21 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
         total_amount,
         customer_ref,
         vat_type,
+        free_shipping,
         created_at,
-        updated_at
+        updated_at,
+        user_id,
+        users (
+          company_name,
+          contact_name,
+          email,
+          phone,
+          address_line1,
+          address_line2,
+          city,
+          postal_code,
+          country
+        )
       `)
       .eq('id', params.id)
       .single();
@@ -64,6 +76,9 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
       ? order.customer_ref.replace('TRACKING:', '') 
       : null;
 
+    // Extraire les informations utilisateur
+    const userInfo = Array.isArray(order.users) ? order.users[0] : order.users;
+
     // Récupérer les articles de la commande avec leurs détails complets
     const { data: orderItems, error: itemsError } = await admin
       .from('order_items')
@@ -71,40 +86,86 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
       .eq('order_id', params.id)
       .order('sku');
 
-    console.log('🔍 Debug orderItems récupérés:', { orderItems, itemsError, orderId: params.id });
-
     if (itemsError) {
       console.error('❌ Erreur récupération articles:', itemsError);
-      return NextResponse.json({ error: 'Erreur récupération des articles' }, { status: 500 });
+      return NextResponse.json({ error: 'Erreur récupération articles', details: itemsError }, { status: 500 });
     }
 
     if (!orderItems || orderItems.length === 0) {
-      console.warn('⚠️ Aucun article trouvé pour la commande:', params.id);
+      console.error('❌ Aucun article trouvé pour cette commande');
+      return NextResponse.json({ error: 'Aucun article trouvé' }, { status: 404 });
     }
 
-    // Récupérer les détails complets des produits depuis le catalogue
-    const skus = orderItems?.map(item => item.sku) || [];
-    const { data: productDetails, error: productsError } = await admin
+    // Récupérer les détails des produits depuis le catalogue
+    const skus = orderItems.map(item => item.sku);
+    const { data: products, error: productsError } = await admin
       .from('products')
-      .select('sku, appearance, functionality, color, boxed, additional_info, price, price_dbc')
+      .select('sku, appearance, functionality, color, boxed, additional_info')
       .in('sku', skus);
 
-    console.log('🔍 Debug productDetails récupérés:', { productDetails, productsError });
+    if (productsError) {
+      console.warn('⚠️ Erreur récupération produits:', productsError);
+    }
 
-    // Combiner les données order_items avec les détails produits
-    const enrichedItems = orderItems?.map(orderItem => {
-      const productDetail = productDetails?.find(p => p.sku === orderItem.sku);
-      return {
-        ...orderItem,
-        appearance: productDetail?.appearance || 'Grade A',
-        functionality: productDetail?.functionality || 'Working',
-        color: productDetail?.color || '-',
-        boxed: productDetail?.boxed || 'Unboxed',
-        additional_info: productDetail?.additional_info || '-',
-        supplier_price: productDetail?.price || 0,
-        catalog_price_dbc: productDetail?.price_dbc || 0
-      };
-    }) || [];
+    // Créer un map des produits pour un accès rapide
+    const productsMap = new Map();
+    products?.forEach(product => {
+      productsMap.set(product.sku, product);
+    });
+
+    // Calculer les frais de livraison
+    const totalItems = orderItems.reduce((sum, item) => sum + item.quantity, 0);
+    const shippingCost = order.free_shipping ? 0 : calculateShippingCost(totalItems);
+    const totalWithShipping = order.total_amount + shippingCost;
+
+    // Construire les lignes de produits pour la facture
+    const productRows = orderItems.map(item => {
+      const product = productsMap.get(item.sku);
+      const displayAppearance = product ? getDisplayAppearance(product.appearance, product.functionality) : 'Grade A';
+      const displayColor = product?.color || '';
+      const displayInfo = product?.additional_info || '';
+
+      return `
+        <tr>
+          <td>Mobiles</td>
+          <td>${item.product_name}</td>
+          <td class="text-center">${displayAppearance}</td>
+          <td class="text-center">${displayInfo}</td>
+          <td class="text-center">${displayColor}</td>
+          <td class="text-center">${item.quantity}</td>
+          <td class="text-center">${item.unit_price.toFixed(2)}€</td>
+          <td class="text-center">${item.total_price.toFixed(2)}€</td>
+        </tr>
+      `;
+    }).join('');
+
+    // Construire l'en-tête du tableau
+    const tableHeader = `
+      <tr style="background-color: #f5f5f5;">
+        <th>Type</th>
+        <th>Nom du produit</th>
+        <th>Apparence</th>
+        <th>Infos</th>
+        <th>Couleur</th>
+        <th>Unités</th>
+        <th>Prix</th>
+        <th>Total</th>
+      </tr>
+    `;
+
+    // Ajouter la ligne de livraison
+    const shippingRow = `
+      <tr class="border-t-2 border-gray-200">
+        <td>Livraison</td>
+        <td>Frais de livraison</td>
+        <td class="text-center">-</td>
+        <td class="text-center">-</td>
+        <td class="text-center">-</td>
+        <td class="text-center">1</td>
+        <td class="text-center">${order.free_shipping ? '0.00' : shippingCost.toFixed(2)}€</td>
+        <td class="text-center">${order.free_shipping ? '0.00' : shippingCost.toFixed(2)}€</td>
+      </tr>
+    `;
 
     // Générer le HTML de la facture
     const invoiceHtml = `
@@ -143,7 +204,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
             }
             
             .logo {
-                font-size: 36px;
+                font-size: 24px;
                 font-weight: bold;
                 color: #10B981;
                 letter-spacing: -1px;
@@ -305,7 +366,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
         <!-- En-tête avec logo et détails facture -->
         <div class="invoice-header">
             <div class="logo-section">
-                <div class="logo">DBC</div>
+                <div class="logo">DBC PARIS 17 BIS</div>
             </div>
             <div class="invoice-details">
                 <table>
@@ -330,7 +391,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
             <div class="address-block">
                 <div class="address-title">Adresse de facturation</div>
                 <div class="address-content">
-                    <strong>Société:</strong> DBC<br>
+                    <strong>Société:</strong> DBC PARIS 17 BIS<br>
                     <strong>Adresse:</strong> 110 Avenue de Villiers, 75017, Paris, France<br><br>
                     <strong>Contact:</strong> Service Commercial<br>
                     <strong>N° TVA:</strong> FR28922178488
@@ -339,10 +400,10 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
             <div class="address-block">
                 <div class="address-title">Adresse de livraison</div>
                 <div class="address-content">
-                    <strong>Société:</strong> ${order.customer_ref?.replace('TRACKING:', '') || 'Client'}<br>
-                    <strong>Adresse:</strong> 110 Avenue de Villiers, 75017, Paris, France<br><br>
-                    <strong>Nom contact:</strong> ${order.customer_ref?.replace('TRACKING:', '') || 'Client'}<br>
-                    <strong>N° contact:</strong> +33076644427
+                    <strong>Société:</strong> ${userInfo?.company_name || 'Client'}<br>
+                    <strong>Adresse:</strong> ${userInfo?.address_line1 || ''} ${userInfo?.address_line2 || ''}, ${userInfo?.postal_code || ''}, ${userInfo?.city || ''}, ${userInfo?.country || 'France'}<br><br>
+                    <strong>Nom contact:</strong> ${userInfo?.contact_name || userInfo?.email || 'Client'}<br>
+                    <strong>N° contact:</strong> ${userInfo?.phone || 'Non renseigné'}
                 </div>
             </div>
         </div>
@@ -368,41 +429,11 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
         <div class="products-title">Appareils mobiles</div>
         <table class="products-table">
             <thead>
-                <tr>
-                    <th>Type</th>
-                    <th>Nom du produit</th>
-                    <th>Apparence</th>
-                    <th>Fonctionnalité</th>
-                    <th>Emballage</th>
-                    <th>Couleur</th>
-                    <th>Cloud Lock</th>
-                    <th>Info supplémentaire</th>
-                    <th>Unités</th>
-                    <th>Prix</th>
-                    <th>Total</th>
-                </tr>
+                ${tableHeader}
             </thead>
             <tbody>
-                ${enrichedItems.map(item => `
-                <tr>
-                    <td class="text-center">Mobiles</td>
-                    <td>${item.product_name}</td>
-                    <td class="text-center">${getDisplayAppearance(item.appearance, item.functionality).replace('Grade ', '')}</td>
-                    <td class="text-center">${getDisplayFunctionality(item.functionality)}</td>
-                    <td class="text-center">${item.boxed}</td>
-                    <td class="text-center">${item.color}</td>
-                    <td class="text-center">CloudOFF</td>
-                    <td class="text-center">${item.additional_info}</td>
-                    <td class="text-center">${item.quantity}</td>
-                    <td class="text-right">${item.unit_price.toFixed(2)}</td>
-                    <td class="text-right">${item.total_price.toFixed(2)}</td>
-                </tr>
-                `).join('')}
-                <tr>
-                    <td colspan="9"></td>
-                    <td class="text-center"><strong>${enrichedItems.reduce((sum, item) => sum + item.quantity, 0)}</strong></td>
-                    <td></td>
-                </tr>
+                ${productRows}
+                ${shippingRow}
             </tbody>
         </table>
 
@@ -411,11 +442,11 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
             <table class="totals-table">
                 <tr>
                     <td class="total-label">Total net</td>
-                    <td class="text-right">${order.total_amount.toFixed(2)}</td>
+                    <td class="text-right">${totalWithShipping.toFixed(2)}€</td>
                 </tr>
                 <tr>
                     <td class="total-label">Total brut</td>
-                    <td class="text-right">${order.total_amount.toFixed(2)}</td>
+                    <td class="text-right">${totalWithShipping.toFixed(2)}€</td>
                 </tr>
             </table>
         </div>
@@ -430,16 +461,15 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
         <!-- Pied de page -->
         <div class="footer-section">
             <div class="bank-details">
-                <div class="section-title">Bénéficiaire: DBC</div><br>
+                <div class="section-title">Bénéficiaire: DBC PARIS 17 BIS</div><br>
                 <div class="section-title">Détails bancaires</div>
-                <strong>Nom:</strong> Crédit Agricole<br>
-                <strong>Adresse:</strong> 110 Avenue de Villiers, 75017, Paris, France<br>
-                <strong>Swift/BIC:</strong> AGRIFRPP<br>
-                <strong>IBAN:</strong> FR1234567890123456789
+                <strong>IBAN:</strong> FR7616958000013693245390793<br>
+                <strong>BIC:</strong> QNTOFRP1XXX<br>
+                <strong>Adresse du titulaire:</strong> DBC PARIS 17 BIS, 110 AVENUE DE VILLIERS, 75017, PARIS, FR
             </div>
             <div class="supplier-details">
                 <div class="section-title">Détails fournisseur</div>
-                <strong>Nom:</strong> DBC<br>
+                <strong>Nom:</strong> DBC PARIS 17 BIS<br>
                 <strong>Adresse:</strong> 110 Avenue de Villiers, 75017, Paris, France<br>
                 <strong>N° TVA:</strong> FR28922178488<br>
                 <strong>N° Reg.:</strong> 922178488<br><br>

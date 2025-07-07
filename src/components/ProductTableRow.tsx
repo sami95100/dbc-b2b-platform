@@ -104,19 +104,24 @@ const ProductTableRow = memo(function ProductTableRow({
         </div>
       </td>
       <td className="px-2 py-3 text-sm">
-        <span className={`px-2 py-1 rounded text-xs font-medium ${
-          product.appearance === 'Brand New' ? 'bg-green-100 text-green-800' :
-          product.appearance === 'Grade A+' ? 'bg-blue-100 text-blue-800' :
-          product.appearance === 'Grade A' ? 'bg-indigo-100 text-indigo-800' :
-          product.appearance === 'Grade AB' ? 'bg-purple-100 text-purple-800' :
-          product.appearance === 'Grade B' ? 'bg-yellow-100 text-yellow-800' :
-          product.appearance === 'Grade BC' ? 'bg-orange-100 text-orange-800' :
-          product.appearance === 'Grade C' ? 'bg-red-100 text-red-800' :
-          product.appearance === 'Grade C+' ? 'bg-pink-100 text-pink-800' :
-          'bg-gray-100 text-gray-800'
-        }`}>
-          {product.appearance}
-        </span>
+        <div className="flex flex-col space-y-1">
+          <span className={`inline-flex px-2 py-1 text-xs font-medium rounded ${
+            product.appearance?.includes('A+') ? 'bg-purple-100 text-purple-800' :
+            product.appearance?.includes('A') && !product.appearance?.includes('AB') ? 'bg-blue-100 text-blue-800' :
+            product.appearance?.includes('B') ? 'bg-green-100 text-green-800' :
+            product.appearance?.includes('C+') ? 'bg-yellow-100 text-yellow-800' :
+            'bg-orange-100 text-orange-800'
+          }`}>
+            {product.appearance?.replace('Grade ', '') || 'N/A'}
+          </span>
+          
+          {/* Additional info */}
+          {product.additional_info && product.additional_info !== '-' && product.additional_info !== 'Produit épuisé ou non disponible' && (
+            <span className="text-xs text-gray-600 bg-gray-50 px-2 py-1 rounded ml-1">
+              {product.additional_info}
+            </span>
+          )}
+        </div>
       </td>
       <td className="px-2 py-3 text-sm">
         <span className={`px-2 py-1 rounded text-xs font-medium ${

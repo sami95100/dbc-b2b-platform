@@ -27,7 +27,8 @@ import {
   Check,
   FileSpreadsheet,
   Edit,
-  Eye
+  Eye,
+  ExternalLink
 } from 'lucide-react';
 
 function AdminOrderDetailPage() {
@@ -49,6 +50,11 @@ function AdminOrderDetailPage() {
   const [imeiData, setImeiData] = useState<any[]>([]);
   const [showShippingModal, setShowShippingModal] = useState(false);
   const [trackingNumber, setTrackingNumber] = useState('');
+
+  // Fonction pour générer l'URL de tracking FedEx
+  const getFedExTrackingUrl = (trackingNumber: string) => {
+    return `https://www.fedex.com/fedextrack/?trknbr=${trackingNumber}&trkqual=${trackingNumber}~FX`;
+  };
 
   const loadOrderDetail = async () => {
     try {
@@ -640,16 +646,6 @@ function AdminOrderDetailPage() {
     });
   };
 
-  const getDisplayFunctionality = (functionality: string) => {
-    if (functionality === 'Minor Fault') {
-      return 'Grades X';
-    }
-    if (functionality === 'Working') {
-      return 'Stockage de base';
-    }
-    return functionality;
-  };
-
   const getDisplayAppearance = (appearance: string, functionality: string) => {
     if (functionality === 'Minor Fault') {
       // Ajouter 'x' minuscule après le grade pour les Minor Fault
@@ -818,11 +814,23 @@ function AdminOrderDetailPage() {
                   {getStatusIcon(orderDetail.status)}
                   <span>{orderDetail.status_label}</span>
                 </span>
-                <div className="flex items-center text-xs sm:text-sm text-gray-600">
-                  <Calendar className="h-3 w-3 sm:h-4 sm:w-4 mr-1" />
-                  <span className="truncate">Créée le {formatDate(orderDetail.createdAt)}</span>
-                </div>
+                              <div className="flex items-center text-xs sm:text-sm text-gray-600">
+                <Calendar className="h-3 w-3 sm:h-4 sm:w-4 mr-1" />
+                <span className="truncate">Créée le {formatDate(orderDetail.createdAt)}</span>
               </div>
+              {orderDetail.customerRef && orderDetail.customerRef.startsWith('TRACKING:') && (
+                <a
+                  href={getFedExTrackingUrl(orderDetail.customerRef.replace('TRACKING:', ''))}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center space-x-1 text-xs sm:text-sm text-blue-700 bg-blue-50/70 px-3 py-1.5 rounded-lg backdrop-blur-sm hover:bg-blue-100/80 hover:text-blue-800 transition-all duration-200 cursor-pointer group border border-blue-200/50 hover:border-blue-300/60 w-fit"
+                >
+                  <Truck className="h-3 w-3 sm:h-4 sm:w-4 group-hover:scale-110 transition-transform" />
+                  <span className="truncate font-medium">{orderDetail.customerRef.replace('TRACKING:', '')}</span>
+                  <ExternalLink className="h-3 w-3 opacity-60 group-hover:opacity-100 transition-opacity" />
+                </a>
+              )}
+            </div>
             </div>
             
             <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 lg:flex-shrink-0">
@@ -942,10 +950,13 @@ function AdminOrderDetailPage() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div>
-              <p className="text-sm text-gray-800 mb-1 font-medium">Référence client</p>
-              <p className="font-medium text-gray-900">{orderDetail.customerRef}</p>
-            </div>
+            {/* Afficher la référence client seulement si elle ne commence pas par TRACKING: */}
+            {orderDetail.customerRef && !orderDetail.customerRef.startsWith('TRACKING:') && (
+              <div>
+                <p className="text-sm text-gray-800 mb-1 font-medium">Référence client</p>
+                <p className="font-medium text-gray-900">{orderDetail.customerRef}</p>
+              </div>
+            )}
             <div>
               <p className="text-sm text-gray-800 mb-1 font-medium">Régime TVA</p>
               <p className="text-sm text-gray-700">{orderDetail.vatType}</p>
@@ -1045,7 +1056,7 @@ function AdminOrderDetailPage() {
                         </h3>
 
                         {/* Ligne avec états et couleur */}
-                        <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2 flex-wrap">
                             {/* Grade */}
                             <span className={`text-xs font-medium px-1 py-0.5 rounded ${
@@ -1055,19 +1066,19 @@ function AdminOrderDetailPage() {
                               item.appearance?.includes('C+') ? 'bg-yellow-100 text-yellow-800' :
                               'bg-orange-100 text-orange-800'
                             }`}>
-                              {getDisplayAppearance(item.appearance, item.functionality)?.replace('Grade ', '') || ''}
+                              {getDisplayAppearance(item.appearance, item.functionality)?.replace('Grade ', '') || 'N/A'}
                             </span>
-
-                            {/* Additional Info - seulement si non vide */}
-                            {item.additional_info && item.additional_info !== '-' && item.additional_info.trim() && (
-                              <span className="text-xs px-1 py-0.5 bg-gray-100 text-gray-700 rounded border">
+                            
+                            {/* Additional info juste à droite du grade */}
+                            {item.additional_info && item.additional_info !== '-' && item.additional_info !== 'Produit épuisé ou non disponible' && (
+                              <span className="text-xs text-gray-600 bg-gray-50 px-2 py-1 rounded">
                                 {item.additional_info}
                               </span>
                             )}
                           </div>
 
                           {/* Couleur */}
-                          {item.color && (
+                          {item.color && item.color !== 'N/A' && (
                             <div className="flex items-center gap-1">
                               <div className={`w-3 h-3 rounded border-2 border-gray-300 ${getColorClass(item.color)}`} title={item.color}></div>
                               <span className="text-xs text-gray-600">{item.color}</span>
@@ -1076,7 +1087,7 @@ function AdminOrderDetailPage() {
                         </div>
 
                         {/* Prix et marge sur même ligne */}
-                        <div className="flex items-center justify-between pt-2 border-t border-gray-100 mb-2">
+                        <div className="flex items-center justify-between pt-2 border-t border-gray-100">
                           <div className="text-sm space-x-2">
                             {item.supplierPrice && (
                               <>
@@ -1157,7 +1168,6 @@ function AdminOrderDetailPage() {
                         <th className="hidden xl:table-cell px-3 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">États</th>
                         <th className="hidden 2xl:table-cell px-3 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Couleur</th>
                         <th className="hidden 2xl:table-cell px-3 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Emballage</th>
-                        <th className="hidden 2xl:table-cell px-3 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Infos</th>
                         <th className="px-3 py-3 text-center text-xs font-medium text-gray-700 uppercase tracking-wider">Qté</th>
                         <th className="hidden xl:table-cell px-3 py-3 text-right text-xs font-medium text-gray-700 uppercase tracking-wider">Prix fourn.</th>
                         <th className="px-3 py-3 text-right text-xs font-medium text-gray-700 uppercase tracking-wider">Prix DBC</th>
@@ -1178,15 +1188,21 @@ function AdminOrderDetailPage() {
                               {/* États sur mobile et tablet */}
                               <div className="xl:hidden flex flex-wrap gap-1 mt-1">
                                 <span className={`inline-flex px-1.5 py-0.5 text-xs font-medium rounded ${
-                                  item.appearance === 'Grade A+' ? 'bg-green-100 text-green-800' :
-                                  item.appearance === 'Grade A' ? 'bg-blue-100 text-blue-800' :
-                                  'bg-yellow-100 text-yellow-800'
+                                  item.appearance?.includes('A+') ? 'bg-purple-100 text-purple-800' :
+                                  item.appearance?.includes('A') && !item.appearance?.includes('AB') ? 'bg-blue-100 text-blue-800' :
+                                  item.appearance?.includes('B') ? 'bg-green-100 text-green-800' :
+                                  item.appearance?.includes('C+') ? 'bg-yellow-100 text-yellow-800' :
+                                  'bg-orange-100 text-orange-800'
                                 }`}>
-                                  {item.appearance?.replace('Grade ', '') || 'N/A'}
+                                  {getDisplayAppearance(item.appearance, item.functionality)?.replace('Grade ', '') || 'N/A'}
                                 </span>
-                                <span className="inline-flex px-1.5 py-0.5 text-xs font-medium rounded bg-green-100 text-green-800">
-                                  {item.functionality || 'N/A'}
-                                </span>
+                                
+                                {/* Additional info juste à droite du grade */}
+                                {item.additional_info && item.additional_info !== '-' && item.additional_info !== 'Produit épuisé ou non disponible' && (
+                                  <span className="text-xs text-gray-600 bg-gray-50 px-2 py-1 rounded">
+                                    {item.additional_info}
+                                  </span>
+                                )}
                               </div>
                             </div>
                           </td>
@@ -1195,12 +1211,21 @@ function AdminOrderDetailPage() {
                           <td className="hidden xl:table-cell px-3 py-3">
                             <div className="flex flex-wrap gap-1">
                               <span className={`inline-flex px-2 py-1 text-xs font-medium rounded ${
-                                item.appearance === 'Grade A+' ? 'bg-green-100 text-green-800' :
-                                item.appearance === 'Grade A' ? 'bg-blue-100 text-blue-800' :
-                                'bg-yellow-100 text-yellow-800'
+                                item.appearance?.includes('A+') ? 'bg-purple-100 text-purple-800' :
+                                item.appearance?.includes('A') && !item.appearance?.includes('AB') ? 'bg-blue-100 text-blue-800' :
+                                item.appearance?.includes('B') ? 'bg-green-100 text-green-800' :
+                                item.appearance?.includes('C+') ? 'bg-yellow-100 text-yellow-800' :
+                                'bg-orange-100 text-orange-800'
                               }`}>
-                                {item.appearance?.replace('Grade ', '') || 'N/A'}
+                                {getDisplayAppearance(item.appearance, item.functionality)?.replace('Grade ', '') || 'N/A'}
                               </span>
+                              
+                              {/* Additional info juste à droite du grade sur desktop */}
+                              {item.additional_info && item.additional_info !== '-' && item.additional_info !== 'Produit épuisé ou non disponible' && (
+                                <span className="text-xs text-gray-600 bg-gray-50 px-2 py-1 rounded">
+                                  {item.additional_info}
+                                </span>
+                              )}
                             </div>
                           </td>
 
@@ -1215,11 +1240,6 @@ function AdminOrderDetailPage() {
                           {/* Emballage - Visible 2XL+ */}
                           <td className="hidden 2xl:table-cell px-3 py-3 text-sm text-gray-900">
                             {item.boxed || 'N/A'}
-                          </td>
-
-                          {/* Infos - Visible 2XL+ */}
-                          <td className="hidden 2xl:table-cell px-3 py-3 text-sm text-gray-800 max-w-32 truncate">
-                            {item.additional_info && item.additional_info !== '-' ? item.additional_info : ''}
                           </td>
 
                           {/* Quantité - Toujours visible */}
@@ -1268,10 +1288,6 @@ function AdminOrderDetailPage() {
                             ) : (
                               <div className="text-sm font-medium text-gray-900">
                                 {item.unitPrice.toFixed(2)}€
-                                {/* Prix fournisseur sur mobile et tablet */}
-                                <div className="xl:hidden text-xs text-gray-500 mt-1">
-                                  Fourn: {item.supplierPrice?.toFixed(2) || '0.00'}€
-                                </div>
                               </div>
                             )}
                           </td>
@@ -1338,8 +1354,15 @@ function AdminOrderDetailPage() {
                                 imei.appearance?.includes('C+') ? 'bg-yellow-100 text-yellow-800' :
                                 'bg-orange-100 text-orange-800'
                               }`}>
-                                {getDisplayAppearance(imei.appearance, imei.functionality)?.replace('Grade ', '') || ''}
+                                {getDisplayAppearance(imei.appearance, imei.functionality)?.replace('Grade ', '') || 'N/A'}
                               </span>
+                              
+                              {/* Additional info juste à droite du grade */}
+                              {imei.additional_info && imei.additional_info !== '-' && imei.additional_info !== 'Produit épuisé ou non disponible' && (
+                                <span className="text-xs text-gray-600 bg-gray-50 px-2 py-1 rounded">
+                                  {imei.additional_info}
+                                </span>
+                              )}
                             </div>
 
                             {/* Couleur */}
@@ -1350,15 +1373,6 @@ function AdminOrderDetailPage() {
                               </div>
                             )}
                           </div>
-
-                          {/* Info supplémentaire */}
-                          {imei.additional_info && (
-                            <div className="mb-2">
-                              <span className="text-xs text-gray-600 bg-gray-50 px-2 py-1 rounded">
-                                {imei.additional_info}
-                              </span>
-                            </div>
-                          )}
 
                           {/* Prix et marge sur même ligne */}
                           <div className="flex items-center justify-between pt-2 border-t border-gray-100">
@@ -1410,16 +1424,6 @@ function AdminOrderDetailPage() {
                             <td className="px-3 py-3 text-sm font-mono text-purple-600">{imei.imei}</td>
                             <td className="px-3 py-3">
                               <div className="text-sm text-gray-900 font-medium line-clamp-2">{imei.product_name}</div>
-                              {/* États sur mobile et tablet */}
-                              <div className="xl:hidden flex flex-wrap gap-1 mt-1">
-                                <span className={`inline-flex px-1.5 py-0.5 text-xs font-medium rounded ${
-                                  imei.appearance === 'Grade A+' ? 'bg-green-100 text-green-800' :
-                                  imei.appearance === 'Grade A' ? 'bg-blue-100 text-blue-800' :
-                                  'bg-yellow-100 text-yellow-800'
-                                }`}>
-                                  {imei.appearance.replace('Grade ', '')}
-                                </span>
-                              </div>
                             </td>
                             <td className="hidden xl:table-cell px-3 py-3">
                               <div className="flex flex-wrap gap-1">
@@ -1430,9 +1434,11 @@ function AdminOrderDetailPage() {
                                   imei.appearance?.includes('C+') ? 'bg-yellow-100 text-yellow-800' :
                                   'bg-orange-100 text-orange-800'
                                 }`}>
-                                  {getDisplayAppearance(imei.appearance, imei.functionality)?.replace('Grade ', '') || ''}
+                                  {getDisplayAppearance(imei.appearance, imei.functionality)?.replace('Grade ', '') || 'N/A'}
                                 </span>
-                                {imei.additional_info && (
+                                
+                                {/* Additional info juste à droite du grade */}
+                                {imei.additional_info && imei.additional_info !== '-' && imei.additional_info !== 'Produit épuisé ou non disponible' && (
                                   <span className="text-xs text-gray-600 bg-gray-50 px-2 py-1 rounded">
                                     {imei.additional_info}
                                   </span>
@@ -1442,7 +1448,7 @@ function AdminOrderDetailPage() {
                             <td className="hidden 2xl:table-cell px-3 py-3">
                               <div className="flex items-center space-x-2">
                                 <div className={`w-3 h-3 rounded-full border ${getColorClass(imei.color)}`}></div>
-                                <span className="text-sm text-gray-900">{imei.color || '-'}</span>
+                                <span className="text-sm text-gray-900">{imei.color || 'N/A'}</span>
                               </div>
                             </td>
                             <td className="hidden 2xl:table-cell px-3 py-3 text-sm text-gray-900">{imei.boxed}</td>
@@ -1450,10 +1456,6 @@ function AdminOrderDetailPage() {
                             <td className="px-3 py-3 text-right">
                               <div className="text-sm font-semibold text-gray-900">
                                 {imei.dbc_price.toFixed(2)}€
-                                {/* Prix fournisseur sur mobile et tablet */}
-                                <div className="xl:hidden text-xs text-gray-500 mt-1">
-                                  Fourn: {imei.supplier_price.toFixed(2)}€
-                                </div>
                               </div>
                             </td>
                           </tr>
@@ -1495,11 +1497,17 @@ function AdminOrderDetailPage() {
                   )}
                   <button
                     onClick={toggleFreeShipping}
+                    disabled={orderDetail.status === 'shipping' || orderDetail.status === 'completed'}
                     className={`px-2 py-1 text-xs rounded transition-colors ${
-                      orderDetail.freeShipping
+                      orderDetail.status === 'shipping' || orderDetail.status === 'completed'
+                        ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                        : orderDetail.freeShipping
                         ? 'bg-green-100 text-green-700 hover:bg-green-200'
                         : 'bg-blue-100 text-blue-700 hover:bg-blue-200'
                     }`}
+                    title={orderDetail.status === 'shipping' || orderDetail.status === 'completed' 
+                      ? 'Impossible de modifier la livraison gratuite après l\'import des IMEI' 
+                      : ''}
                   >
                     {orderDetail.freeShipping ? 'Annuler' : 'Offrir'}
                   </button>

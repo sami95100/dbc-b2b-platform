@@ -27,6 +27,13 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       }, { status: 404 });
     }
 
+    // Vérifier que la commande n'a pas encore d'IMEI importés (statut shipping ou completed)
+    if (order.status === 'shipping' || order.status === 'completed') {
+      return NextResponse.json({ 
+        error: 'Impossible de modifier la livraison gratuite après l\'import des IMEI. La commande est en statut "' + order.status + '".' 
+      }, { status: 400 });
+    }
+
     // Mettre à jour le statut de livraison gratuite
     const { data: updatedOrder, error: updateError } = await supabaseAdmin
       .from('orders')

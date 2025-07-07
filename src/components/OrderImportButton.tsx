@@ -243,6 +243,33 @@ export default function OrderImportButton({ onImportComplete }: OrderImportButto
     }
   };
 
+  const getDisplayAppearance = (appearance: string, functionality: string) => {
+    if (functionality === 'Minor Fault') {
+      // Ajouter 'x' minuscule après le grade pour les Minor Fault
+      // Gérer différents formats: "Grade C", "C", "Grade BC", "BC", etc.
+      
+      // Cas 1: Format "Grade X..." 
+      const gradeMatch = appearance.match(/^(Grade [A-Z]+)(\+?)/i);
+      if (gradeMatch) {
+        const grade = gradeMatch[1]; // "Grade C"
+        const plus = gradeMatch[2] || ''; // "+" ou ""
+        const rest = appearance.substring(grade.length + plus.length).trim();
+        return rest ? `${grade}x${plus} ${rest}` : `${grade}x${plus}`;
+      }
+      
+      // Cas 2: Format simple "C...", "BC...", etc.
+      const simpleGradeMatch = appearance.match(/^([A-Z]+)(\+?)(\s+.*)?$/i);
+      if (simpleGradeMatch) {
+        const grade = simpleGradeMatch[1]; // "C" ou "BC"
+        const plus = simpleGradeMatch[2] || ''; // "+" ou ""
+        const rest = simpleGradeMatch[3] || ''; // " reduced battery performance" ou ""
+        return rest ? `${grade}x${plus}${rest}` : `${grade}x${plus}`;
+      }
+    }
+    // Pour Working ou si pas de grade détecté, retourner tel quel
+    return appearance;
+  };
+
   const ProductTable = ({ 
     title, 
     products, 
@@ -280,7 +307,6 @@ export default function OrderImportButton({ onImportComplete }: OrderImportButto
                   <th className="text-left py-3 px-3 font-semibold text-gray-700">SKU</th>
                   <th className="text-left py-3 px-3 font-semibold text-gray-700">Nom</th>
                   <th className="text-center py-3 px-3 font-semibold text-gray-700">Apparence</th>
-                  <th className="text-center py-3 px-3 font-semibold text-gray-700">Fonctionnalité</th>
                   <th className="text-center py-3 px-3 font-semibold text-gray-700">Couleur</th>
                   <th className="text-center py-3 px-3 font-semibold text-gray-700">Qté</th>
                   <th className="text-right py-3 px-3 font-semibold text-gray-700">Prix fournisseur</th>
@@ -311,15 +337,15 @@ export default function OrderImportButton({ onImportComplete }: OrderImportButto
                       }`}>
                         {product.appearance || '—'}
                       </span>
-                    </td>
-                    <td className="py-2 px-3 text-center">
-                      <span className={`px-2 py-1 rounded text-xs font-medium ${
-                        product.functionality === '100%' ? 'bg-green-100 text-green-800' :
-                        product.functionality?.includes('95%') || product.functionality?.includes('90%') ? 'bg-yellow-100 text-yellow-800' :
-                        'bg-gray-100 text-gray-800'
-                      }`}>
-                        {product.functionality || '—'}
-                      </span>
+                      
+                      {/* Additional info */}
+                      {product.additional_info && product.additional_info !== '-' && product.additional_info !== 'Produit épuisé ou non disponible' && (
+                        <div className="mt-1">
+                          <span className="text-xs text-gray-600 bg-gray-50 px-2 py-1 rounded">
+                            {product.additional_info}
+                          </span>
+                        </div>
+                      )}
                     </td>
                     <td className="py-2 px-3 text-center text-sm text-gray-600">
                       {product.color || '—'}
@@ -346,7 +372,7 @@ export default function OrderImportButton({ onImportComplete }: OrderImportButto
                       )}
                     </td>
                     <td className="py-2 px-3 text-center">
-                      <span className={`px-2 py-1 rounded text-xs font-medium ${
+                      <span className={`px-2 py-0.5 rounded text-xs font-medium ${
                         product.vat_type === 'Marginal' || product.vat_type === 'marginal'
                           ? 'bg-orange-100 text-orange-800' 
                           : 'bg-green-100 text-green-800'
@@ -453,26 +479,23 @@ export default function OrderImportButton({ onImportComplete }: OrderImportButto
                 </div>
                 
                 <div className="flex flex-wrap gap-1 mb-2">
-                  {product.appearance && (
-                    <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                      product.appearance === 'Grade A+' ? 'bg-emerald-100 text-emerald-800' :
-                      product.appearance === 'Grade A' ? 'bg-green-100 text-green-800' :
-                      product.appearance === 'Grade B' ? 'bg-yellow-100 text-yellow-800' :
-                      product.appearance === 'Grade C' ? 'bg-orange-100 text-orange-800' :
-                      'bg-gray-100 text-gray-800'
-                    }`}>
-                      {product.appearance}
+                  <span className={`inline-flex px-2 py-1 text-xs font-medium rounded ${
+                    product.appearance?.includes('A+') ? 'bg-purple-100 text-purple-800' :
+                    product.appearance?.includes('A') && !product.appearance?.includes('AB') ? 'bg-blue-100 text-blue-800' :
+                    product.appearance?.includes('B') ? 'bg-green-100 text-green-800' :
+                    product.appearance?.includes('C+') ? 'bg-yellow-100 text-yellow-800' :
+                    'bg-orange-100 text-orange-800'
+                  }`}>
+                    {getDisplayAppearance(product.appearance, product.functionality)?.replace('Grade ', '') || 'N/A'}
+                  </span>
+                  
+                  {/* Additional info */}
+                  {product.additional_info && product.additional_info !== '-' && product.additional_info !== 'Produit épuisé ou non disponible' && (
+                    <span className="text-xs text-gray-600 bg-gray-50 px-2 py-1 rounded ml-1">
+                      {product.additional_info}
                     </span>
                   )}
-                  {product.functionality && (
-                    <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                      product.functionality === '100%' ? 'bg-green-100 text-green-800' :
-                      product.functionality?.includes('95%') || product.functionality?.includes('90%') ? 'bg-yellow-100 text-yellow-800' :
-                      'bg-gray-100 text-gray-800'
-                    }`}>
-                      {product.functionality}
-                    </span>
-                  )}
+                  
                   <span className={`px-2 py-0.5 rounded text-xs font-medium ${
                     product.vat_type === 'Marginal' || product.vat_type === 'marginal'
                       ? 'bg-orange-100 text-orange-800' 
@@ -569,13 +592,13 @@ export default function OrderImportButton({ onImportComplete }: OrderImportButto
 
       {/* Dialog de confirmation responsive */}
       {showConfirmDialog && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-full md:max-w-7xl max-h-[95vh] md:max-h-[90vh] overflow-hidden flex flex-col">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 md:p-4">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-full md:max-w-7xl h-[98vh] md:h-[95vh] overflow-hidden flex flex-col">
             {/* En-tête adaptatif */}
-            <div className="flex justify-between items-center p-4 md:p-6 border-b border-gray-200 bg-gray-50">
+            <div className="flex justify-between items-center p-3 md:p-6 border-b border-gray-200 bg-gray-50 flex-shrink-0">
               <div className="min-w-0 flex-1">
-                <h3 className="text-base md:text-xl font-semibold text-gray-900 flex items-center">
-                  <FileSpreadsheet className="h-5 w-5 md:h-6 md:w-6 mr-2 text-blue-600 flex-shrink-0" />
+                <h3 className="text-sm md:text-xl font-semibold text-gray-900 flex items-center">
+                  <FileSpreadsheet className="h-4 w-4 md:h-6 md:w-6 mr-2 text-blue-600 flex-shrink-0" />
                   <span className="truncate">Validation de l'import</span>
                 </h3>
                 <p className="text-xs md:text-sm text-gray-600 mt-1 truncate">
@@ -591,137 +614,139 @@ export default function OrderImportButton({ onImportComplete }: OrderImportButto
             </div>
             
             {/* Contenu principal scrollable */}
-            <div className="flex-1 p-4 md:p-6 overflow-y-auto">
-              {/* Résumé global optimisé pour mobile */}
-              <div className="mb-4 md:mb-6 p-3 md:p-4 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg">
-                <h4 className="font-semibold text-blue-900 mb-2 md:mb-3 flex items-center text-sm md:text-base">
-                  <Info className="h-4 w-4 md:h-5 md:w-5 mr-2" />
-                  Résumé de l'import
-                </h4>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-4 text-xs md:text-sm">
-                  <div className="text-center p-2 md:p-3 bg-white rounded-lg border border-blue-100">
-                    <div className="text-lg md:text-2xl font-bold text-green-600">{productsExistingWithGoodStock.length}</div>
-                    <div className="text-gray-700 font-medium text-xs md:text-base">Produits OK</div>
-                    <div className="text-xs text-gray-500 hidden md:block">Stock suffisant</div>
-                  </div>
-                  <div className="text-center p-2 md:p-3 bg-white rounded-lg border border-blue-100">
-                    <div className="text-lg md:text-2xl font-bold text-yellow-600">{productsToUpdateStock.length}</div>
-                    <div className="text-gray-700 font-medium text-xs md:text-base">À mettre à jour</div>
-                    <div className="text-xs text-gray-500 hidden md:block">Stock insuffisant</div>
-                  </div>
-                  <div className="text-center p-2 md:p-3 bg-white rounded-lg border border-blue-100">
-                    <div className="text-lg md:text-2xl font-bold text-blue-600">{productsToCreate.length}</div>
-                    <div className="text-gray-700 font-medium text-xs md:text-base">À créer</div>
-                    <div className="text-xs text-gray-500 hidden md:block">Nouveaux produits</div>
-                  </div>
-                  <div className="text-center p-2 md:p-3 bg-white rounded-lg border border-blue-100">
-                    <div className="text-lg md:text-2xl font-bold text-purple-600">{getTotalAmount().toFixed(2)}€</div>
-                    <div className="text-gray-700 font-medium text-xs md:text-base">Total</div>
-                    <div className="text-xs text-gray-500 hidden md:block">{getTotalItems()} articles</div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Sélecteur de client */}
-              <div className="mb-4 md:mb-6">
-                <ClientSelector
-                  selectedClientId={selectedClientId}
-                  onChange={setSelectedClientId}
-                  isAdmin={isAdmin}
-                  currentUserId={currentUserId || undefined}
-                />
-              </div>
-
-              {/* Tableaux responsifs - version mobile/desktop */}
-              <div className="md:hidden">
-                {/* Version mobile avec cartes */}
-                <ProductTableMobile 
-                  title="Produits OK"
-                  products={productsExistingWithGoodStock}
-                  showEditPrice={true}
-                  colorClass="border-green-200"
-                  bgClass="bg-green-50"
-                  iconColor="text-green-600"
-                  description="Produits avec stock suffisant"
-                />
-
-                <ProductTableMobile 
-                  title="Stock à mettre à jour"
-                  products={productsToUpdateStock}
-                  showEditPrice={true}
-                  colorClass="border-yellow-200"
-                  bgClass="bg-yellow-50"
-                  iconColor="text-yellow-600"
-                  description="Stock sera mis à jour"
-                />
-
-                <ProductTableMobile 
-                  title="Nouveaux produits"
-                  products={productsToCreate}
-                  showEditPrice={true}
-                  colorClass="border-blue-200"
-                  bgClass="bg-blue-50"
-                  iconColor="text-blue-600"
-                  description="Seront créés dans le catalogue"
-                />
-              </div>
-
-              <div className="hidden md:block">
-                {/* Version desktop avec tableaux */}
-                <ProductTable 
-                  title="Produits existants avec stock suffisant"
-                  products={productsExistingWithGoodStock}
-                  showEditPrice={true}
-                  colorClass="border-green-200"
-                  bgClass="bg-green-50"
-                  iconColor="text-green-600"
-                  description="Ces produits existent dans le catalogue avec un stock suffisant pour la commande."
-                />
-
-                <ProductTable 
-                  title="Produits avec stock à mettre à jour"
-                  products={productsToUpdateStock}
-                  showEditPrice={true}
-                  colorClass="border-yellow-200"
-                  bgClass="bg-yellow-50"
-                  iconColor="text-yellow-600"
-                  description="Ces produits existent dans le catalogue mais le stock sera mis à jour selon la quantité de la commande."
-                />
-
-                <ProductTable 
-                  title="Nouveaux produits à créer"
-                  products={productsToCreate}
-                  showEditPrice={true}
-                  colorClass="border-blue-200"
-                  bgClass="bg-blue-50"
-                  iconColor="text-blue-600"
-                  description="Ces produits n'existent pas dans le catalogue et seront créés. Les prix ont été déterminés par la méthode voisin ou le calcul de marge standard."
-                />
-              </div>
-
-              {/* Note explicative sur les prix - adaptée mobile */}
-              {(productsToUpdateStock.length > 0 || productsToCreate.length > 0) && (
-                <div className="mt-3 md:mt-4 p-3 md:p-4 bg-amber-50 border border-amber-200 rounded-lg">
-                  <div className="flex items-start space-x-2">
-                    <div className="text-amber-600 mt-0.5 flex-shrink-0">
-                      <TrendingUp className="h-4 w-4 md:h-5 md:w-5" />
+            <div className="flex-1 overflow-y-auto min-h-0">
+              <div className="p-3 md:p-6">
+                {/* Résumé global optimisé pour mobile */}
+                <div className="mb-3 md:mb-6 p-3 md:p-4 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg">
+                  <h4 className="font-semibold text-blue-900 mb-2 md:mb-3 flex items-center text-sm md:text-base">
+                    <Info className="h-4 w-4 md:h-5 md:w-5 mr-2" />
+                    Résumé de l'import
+                  </h4>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-4 text-xs md:text-sm">
+                    <div className="text-center p-2 md:p-3 bg-white rounded-lg border border-blue-100">
+                      <div className="text-lg md:text-2xl font-bold text-green-600">{productsExistingWithGoodStock.length}</div>
+                      <div className="text-gray-700 font-medium text-xs md:text-base">Produits OK</div>
+                      <div className="text-xs text-gray-500 hidden md:block">Stock suffisant</div>
                     </div>
-                    <div className="text-amber-800 text-xs md:text-sm">
-                      <strong>Méthode de calcul des prix :</strong>
-                      <ul className="list-disc list-inside mt-1 md:mt-2 space-y-0.5 md:space-y-1">
-                        <li><strong>Prix voisin :</strong> Prix d'un produit similaire</li>
-                        <li><strong>Prix calculé :</strong> Marge DBC standard</li>
-                        <li><strong>Prix éditables</strong> avant confirmation</li>
-                      </ul>
+                    <div className="text-center p-2 md:p-3 bg-white rounded-lg border border-blue-100">
+                      <div className="text-lg md:text-2xl font-bold text-yellow-600">{productsToUpdateStock.length}</div>
+                      <div className="text-gray-700 font-medium text-xs md:text-base">À mettre à jour</div>
+                      <div className="text-xs text-gray-500 hidden md:block">Stock insuffisant</div>
+                    </div>
+                    <div className="text-center p-2 md:p-3 bg-white rounded-lg border border-blue-100">
+                      <div className="text-lg md:text-2xl font-bold text-blue-600">{productsToCreate.length}</div>
+                      <div className="text-gray-700 font-medium text-xs md:text-base">À créer</div>
+                      <div className="text-xs text-gray-500 hidden md:block">Nouveaux produits</div>
+                    </div>
+                    <div className="text-center p-2 md:p-3 bg-white rounded-lg border border-blue-100">
+                      <div className="text-lg md:text-2xl font-bold text-purple-600">{getTotalAmount().toFixed(2)}€</div>
+                      <div className="text-gray-700 font-medium text-xs md:text-base">Total</div>
+                      <div className="text-xs text-gray-500 hidden md:block">{getTotalItems()} articles</div>
                     </div>
                   </div>
                 </div>
-              )}
+
+                {/* Sélecteur de client */}
+                <div className="mb-3 md:mb-6">
+                  <ClientSelector
+                    selectedClientId={selectedClientId}
+                    onChange={setSelectedClientId}
+                    isAdmin={isAdmin}
+                    currentUserId={currentUserId || undefined}
+                  />
+                </div>
+
+                {/* Tableaux responsifs - version mobile/desktop */}
+                <div className="md:hidden">
+                  {/* Version mobile avec cartes */}
+                  <ProductTableMobile 
+                    title="Produits OK"
+                    products={productsExistingWithGoodStock}
+                    showEditPrice={true}
+                    colorClass="border-green-200"
+                    bgClass="bg-green-50"
+                    iconColor="text-green-600"
+                    description="Produits avec stock suffisant"
+                  />
+
+                  <ProductTableMobile 
+                    title="Stock à mettre à jour"
+                    products={productsToUpdateStock}
+                    showEditPrice={true}
+                    colorClass="border-yellow-200"
+                    bgClass="bg-yellow-50"
+                    iconColor="text-yellow-600"
+                    description="Stock sera mis à jour"
+                  />
+
+                  <ProductTableMobile 
+                    title="Nouveaux produits"
+                    products={productsToCreate}
+                    showEditPrice={true}
+                    colorClass="border-blue-200"
+                    bgClass="bg-blue-50"
+                    iconColor="text-blue-600"
+                    description="Seront créés dans le catalogue"
+                  />
+                </div>
+
+                <div className="hidden md:block">
+                  {/* Version desktop avec tableaux */}
+                  <ProductTable 
+                    title="Produits existants avec stock suffisant"
+                    products={productsExistingWithGoodStock}
+                    showEditPrice={true}
+                    colorClass="border-green-200"
+                    bgClass="bg-green-50"
+                    iconColor="text-green-600"
+                    description="Ces produits existent dans le catalogue avec un stock suffisant pour la commande."
+                  />
+
+                  <ProductTable 
+                    title="Produits avec stock à mettre à jour"
+                    products={productsToUpdateStock}
+                    showEditPrice={true}
+                    colorClass="border-yellow-200"
+                    bgClass="bg-yellow-50"
+                    iconColor="text-yellow-600"
+                    description="Ces produits existent dans le catalogue mais le stock sera mis à jour selon la quantité de la commande."
+                  />
+
+                  <ProductTable 
+                    title="Nouveaux produits à créer"
+                    products={productsToCreate}
+                    showEditPrice={true}
+                    colorClass="border-blue-200"
+                    bgClass="bg-blue-50"
+                    iconColor="text-blue-600"
+                    description="Ces produits n'existent pas dans le catalogue et seront créés. Les prix ont été déterminés par la méthode voisin ou le calcul de marge standard."
+                  />
+                </div>
+
+                {/* Note explicative sur les prix - adaptée mobile */}
+                {(productsToUpdateStock.length > 0 || productsToCreate.length > 0) && (
+                  <div className="mt-3 md:mt-4 p-3 md:p-4 bg-amber-50 border border-amber-200 rounded-lg">
+                    <div className="flex items-start space-x-2">
+                      <div className="text-amber-600 mt-0.5 flex-shrink-0">
+                        <TrendingUp className="h-4 w-4 md:h-5 md:w-5" />
+                      </div>
+                      <div className="text-amber-800 text-xs md:text-sm">
+                        <strong>Méthode de calcul des prix :</strong>
+                        <ul className="list-disc list-inside mt-1 md:mt-2 space-y-0.5 md:space-y-1">
+                          <li><strong>Prix voisin :</strong> Prix d'un produit similaire</li>
+                          <li><strong>Prix calculé :</strong> Marge DBC standard</li>
+                          <li><strong>Prix éditables</strong> avant confirmation</li>
+                        </ul>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
 
-            {/* Pied de page avec actions - adapté mobile */}
-            <div className="flex flex-col md:flex-row justify-between items-center p-4 md:p-6 border-t border-gray-200 bg-gray-50 space-y-3 md:space-y-0">
-              <div className="text-xs md:text-sm text-gray-600 text-center md:text-left">
+            {/* Pied de page avec actions - toujours visible */}
+            <div className="flex flex-col md:flex-row justify-between items-center p-3 md:p-6 border-t border-gray-200 bg-gray-50 flex-shrink-0">
+              <div className="text-xs md:text-sm text-gray-600 text-center md:text-left mb-2 md:mb-0">
                 <strong>Total :</strong> {getTotalAmount().toFixed(2)}€ • {getTotalItems()} articles
                 {isAdmin && !selectedClientId && (
                   <div className="text-red-600 text-xs mt-1 font-medium">
@@ -733,7 +758,7 @@ export default function OrderImportButton({ onImportComplete }: OrderImportButto
                 <button
                   onClick={() => setShowConfirmDialog(false)}
                   disabled={importing}
-                  className="flex-1 md:flex-initial flex items-center justify-center space-x-2 px-3 md:px-4 py-2 bg-white bg-opacity-80 backdrop-blur-sm border border-white border-opacity-30 rounded-xl text-gray-700 hover:bg-opacity-90 hover:shadow-lg disabled:opacity-50 transition-all duration-200 shadow-sm touch-manipulation"
+                  className="flex-1 md:flex-initial flex items-center justify-center space-x-2 px-4 py-3 md:px-4 md:py-2 bg-white bg-opacity-80 backdrop-blur-sm border border-white border-opacity-30 rounded-xl text-gray-700 hover:bg-opacity-90 hover:shadow-lg disabled:opacity-50 transition-all duration-200 shadow-sm touch-manipulation"
                 >
                   <X className="h-4 w-4" />
                   <span className="text-sm md:text-base">Annuler</span>
@@ -741,7 +766,7 @@ export default function OrderImportButton({ onImportComplete }: OrderImportButto
                 <button
                   onClick={() => handleConfirmImport(true)}
                   disabled={importing || (isAdmin && !selectedClientId)}
-                  className="flex-1 md:flex-initial flex items-center justify-center space-x-2 px-3 md:px-4 py-2 bg-gradient-to-r from-dbc-bright-green to-emerald-400 text-dbc-dark-green rounded-xl hover:from-emerald-300 hover:to-emerald-500 hover:text-white disabled:opacity-50 font-semibold shadow-lg backdrop-blur-sm transition-all duration-200 touch-manipulation"
+                  className="flex-1 md:flex-initial flex items-center justify-center space-x-2 px-4 py-3 md:px-4 md:py-2 bg-gradient-to-r from-dbc-bright-green to-emerald-400 text-dbc-dark-green rounded-xl hover:from-emerald-300 hover:to-emerald-500 hover:text-white disabled:opacity-50 font-semibold shadow-lg backdrop-blur-sm transition-all duration-200 touch-manipulation"
                 >
                   {importing ? (
                     <div className="animate-spin rounded-full h-4 w-4 border-2 border-current border-t-transparent"></div>
