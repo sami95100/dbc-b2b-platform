@@ -1,8 +1,17 @@
 import { createClient } from '@supabase/supabase-js'
 
 // Configuration Supabase - SEULEMENT les variables publiques côté client
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://fake-project.supabase.co'
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9'
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+
+// Validation des variables d'environnement critiques
+if (!supabaseUrl) {
+  throw new Error('NEXT_PUBLIC_SUPABASE_URL is required')
+}
+
+if (!supabaseAnonKey) {
+  throw new Error('NEXT_PUBLIC_SUPABASE_ANON_KEY is required')
+}
 
 // Client principal avec clé publique seulement
 export const supabase = createClient(supabaseUrl, supabaseAnonKey)

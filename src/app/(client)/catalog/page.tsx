@@ -1785,6 +1785,43 @@ function ClientCatalogPage() {
     }
   };
 
+  // Fonction pour générer une couleur unique pour chaque nom de produit (sans capacité)
+  const getProductNameColor = (productName: string) => {
+    // Extraire le nom du produit sans la capacité de stockage
+    const baseProductName = productName.replace(/\s+(8|16|32|64|128|256|512|1024|1TB|2TB|4TB|8TB)GB\b/gi, '').trim();
+    
+    // Créer un hash simple basé sur le nom du produit
+    let hash = 0;
+    for (let i = 0; i < baseProductName.length; i++) {
+      const char = baseProductName.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash = hash & hash; // Convertir en entier 32-bit
+    }
+    
+    // Palette de couleurs douces et discrètes
+    const colors = [
+      'bg-blue-50 border-blue-200 text-blue-800',
+      'bg-green-50 border-green-200 text-green-800',
+      'bg-purple-50 border-purple-200 text-purple-800',
+      'bg-pink-50 border-pink-200 text-pink-800',
+      'bg-indigo-50 border-indigo-200 text-indigo-800',
+      'bg-orange-50 border-orange-200 text-orange-800',
+      'bg-teal-50 border-teal-200 text-teal-800',
+      'bg-cyan-50 border-cyan-200 text-cyan-800',
+      'bg-emerald-50 border-emerald-200 text-emerald-800',
+      'bg-violet-50 border-violet-200 text-violet-800',
+      'bg-rose-50 border-rose-200 text-rose-800',
+      'bg-sky-50 border-sky-200 text-sky-800',
+      'bg-lime-50 border-lime-200 text-lime-800',
+      'bg-amber-50 border-amber-200 text-amber-800',
+      'bg-slate-50 border-slate-200 text-slate-800',
+    ];
+    
+    // Utiliser le hash pour sélectionner une couleur
+    const colorIndex = Math.abs(hash) % colors.length;
+    return colors[colorIndex];
+  };
+
   // Fonction pour forcer une resynchronisation en cas d'incohérence
   const forceResync = async () => {
     console.log('🔄 Resynchronisation forcée...');
@@ -1933,7 +1970,7 @@ function ClientCatalogPage() {
           </div>
 
           {/* Nom du produit */}
-          <h3 className="text-sm font-medium text-gray-900 mb-1.5 line-clamp-2 min-h-[2.2rem]">
+          <h3 className={`text-sm font-medium mb-1.5 line-clamp-2 min-h-[2.2rem] px-2 py-1 rounded-lg border ${getProductNameColor(product.product_name)}`}>
             {shortenProductName(product.product_name)}
           </h3>
 
@@ -2679,8 +2716,8 @@ function ClientCatalogPage() {
                             </div>
                           </td>
                           <td className="px-1 py-1 text-xs font-mono text-gray-900 whitespace-nowrap">{product.sku}</td>
-                          <td className="px-1 py-1 text-xs text-gray-900">
-                            <div className="break-words max-w-[160px]" title={product.product_name}>
+                          <td className="px-1 py-1 text-xs">
+                            <div className={`break-words max-w-[160px] px-2 py-1 rounded-lg border ${getProductNameColor(product.product_name)}`} title={product.product_name}>
                               {shortenProductName(product.product_name)}
                             </div>
                           </td>

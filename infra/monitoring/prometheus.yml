@@ -1,0 +1,57 @@
+# Configuration Prometheus pour DBC B2B Platform
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: "dbc-b2b"
+    environment: "production"
+
+# Règles d'alerte
+rule_files:
+  - "alert_rules.yml"
+
+# Configuration Alertmanager
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - alertmanager:9093
+
+# Jobs de scraping
+scrape_configs:
+  # Monitoring de l'application Next.js
+  - job_name: "dbc-frontend"
+    scrape_interval: 30s
+    metrics_path: "/api/metrics"
+    static_configs:
+      - targets: ["localhost:3000"]
+    scrape_timeout: 10s
+
+  # Monitoring du backend FastAPI
+  - job_name: "dbc-backend"
+    scrape_interval: 30s
+    metrics_path: "/metrics"
+    static_configs:
+      - targets: ["localhost:8000"]
+    scrape_timeout: 10s
+
+  # Health checks
+  - job_name: "dbc-health"
+    scrape_interval: 60s
+    metrics_path: "/api/healthz"
+    static_configs:
+      - targets: ["localhost:3000"]
+    scrape_timeout: 30s
+
+  # Monitoring Supabase (si accessible)
+  - job_name: "supabase"
+    scrape_interval: 60s
+    static_configs:
+      - targets: ["your-project.supabase.co:443"]
+    scheme: https
+    scrape_timeout: 10s
+
+  # Auto-monitoring de Prometheus
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]
