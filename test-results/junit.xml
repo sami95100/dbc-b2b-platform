@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="DBC B2B Platform Tests" tests="26" failures="0" errors="0" time="0.469">
+  <testsuite name="RBAC Permissions System" errors="0" failures="0" skipped="0" timestamp="2025-07-19T13:17:40" time="0.158" tests="26">
+    <testcase classname="RBAC Permissions System getPermissionsForRole should return admin permissions for admin role" name="RBAC Permissions System getPermissionsForRole should return admin permissions for admin role" time="0.002">
+    </testcase>
+    <testcase classname="RBAC Permissions System getPermissionsForRole should return client permissions for client role" name="RBAC Permissions System getPermissionsForRole should return client permissions for client role" time="0">
+    </testcase>
+    <testcase classname="RBAC Permissions System hasPermission should return true for admin with admin permission" name="RBAC Permissions System hasPermission should return true for admin with admin permission" time="0.001">
+    </testcase>
+    <testcase classname="RBAC Permissions System hasPermission should return true for client with client permission" name="RBAC Permissions System hasPermission should return true for client with client permission" time="0">
+    </testcase>
+    <testcase classname="RBAC Permissions System hasPermission should return false for client with admin permission" name="RBAC Permissions System hasPermission should return false for client with admin permission" time="0">
+    </testcase>
+    <testcase classname="RBAC Permissions System hasPermission should return false for inactive user" name="RBAC Permissions System hasPermission should return false for inactive user" time="0">
+    </testcase>
+    <testcase classname="RBAC Permissions System hasPermission should return false for null user" name="RBAC Permissions System hasPermission should return false for null user" time="0">
+    </testcase>
+    <testcase classname="RBAC Permissions System hasAnyPermission should return true if user has at least one permission" name="RBAC Permissions System hasAnyPermission should return true if user has at least one permission" time="0.001">
+    </testcase>
+    <testcase classname="RBAC Permissions System hasAnyPermission should return false if user has none of the permissions" name="RBAC Permissions System hasAnyPermission should return false if user has none of the permissions" time="0">
+    </testcase>
+    <testcase classname="RBAC Permissions System hasAnyPermission should return false for inactive user" name="RBAC Permissions System hasAnyPermission should return false for inactive user" time="0">
+    </testcase>
+    <testcase classname="RBAC Permissions System canAccessResource should work with resource:action format" name="RBAC Permissions System canAccessResource should work with resource:action format" time="0">
+    </testcase>
+    <testcase classname="RBAC Permissions System canAccessOwnOrAll should allow admin to access all resources" name="RBAC Permissions System canAccessOwnOrAll should allow admin to access all resources" time="0">
+    </testcase>
+    <testcase classname="RBAC Permissions System canAccessOwnOrAll should allow client to access own resources only" name="RBAC Permissions System canAccessOwnOrAll should allow client to access own resources only" time="0">
+    </testcase>
+    <testcase classname="RBAC Permissions System filterByPermissions should return all data for admin" name="RBAC Permissions System filterByPermissions should return all data for admin" time="0">
+    </testcase>
+    <testcase classname="RBAC Permissions System filterByPermissions should return only own data for client" name="RBAC Permissions System filterByPermissions should return only own data for client" time="0">
+    </testcase>
+    <testcase classname="RBAC Permissions System filterByPermissions should return empty array for inactive user" name="RBAC Permissions System filterByPermissions should return empty array for inactive user" time="0.001">
+    </testcase>
+    <testcase classname="RBAC Permissions System requirePermission should not throw for user with permission" name="RBAC Permissions System requirePermission should not throw for user with permission" time="0">
+    </testcase>
+    <testcase classname="RBAC Permissions System requirePermission should throw for user without permission" name="RBAC Permissions System requirePermission should throw for user without permission" time="0.003">
+    </testcase>
+    <testcase classname="RBAC Permissions System requirePermission should throw for null user" name="RBAC Permissions System requirePermission should throw for null user" time="0.001">
+    </testcase>
+    <testcase classname="RBAC Permissions System requirePermissionWithOwnership should allow admin without ownership check" name="RBAC Permissions System requirePermissionWithOwnership should allow admin without ownership check" time="0">
+    </testcase>
+    <testcase classname="RBAC Permissions System requirePermissionWithOwnership should check ownership for client" name="RBAC Permissions System requirePermissionWithOwnership should check ownership for client" time="0.001">
+    </testcase>
+    <testcase classname="RBAC Permissions System requirePermissionWithOwnership should throw if client is not owner" name="RBAC Permissions System requirePermissionWithOwnership should throw if client is not owner" time="0">
+    </testcase>
+    <testcase classname="RBAC Permissions System requirePermissionWithOwnership should throw for unauthenticated user" name="RBAC Permissions System requirePermissionWithOwnership should throw for unauthenticated user" time="0">
+    </testcase>
+    <testcase classname="RBAC Permissions System Edge cases should handle undefined role gracefully" name="RBAC Permissions System Edge cases should handle undefined role gracefully" time="0">
+    </testcase>
+    <testcase classname="RBAC Permissions System Edge cases should handle empty permissions array" name="RBAC Permissions System Edge cases should handle empty permissions array" time="0">
+    </testcase>
+    <testcase classname="RBAC Permissions System Edge cases should handle malformed resource strings" name="RBAC Permissions System Edge cases should handle malformed resource strings" time="0">
+    </testcase>
+  </testsuite>
+</testsuites>

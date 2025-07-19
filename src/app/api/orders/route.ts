@@ -19,6 +19,7 @@ export async function GET(request: NextRequest) {
     // Extraire les paramètres de l'URL
     const searchParams = request.nextUrl.searchParams;
     const userId = searchParams.get('userId');
+    const orderId = searchParams.get('orderId');
     const statusFilter = searchParams.get('status');
     const clientFilter = searchParams.get('client');
     const dateFrom = searchParams.get('dateFrom');
@@ -27,6 +28,58 @@ export async function GET(request: NextRequest) {
     const quantityMax = searchParams.get('quantityMax');
     const amountMin = searchParams.get('amountMin');
     const amountMax = searchParams.get('amountMax');
+
+    // 🔧 NOUVEAU : Cas spécial pour récupérer une commande spécifique par ID
+    if (orderId) {
+      console.log('📦 API Orders - Récupération commande spécifique:', orderId);
+      
+      const { data: specificOrder, error: specificOrderError } = await admin
+        .from('orders')
+        .select(`
+          id,
+          name,
+          status,
+          status_label,
+          customer_ref,
+          created_at,
+          updated_at,
+          total_amount,
+          total_items,
+          vat_type,
+          user_id,
+          users (
+            id,
+            company_name,
+            contact_name,
+            email
+          ),
+          order_items (
+            id,
+            sku,
+            product_name,
+            quantity,
+            unit_price,
+            total_price
+          )
+        `)
+        .eq('id', orderId)
+        .single();
+
+      if (specificOrderError || !specificOrder) {
+        return NextResponse.json({
+          success: false,
+          error: 'Commande non trouvée',
+          orders: []
+        }, { status: 404 });
+      }
+
+      return NextResponse.json({
+        success: true,
+        orders: [specificOrder],
+        count: 1,
+        message: 'Commande trouvée'
+      });
+    }
 
     console.log('📦 API Orders - Récupération des commandes...', { 
       userId, 

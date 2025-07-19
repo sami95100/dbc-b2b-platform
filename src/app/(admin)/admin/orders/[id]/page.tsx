@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { useAuth, withAuth } from '../../../../../lib/auth-context';
 import AppHeader from '@/components/AppHeader';
+import OrderItemQuantityControl from '@/components/OrderItemQuantityControl';
 import { supabase, Product, orderService } from '../../../../../lib/supabase';
 import { calculateShippingCost } from '../../../../../lib/shipping';
 import { 
@@ -114,7 +115,8 @@ function AdminOrderDetailPage() {
             unitPrice: orderItem.unit_price,
             totalPrice: orderItem.total_price,
             currentStock: product.quantity, // Ajouter le stock actuel
-            supplierPrice: product.price || 0 // Ajouter le prix fournisseur
+            supplierPrice: product.price || 0, // Ajouter le prix fournisseur
+            vatType: product.vat_type // Ajouter le type de TVA
           };
         } else {
           // Si le produit n'est pas dans le catalogue actuel, essayer de récupérer ses infos depuis Supabase
@@ -134,7 +136,8 @@ function AdminOrderDetailPage() {
             totalPrice: orderItem.total_price,
             currentStock: 0,
             supplierPrice: 0,
-            isUnavailable: true
+            isUnavailable: true,
+            vatType: 'marginal' // Par défaut pour les produits non trouvés
           };
         }
       }) || [];
@@ -156,7 +159,13 @@ function AdminOrderDetailPage() {
         shippingCost: freeShipping ? 0 : calculateShippingCost(supabaseOrder.total_items),
         freeShipping: freeShipping,
         customerRef: supabaseOrder.customer_ref,
-        vatType: supabaseOrder.vat_type,
+        vatType: (() => {
+          if (supabaseOrder.vat_type && supabaseOrder.vat_type.includes('autoliquidation')) {
+            return 'reverse';
+          } else {
+            return 'marginal';
+          }
+        })(),
         source: 'supabase'
       });
 
@@ -336,20 +345,41 @@ function AdminOrderDetailPage() {
       const totalItems = editedItems.reduce((sum: number, item: any) => sum + item.quantity, 0);
       const totalAmount = editedItems.reduce((sum: number, item: any) => sum + (item.quantity * item.unit_price), 0);
 
-      const response = await fetch(`/api/orders/${orderDetail.id}`, {
+      // 🔧 CORRECTION : D'abord mettre à jour la commande avec les modifications
+      const updateResponse = await fetch(`/api/orders/${orderDetail.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           items: editedItems,
           totalItems,
           totalAmount,
-          status: 'pending_payment'
+          status: 'draft' // Garder en draft pour la validation
         })
       });
 
-      if (!response.ok) {
-        throw new Error('Erreur lors de la validation');
+      if (!updateResponse.ok) {
+        const errorData = await updateResponse.json();
+        if (updateResponse.status === 403) {
+          throw new Error(errorData.error || 'Cette commande ne peut plus être modifiée car elle a déjà été validée.');
+        }
+        throw new Error('Erreur lors de la mise à jour de la commande');
       }
+
+      // 🔧 CORRECTION : Ensuite valider avec l'API spécialisée qui décrémente le stock
+      const validateResponse = await fetch(`/api/orders/${orderDetail.id}/validate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          orderItems: editedItems
+        })
+      });
+
+      if (!validateResponse.ok) {
+        const errorData = await validateResponse.json();
+        throw new Error(errorData.error || 'Erreur lors de la validation');
+      }
+
+      const result = await validateResponse.json();
 
       setOrderDetail((prev: any) => ({
         ...prev,
@@ -359,10 +389,50 @@ function AdminOrderDetailPage() {
         totalAmount
       }));
 
-      alert('✅ Commande validée avec succès !');
+      // 🧹 NETTOYAGE CRITIQUE : Supprimer cette commande des brouillons locaux (admin)
+      console.log('🧹 Nettoyage des données locales après validation (admin)...');
+      
+      try {
+        // Supprimer de localStorage
+        const draftOrdersKey = 'draftOrders';
+        const currentDraftOrderKey = 'currentDraftOrder';
+        
+        const existingDraftOrders = localStorage.getItem(draftOrdersKey);
+        if (existingDraftOrders) {
+          const draftOrders = JSON.parse(existingDraftOrders);
+          
+          // Supprimer cette commande des brouillons
+          if (draftOrders[orderDetail.id]) {
+            delete draftOrders[orderDetail.id];
+            localStorage.setItem(draftOrdersKey, JSON.stringify(draftOrders));
+            console.log('✅ Commande supprimée des brouillons locaux (admin)');
+          }
+        }
+
+        // Réinitialiser la commande draft courante si c'était celle-ci
+        const currentDraftOrderId = localStorage.getItem(currentDraftOrderKey);
+        if (currentDraftOrderId === orderDetail.id) {
+          localStorage.removeItem(currentDraftOrderKey);
+          console.log('✅ Commande draft courante réinitialisée (admin)');
+        }
+
+        // Nettoyer les états de session
+        sessionStorage.removeItem('pendingProduct');
+        
+        console.log('✅ Nettoyage terminé (admin)');
+      } catch (cleanupError) {
+        console.warn('⚠️ Erreur lors du nettoyage (admin):', cleanupError);
+      }
+
+      // Afficher les détails de la mise à jour du stock si disponible
+      const stockInfo = result.stockUpdates ? 
+        `\n\nStock mis à jour pour ${result.stockUpdates.length} produits` : '';
+
+      alert(`✅ Commande validée avec succès ! Le panier a été vidé et le stock a été décrémenté.${stockInfo}`);
+      
     } catch (error) {
       console.error('❌ Erreur validation:', error);
-      alert('❌ Erreur lors de la validation');
+      alert(`❌ ${error instanceof Error ? error.message : 'Erreur lors de la validation'}`);
     } finally {
       setValidating(false);
     }
@@ -706,6 +776,40 @@ function AdminOrderDetailPage() {
     setIsEditing(true);
   };
 
+  // Fonction pour mettre à jour la quantité d'un item dans une commande brouillon (admin)
+  const updateItemQuantity = async (sku: string, newQuantity: number) => {
+    if (orderDetail.status !== 'draft') {
+      return;
+    }
+
+    try {
+      // Mettre à jour via l'API
+      const response = await fetch('/api/orders/draft/add-item', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          sku,
+          quantity: newQuantity,
+          orderId: orderDetail.id,
+          userId: orderDetail.user_id
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Erreur lors de la mise à jour');
+      }
+
+      // Recharger les détails de la commande
+      await loadOrderDetail();
+
+    } catch (error) {
+      console.error('Erreur mise à jour quantité:', error);
+      alert('Erreur lors de la mise à jour de la quantité');
+    }
+  };
+
   const revalidateOrder = async () => {
     if (!orderDetail) return;
 
@@ -949,7 +1053,7 @@ function AdminOrderDetailPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {/* Afficher la référence client seulement si elle ne commence pas par TRACKING: */}
             {orderDetail.customerRef && !orderDetail.customerRef.startsWith('TRACKING:') && (
               <div>
@@ -958,8 +1062,31 @@ function AdminOrderDetailPage() {
               </div>
             )}
             <div>
-              <p className="text-sm text-gray-800 mb-1 font-medium">Régime TVA</p>
-              <p className="text-sm text-gray-700">{orderDetail.vatType}</p>
+              {orderDetail.vatType === 'reverse' ? (
+                <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                  <p className="text-sm text-blue-800 font-medium mb-1">
+                    TVA 0% - Autoliquidation
+                  </p>
+                  <p className="text-xs text-blue-700">
+                    VAT Reverse charge, Art 138 of Council Directive 2006/112/EC
+                  </p>
+                </div>
+              ) : (
+                <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
+                  <p className="text-sm text-green-800 font-medium mb-1">
+                    TVA sur la marge
+                  </p>
+                  <p className="text-xs text-green-700">
+                    VAT Margin scheme, Art 313 of Council Directive 2006/112/EC
+                  </p>
+                </div>
+              )}
+            </div>
+            <div>
+              <p className="text-sm text-gray-800 mb-1 font-medium">Coût de livraison</p>
+              <p className="font-medium text-gray-900">
+                {calculateShippingCost(orderDetail.totalItems).toFixed(2)}€
+              </p>
             </div>
           </div>
         </div>
@@ -1030,22 +1157,45 @@ function AdminOrderDetailPage() {
                         {/* Header avec SKU, Quantité et Actions */}
                         <div className="flex items-start justify-between mb-2">
                           <div className="flex-1">
-                            <div className="text-sm font-mono text-blue-600 bg-blue-50 px-2 py-1 rounded inline-block">
-                              {item.sku}
+                            <div className="flex items-center gap-1">
+                              <span className={`w-4 h-4 rounded-full flex items-center justify-center text-xs font-bold ${
+                                item.vatType === 'Marginal' || item.vatType === 'marginal'
+                                  ? 'bg-green-100 text-green-700'
+                                  : 'bg-blue-100 text-blue-700'
+                              }`}>
+                                {item.vatType === 'Marginal' || item.vatType === 'marginal' ? 'M' : 'R'}
+                              </span>
+                              <div className="text-sm font-mono text-blue-600 bg-blue-50 px-2 py-1 rounded">
+                                {item.sku}
+                              </div>
                             </div>
                           </div>
                           <div className="flex items-center gap-2">
-                            <div className="text-sm font-bold text-gray-900">
-                              Qté: {isEditing ? editableQuantities[item.sku] : item.quantity}
-                            </div>
-                            {orderDetail.status === 'draft' && (
-                              <button
-                                onClick={() => removeItem(item.sku)}
-                                className="p-1 bg-red-50 hover:bg-red-100 text-red-600 hover:text-red-700 rounded transition-colors border border-red-200"
-                                title="Supprimer ce produit"
-                              >
-                                <Trash2 className="h-3 w-3" />
-                              </button>
+                            {orderDetail.status === 'draft' ? (
+                              <>
+                                <OrderItemQuantityControl
+                                  orderItem={{
+                                    sku: item.sku,
+                                    quantity: item.quantity,
+                                    currentStock: item.currentStock || 0
+                                  }}
+                                  orderStatus={orderDetail.status}
+                                  orderId={orderDetail.id}
+                                  userId={orderDetail.user_id}
+                                  onQuantityUpdate={updateItemQuantity}
+                                />
+                                <button
+                                  onClick={() => removeItem(item.sku)}
+                                  className="p-1 bg-red-50 hover:bg-red-100 text-red-600 hover:text-red-700 rounded transition-colors border border-red-200"
+                                  title="Supprimer ce produit"
+                                >
+                                  <Trash2 className="h-3 w-3" />
+                                </button>
+                              </>
+                            ) : (
+                              <div className="text-sm font-bold text-gray-900">
+                                Qté: {isEditing ? editableQuantities[item.sku] : item.quantity}
+                              </div>
                             )}
                           </div>
                         </div>
@@ -1121,24 +1271,42 @@ function AdminOrderDetailPage() {
                         </div>
 
                         {/* Contrôles d'édition pour brouillons */}
-                        {(orderDetail.status === 'draft' || isEditing) && (
+                        {orderDetail.status === 'draft' && (
+                          <div className="mt-3 pt-3 border-t border-gray-100">
+                            <div className="flex items-center justify-center">
+                              <OrderItemQuantityControl
+                                orderItem={{
+                                  sku: item.sku,
+                                  quantity: item.quantity,
+                                  currentStock: item.currentStock || 0
+                                }}
+                                orderStatus={orderDetail.status}
+                                orderId={orderDetail.id}
+                                userId={orderDetail.user_id}
+                                onQuantityUpdate={updateItemQuantity}
+                              />
+                            </div>
+                          </div>
+                        )}
+                        {/* Contrôles d'édition pour revalidation */}
+                        {isEditing && orderDetail.status !== 'draft' && (
                           <div className="mt-3 pt-3 border-t border-gray-100">
                             {/* Contrôles quantité améliorés */}
                             <div className="flex items-center justify-center gap-2 bg-gray-50 rounded-lg p-3">
                               <button
-                                onClick={() => updateQuantity(item.sku, (isEditing ? editableQuantities[item.sku] : item.quantity) - 1)}
+                                onClick={() => updateQuantity(item.sku, editableQuantities[item.sku] - 1)}
                                 className="flex items-center justify-center w-10 h-10 bg-white text-red-600 rounded-lg hover:bg-red-50 hover:text-red-700 transition-colors shadow-sm border border-gray-200 hover:border-red-300 disabled:opacity-50 disabled:cursor-not-allowed"
-                                disabled={(isEditing ? editableQuantities[item.sku] : item.quantity) <= 1}
+                                disabled={editableQuantities[item.sku] <= 1}
                               >
                                 <Minus className="h-4 w-4" />
                               </button>
                               <div className="mx-3 px-4 py-2 bg-white rounded-lg border border-gray-200 min-w-[3rem] shadow-sm">
                                 <span className="text-lg font-bold text-gray-900 text-center block">
-                                  {isEditing ? editableQuantities[item.sku] : item.quantity}
+                                  {editableQuantities[item.sku]}
                                 </span>
                               </div>
                               <button
-                                onClick={() => updateQuantity(item.sku, (isEditing ? editableQuantities[item.sku] : item.quantity) + 1)}
+                                onClick={() => updateQuantity(item.sku, editableQuantities[item.sku] + 1)}
                                 className="flex items-center justify-center w-10 h-10 bg-white text-green-600 rounded-lg hover:bg-green-50 hover:text-green-700 transition-colors shadow-sm border border-gray-200 hover:border-green-300"
                               >
                                 <Plus className="h-4 w-4" />
@@ -1181,8 +1349,17 @@ function AdminOrderDetailPage() {
                           {/* Produit - Toujours visible */}
                           <td className="px-3 py-3">
                             <div className="max-w-xs">
-                              <div className="text-xs font-mono text-blue-600 bg-blue-50 px-2 py-0.5 rounded inline-block mb-1">
-                                {item.sku}
+                              <div className="flex items-center gap-1 mb-1">
+                                <span className={`w-4 h-4 rounded-full flex items-center justify-center text-xs font-bold ${
+                                  item.vatType === 'Marginal' || item.vatType === 'marginal'
+                                    ? 'bg-green-100 text-green-700'
+                                    : 'bg-blue-100 text-blue-700'
+                                }`}>
+                                  {item.vatType === 'Marginal' || item.vatType === 'marginal' ? 'M' : 'R'}
+                                </span>
+                                <div className="text-xs font-mono text-blue-600 bg-blue-50 px-2 py-0.5 rounded">
+                                  {item.sku}
+                                </div>
                               </div>
                               <div className="text-sm font-medium text-gray-900 line-clamp-2">{item.name}</div>
                               {/* États sur mobile et tablet */}
@@ -1244,7 +1421,19 @@ function AdminOrderDetailPage() {
 
                           {/* Quantité - Toujours visible */}
                           <td className="px-3 py-3 text-center">
-                            {isEditing ? (
+                            {orderDetail.status === 'draft' ? (
+                              <OrderItemQuantityControl
+                                orderItem={{
+                                  sku: item.sku,
+                                  quantity: item.quantity,
+                                  currentStock: item.currentStock || 0
+                                }}
+                                orderStatus={orderDetail.status}
+                                orderId={orderDetail.id}
+                                userId={orderDetail.user_id}
+                                onQuantityUpdate={updateItemQuantity}
+                              />
+                            ) : isEditing ? (
                               <div className="flex items-center justify-center space-x-1">
                                 <button
                                   onClick={() => updateQuantity(item.sku, editableQuantities[item.sku] - 1)}

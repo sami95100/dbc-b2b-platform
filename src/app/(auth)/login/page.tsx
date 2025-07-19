@@ -24,7 +24,15 @@ export default function LoginPage() {
     try {
       // Vérifier que les champs sont remplis
       if (!email || !password) {
-        throw new Error('Veuillez remplir tous les champs');
+        setError('Veuillez remplir tous les champs');
+        return;
+      }
+
+      // Vérifier le format email
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email.trim())) {
+        setError('Veuillez entrer une adresse email valide');
+        return;
       }
 
       setSuccess('Connexion en cours...');
@@ -36,15 +44,30 @@ export default function LoginPage() {
       });
 
       if (authError) {
-        // Messages d'erreur personnalisés
-        if (authError.message.includes('Invalid login credentials')) {
-          throw new Error('Email ou mot de passe incorrect');
+        console.error('❌ Erreur Supabase Auth:', authError);
+        
+        // Messages d'erreur personnalisés selon le type d'erreur
+        if (authError.message.includes('Invalid login credentials') || 
+            authError.message.includes('invalid_credentials')) {
+          setError('Email ou mot de passe incorrect. Vérifiez vos identifiants.');
+          return;
         }
-        throw new Error(authError.message);
+        if (authError.message.includes('Email not confirmed')) {
+          setError('Veuillez confirmer votre email avant de vous connecter.');
+          return;
+        }
+        if (authError.message.includes('Too many requests')) {
+          setError('Trop de tentatives de connexion. Veuillez patienter quelques minutes.');
+          return;
+        }
+        
+        setError(`Erreur de connexion: ${authError.message}`);
+        return;
       }
 
       if (!authData.user) {
-        throw new Error('Erreur lors de la connexion');
+        setError('Erreur inattendue lors de la connexion');
+        return;
       }
 
       setSuccess('Vérification du profil...');
@@ -57,14 +80,22 @@ export default function LoginPage() {
         .single();
 
       if (profileError) {
-        console.error('Erreur profil:', profileError);
-        throw new Error('Profil utilisateur non trouvé');
+        console.error('❌ Erreur profil:', profileError);
+        setError('Impossible de charger votre profil utilisateur. Contactez le support.');
+        return;
+      }
+
+      if (!profile) {
+        setError('Aucun profil trouvé pour cet utilisateur. Contactez le support.');
+        return;
       }
 
       if (!profile.is_active) {
         // Rediriger vers la page d'attente de validation
         setSuccess('Redirection vers la page d\'attente...');
-        router.push('/pending-validation');
+        setTimeout(() => {
+          router.push('/pending-validation');
+        }, 1000);
         return;
       }
 
@@ -77,8 +108,8 @@ export default function LoginPage() {
       }, 1000);
       
     } catch (error: any) {
-      console.error('❌ Erreur de connexion:', error);
-      setError(error.message || 'Erreur lors de la connexion');
+      console.error('❌ Erreur inattendue:', error);
+      setError(error.message || 'Une erreur inattendue s\'est produite. Veuillez réessayer.');
     } finally {
       setIsLoading(false);
     }
@@ -195,15 +226,29 @@ export default function LoginPage() {
 
               {/* Affichage des erreurs */}
               {error && (
-                <div className="mb-6 p-4 bg-red-500 bg-opacity-30 border border-red-400 rounded-xl text-red-100 text-sm font-medium">
-                  {error}
+                <div className="mb-6 p-4 bg-red-500 bg-opacity-40 border-2 border-red-400 rounded-xl text-red-50 text-sm font-semibold shadow-lg backdrop-blur-sm animate-pulse">
+                  <div className="flex items-center space-x-2">
+                    <div className="flex-shrink-0">
+                      <svg className="h-5 w-5 text-red-200" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                      </svg>
+                    </div>
+                    <div>{error}</div>
+                  </div>
                 </div>
               )}
 
               {/* Affichage des succès */}
               {success && (
-                <div className="mb-6 p-4 bg-green-500 bg-opacity-30 border border-green-400 rounded-xl text-green-100 text-sm font-medium">
-                  {success}
+                <div className="mb-6 p-4 bg-green-500 bg-opacity-40 border-2 border-green-400 rounded-xl text-green-50 text-sm font-semibold shadow-lg backdrop-blur-sm">
+                  <div className="flex items-center space-x-2">
+                    <div className="flex-shrink-0">
+                      <svg className="h-5 w-5 text-green-200" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                      </svg>
+                    </div>
+                    <div>{success}</div>
+                  </div>
                 </div>
               )}
 
@@ -245,9 +290,14 @@ export default function LoginPage() {
                     />
                     <button
                       type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-600 hover:text-gray-800 transition-colors p-2 z-10"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setShowPassword(!showPassword);
+                      }}
+                      className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-600 hover:text-gray-800 active:text-gray-900 transition-colors p-1.5 rounded-lg hover:bg-gray-100 hover:bg-opacity-50 cursor-pointer z-20 touch-manipulation"
                       title={showPassword ? "Masquer le mot de passe" : "Afficher le mot de passe"}
+                      tabIndex={-1}
                     >
                       {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
                     </button>

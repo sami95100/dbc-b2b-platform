@@ -80,78 +80,106 @@ export default function RootLayout({
           <PWAInstallPrompt />
         </AuthProvider>
         
-        {/* Script pour optimiser l'expérience tactile */}
+        {/* Script pour optimiser l'expérience tactile et préserver le scroll */}
         <script
           dangerouslySetInnerHTML={{
             __html: `
-              // Optimisations pour l'expérience tactile mobile
+              // Optimisations pour l'expérience tactile mobile et préservation du scroll
               (function() {
-                // Empêcher les scroll indésirables lors des mises à jour React
-                let scrollLocked = false;
-                let savedScrollY = 0;
+                let isPreservingScroll = false;
+                let preservedScrollY = 0;
                 
-                // Bloquer temporairement le scroll lors des mises à jour
-                window.lockScroll = function() {
-                  if (!scrollLocked) {
-                    savedScrollY = window.scrollY;
-                    scrollLocked = true;
-                    document.body.style.position = 'fixed';
-                    document.body.style.top = '-' + savedScrollY + 'px';
-                    document.body.style.width = '100%';
+                // Fonction globale pour préserver le scroll (appelée par React)
+                window.preserveScrollPosition = function() {
+                  if (!isPreservingScroll) {
+                    preservedScrollY = window.scrollY;
+                    isPreservingScroll = true;
                   }
                 };
                 
-                window.unlockScroll = function() {
-                  if (scrollLocked) {
-                    scrollLocked = false;
-                    document.body.style.position = '';
-                    document.body.style.top = '';
-                    document.body.style.width = '';
-                    window.scrollTo(0, savedScrollY);
-                  }
-                };
-                
-                // Détecter les mises à jour du DOM et préserver la position
-                let isUpdating = false;
-                const preservePosition = function() {
-                  if (!isUpdating) {
-                    isUpdating = true;
-                    const currentY = window.scrollY;
+                // Fonction globale pour restaurer le scroll (appelée par React)
+                window.restoreScrollPosition = function() {
+                  if (isPreservingScroll) {
+                    isPreservingScroll = false;
                     
+                    // Utiliser requestAnimationFrame pour s'assurer que le DOM est mis à jour
                     requestAnimationFrame(() => {
-                      if (Math.abs(window.scrollY - currentY) > 10) {
-                        window.scrollTo(0, currentY);
+                      // Vérifier si le scroll a changé de manière significative
+                      if (Math.abs(window.scrollY - preservedScrollY) > 10) {
+                        window.scrollTo(0, preservedScrollY);
                       }
-                      isUpdating = false;
                     });
                   }
                 };
                 
-                // Observer uniquement les changements critiques
+                // Observer les changements spécifiquement dans les conteneurs de produits
                 if (typeof MutationObserver !== 'undefined') {
                   const observer = new MutationObserver(function(mutations) {
+                    let shouldPreserveScroll = false;
+                    
                     for (let mutation of mutations) {
-                      if (mutation.type === 'childList' && 
-                          mutation.target.className && 
-                          mutation.target.className.includes && 
-                          mutation.target.className.includes('product-card')) {
-                        preservePosition();
-                        break;
+                      // Détecter les changements dans les product-cards ou quantity-controls
+                      if (mutation.type === 'childList' || mutation.type === 'attributes') {
+                        const target = mutation.target;
+                        
+                        if (target.nodeType === 1) { // Element node
+                          const element = target;
+                          
+                          // Vérifier si c'est lié aux produits ou aux quantités
+                          if (element.classList && (
+                            element.classList.contains('product-card') ||
+                            element.classList.contains('quantity-controls') ||
+                            element.closest('.product-card') ||
+                            element.closest('.quantity-controls')
+                          )) {
+                            shouldPreserveScroll = true;
+                            break;
+                          }
+                        }
                       }
+                    }
+                    
+                    // Si on détecte des changements de produits, préserver le scroll
+                    if (shouldPreserveScroll && !isPreservingScroll) {
+                      const currentY = window.scrollY;
+                      
+                      // Utiliser un léger délai pour permettre à React de finir ses mises à jour
+                      setTimeout(() => {
+                        if (Math.abs(window.scrollY - currentY) > 10) {
+                          window.scrollTo(0, currentY);
+                        }
+                      }, 50);
                     }
                   });
                   
-                  document.addEventListener('DOMContentLoaded', function() {
-                    const container = document.querySelector('[data-products-container]');
-                    if (container) {
+                  // Démarrer l'observation quand le DOM est prêt
+                  function startObserving() {
+                    const containers = document.querySelectorAll('[data-products-container], .products-grid');
+                    containers.forEach(container => {
                       observer.observe(container, {
                         childList: true,
                         subtree: true,
-                        attributes: false,
-                        characterData: false
+                        attributes: true,
+                        attributeFilter: ['class', 'style']
                       });
+                    });
+                  }
+                  
+                  if (document.readyState === 'loading') {
+                    document.addEventListener('DOMContentLoaded', startObserving);
+                  } else {
+                    startObserving();
+                  }
+                  
+                  // Re-observer après navigation SPA
+                  let lastUrl = location.href;
+                  new MutationObserver(() => {
+                    const url = location.href;
+                    if (url !== lastUrl) {
+                      lastUrl = url;
+                      setTimeout(startObserving, 100);
                     }
-                  });
+                  }).observe(document, { subtree: true, childList: true });
                 }
                 
                 // Forcer l'affichage du clavier numérique sur iOS

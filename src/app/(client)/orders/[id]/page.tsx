@@ -37,10 +37,49 @@ function ClientOrderDetailPage() {
   const [viewMode, setViewMode] = useState<'sku' | 'imei'>('sku');
   const [imeiData, setImeiData] = useState<any[]>([]);
   const [validating, setValidating] = useState(false);
+  const [updatingQuantity, setUpdatingQuantity] = useState<string | null>(null);
 
   // Fonction pour générer l'URL de tracking FedEx
   const getFedExTrackingUrl = (trackingNumber: string) => {
     return `https://www.fedex.com/fedextrack/?trknbr=${trackingNumber}&trkqual=${trackingNumber}~FX`;
+  };
+
+  // Fonction pour mettre à jour la quantité d'un item dans une commande brouillon
+  const updateItemQuantity = async (sku: string, newQuantity: number) => {
+    if (orderDetail.status !== 'draft' || updatingQuantity === sku) {
+      return;
+    }
+
+    setUpdatingQuantity(sku);
+
+    try {
+      // Mettre à jour via l'API
+      const response = await fetch('/api/orders/draft/add-item', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          sku,
+          quantity: newQuantity,
+          orderId: orderDetail.id,
+          userId: user?.id
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Erreur lors de la mise à jour');
+      }
+
+      // Recharger les détails de la commande
+      await loadOrderDetail();
+
+    } catch (error) {
+      console.error('Erreur mise à jour quantité:', error);
+      alert('Erreur lors de la mise à jour de la quantité');
+    } finally {
+      setUpdatingQuantity(null);
+    }
   };
 
   const loadOrderDetail = async () => {
@@ -100,7 +139,8 @@ function ClientOrderDetailPage() {
             quantity: orderItem.quantity,
             unitPrice: orderItem.unit_price,
             totalPrice: orderItem.total_price,
-            currentStock: product.quantity // Ajouter le stock actuel
+            currentStock: product.quantity, // Ajouter le stock actuel
+            vatType: product.vat_type // Ajouter le type de TVA
           };
         } else {
           // Si le produit n'est pas dans le catalogue actuel, afficher infos basiques
@@ -118,7 +158,8 @@ function ClientOrderDetailPage() {
             unitPrice: orderItem.unit_price,
             totalPrice: orderItem.total_price,
             currentStock: 0,
-            isUnavailable: true
+            isUnavailable: true,
+            vatType: 'marginal' // Par défaut pour les produits non trouvés
           };
         }
       }) || [];
@@ -140,7 +181,13 @@ function ClientOrderDetailPage() {
         shippingCost: supabaseOrder.free_shipping ? 0 : shippingCost,
         freeShipping: supabaseOrder.free_shipping || false,
         customerRef: supabaseOrder.customer_ref,
-        vatType: supabaseOrder.vat_type,
+        vatType: (() => {
+          if (supabaseOrder.vat_type && supabaseOrder.vat_type.includes('autoliquidation')) {
+            return 'reverse';
+          } else {
+            return 'marginal';
+          }
+        })(),
         source: 'supabase',
         tracking_number: supabaseOrder.tracking_number
       });
@@ -214,25 +261,26 @@ function ClientOrderDetailPage() {
       setValidating(true);
       console.log('✅ Validation commande client:', orderDetail.id);
       
-      const response = await fetch(`/api/orders/${orderDetail.id}`, {
-        method: 'PUT',
+      // 🔧 CORRECTION : Utiliser l'API validate spécialisée qui décrémente le stock
+      const response = await fetch(`/api/orders/${orderDetail.id}/validate`, {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          items: orderDetail.items.map((item: any) => ({
+          orderItems: orderDetail.items.map((item: any) => ({
             sku: item.sku,
             quantity: item.quantity,
             product_name: item.name,
             unit_price: item.unitPrice
-          })),
-          totalItems: orderDetail.totalItems,
-          totalAmount: orderDetail.totalAmount,
-          status: 'pending_payment'
+          }))
         })
       });
 
       if (!response.ok) {
-        throw new Error('Erreur lors de la validation');
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Erreur lors de la validation');
       }
+
+      const result = await response.json();
 
       setOrderDetail((prev: any) => ({
         ...prev,
@@ -240,10 +288,50 @@ function ClientOrderDetailPage() {
         status_label: 'En attente de paiement'
       }));
 
-      alert('✅ Commande validée avec succès !');
+      // 🧹 NETTOYAGE CRITIQUE : Supprimer cette commande des brouillons locaux
+      console.log('🧹 Nettoyage des données locales après validation...');
+      
+      try {
+        // Supprimer de localStorage
+        const draftOrdersKey = 'draftOrders';
+        const currentDraftOrderKey = 'currentDraftOrder';
+        
+        const existingDraftOrders = localStorage.getItem(draftOrdersKey);
+        if (existingDraftOrders) {
+          const draftOrders = JSON.parse(existingDraftOrders);
+          
+          // Supprimer cette commande des brouillons
+          if (draftOrders[orderDetail.id]) {
+            delete draftOrders[orderDetail.id];
+            localStorage.setItem(draftOrdersKey, JSON.stringify(draftOrders));
+            console.log('✅ Commande supprimée des brouillons locaux');
+          }
+        }
+
+        // Réinitialiser la commande draft courante si c'était celle-ci
+        const currentDraftOrderId = localStorage.getItem(currentDraftOrderKey);
+        if (currentDraftOrderId === orderDetail.id) {
+          localStorage.removeItem(currentDraftOrderKey);
+          console.log('✅ Commande draft courante réinitialisée');
+        }
+
+        // Nettoyer les états de session
+        sessionStorage.removeItem('pendingProduct');
+        
+        console.log('✅ Nettoyage terminé');
+      } catch (cleanupError) {
+        console.warn('⚠️ Erreur lors du nettoyage:', cleanupError);
+      }
+
+      // Afficher les détails de la mise à jour du stock si disponible
+      const stockInfo = result.stockUpdates ? 
+        `\n\nStock mis à jour pour ${result.stockUpdates.length} produits` : '';
+      
+      alert(`✅ Commande validée avec succès ! Le panier a été vidé et le stock a été décrémenté.${stockInfo}`);
+      
     } catch (error) {
       console.error('❌ Erreur validation:', error);
-      alert('❌ Erreur lors de la validation');
+      alert(`❌ ${error instanceof Error ? error.message : 'Erreur lors de la validation'}`);
     } finally {
       setValidating(false);
     }
@@ -428,6 +516,16 @@ function ClientOrderDetailPage() {
                   {getStatusIcon(orderDetail.status)}
                   <span>{orderDetail.status_label}</span>
                 </span>
+                <div className="flex items-center space-x-1">
+                  <span className="text-xs text-gray-500">TVA:</span>
+                  <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
+                    orderDetail.vatType === 'marginal' 
+                      ? 'bg-green-100 text-green-700'
+                      : 'bg-blue-100 text-blue-700'
+                  }`}>
+                    {orderDetail.vatType === 'marginal' ? 'M' : 'R'}
+                  </span>
+                </div>
                 <div className="flex items-center text-xs sm:text-sm text-gray-600">
                   <Calendar className="h-3 w-3 sm:h-4 sm:w-4 mr-1" />
                   <span className="truncate">Créée le {formatDate(orderDetail.createdAt)}</span>
@@ -521,8 +619,25 @@ function ClientOrderDetailPage() {
               </div>
             )}
             <div>
-              <p className="text-sm text-gray-800 mb-1 font-medium">Régime TVA</p>
-              <p className="text-sm text-gray-700">{orderDetail.vatType}</p>
+              {orderDetail.vatType === 'reverse' ? (
+                <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                  <p className="text-sm text-blue-800 font-medium mb-1">
+                    TVA 0% - Autoliquidation
+                  </p>
+                  <p className="text-xs text-blue-700">
+                    VAT Reverse charge, Art 138 of Council Directive 2006/112/EC
+                  </p>
+                </div>
+              ) : (
+                <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
+                  <p className="text-sm text-green-800 font-medium mb-1">
+                    TVA sur la marge
+                  </p>
+                  <p className="text-xs text-green-700">
+                    VAT Margin scheme, Art 313 of Council Directive 2006/112/EC
+                  </p>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -593,12 +708,71 @@ function ClientOrderDetailPage() {
                         {/* Header avec SKU et Quantité */}
                         <div className="flex items-start justify-between mb-2">
                           <div className="flex-1">
-                            <div className="text-sm font-mono text-blue-600 bg-blue-50 px-2 py-1 rounded inline-block">
-                              {item.sku}
+                            <div className="flex items-center gap-1">
+                              <span className={`w-4 h-4 rounded-full flex items-center justify-center text-xs font-bold ${
+                                item.vatType === 'Marginal' || item.vatType === 'marginal'
+                                  ? 'bg-green-100 text-green-700'
+                                  : 'bg-blue-100 text-blue-700'
+                              }`}>
+                                {item.vatType === 'Marginal' || item.vatType === 'marginal' ? 'M' : 'R'}
+                              </span>
+                              <div className="text-sm font-mono text-blue-600 bg-blue-50 px-2 py-1 rounded">
+                                {item.sku}
+                              </div>
                             </div>
+                            {/* Stock disponible si commande brouillon */}
+                            {orderDetail.status === 'draft' && (
+                              <div className="text-xs text-gray-600 mt-1">
+                                Stock disponible: {item.currentStock || 0}
+                              </div>
+                            )}
                           </div>
                           <div className="text-right">
-                            <div className="text-sm font-bold text-gray-900">Qté: {item.quantity}</div>
+                            {orderDetail.status === 'draft' ? (
+                              /* Contrôles d'édition pour les brouillons */
+                              <div className="flex items-center gap-2">
+                                <div className="flex items-center gap-1">
+                                  <button
+                                    onClick={() => updateItemQuantity(item.sku, Math.max(0, item.quantity - 1))}
+                                    disabled={item.quantity <= 1}
+                                    className="w-6 h-6 flex items-center justify-center bg-red-100 text-red-600 rounded hover:bg-red-200 disabled:opacity-50 disabled:cursor-not-allowed text-xs"
+                                  >
+                                    -
+                                  </button>
+                                  <div className="flex flex-col items-center">
+                                    <div className="text-sm font-bold text-gray-900">
+                                      {item.quantity}
+                                    </div>
+                                    {/* Indicateur d'état stock */}
+                                    <div className="text-xs">
+                                      {item.quantity > (item.currentStock || 0) ? (
+                                        <span className="text-red-600 bg-red-50 px-1 py-0.5 rounded font-medium">
+                                          {item.quantity}/{item.currentStock || 0}
+                                        </span>
+                                      ) : (item.currentStock || 0) === 0 ? (
+                                        <span className="text-red-600 bg-red-50 px-1 py-0.5 rounded font-medium">
+                                          0/0
+                                        </span>
+                                      ) : (
+                                        <span className="text-green-600 bg-green-50 px-1 py-0.5 rounded font-medium">
+                                          {item.quantity}/{item.currentStock || 0}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                  <button
+                                    onClick={() => updateItemQuantity(item.sku, item.quantity + 1)}
+                                    disabled={item.quantity >= (item.currentStock || 0)}
+                                    className="w-6 h-6 flex items-center justify-center bg-green-100 text-green-600 rounded hover:bg-green-200 disabled:opacity-50 disabled:cursor-not-allowed text-xs"
+                                  >
+                                    +
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              /* Affichage simple pour les commandes non-brouillon */
+                              <div className="text-sm font-bold text-gray-900">Qté: {item.quantity}</div>
+                            )}
                           </div>
                         </div>
 
@@ -715,8 +889,17 @@ function ClientOrderDetailPage() {
                           {/* Produit - Toujours visible */}
                           <td className="px-3 py-3">
                             <div className="max-w-xs">
-                              <div className="text-xs font-mono text-blue-600 bg-blue-50 px-2 py-0.5 rounded inline-block mb-1">
-                                {item.sku}
+                              <div className="flex items-center gap-1 mb-1">
+                                <span className={`w-4 h-4 rounded-full flex items-center justify-center text-xs font-bold ${
+                                  item.vatType === 'Marginal' || item.vatType === 'marginal'
+                                    ? 'bg-green-100 text-green-700'
+                                    : 'bg-blue-100 text-blue-700'
+                                }`}>
+                                  {item.vatType === 'Marginal' || item.vatType === 'marginal' ? 'M' : 'R'}
+                                </span>
+                                <div className="text-xs font-mono text-blue-600 bg-blue-50 px-2 py-0.5 rounded">
+                                  {item.sku}
+                                </div>
                               </div>
                               <div className="text-sm font-medium text-gray-900 line-clamp-2">{item.name}</div>
                               {/* États sur mobile et tablet */}
@@ -776,9 +959,53 @@ function ClientOrderDetailPage() {
 
                           {/* Quantité - Toujours visible */}
                           <td className="px-3 py-3 text-center">
-                            <span className="text-sm font-medium text-gray-900 bg-gray-50 px-2 py-1 rounded">
-                              {item.quantity}
-                            </span>
+                            {orderDetail.status === 'draft' ? (
+                              /* Contrôles d'édition pour les brouillons */
+                              <div className="flex flex-col items-center gap-1">
+                                <div className="flex items-center gap-1">
+                                  <button
+                                    onClick={() => updateItemQuantity(item.sku, Math.max(0, item.quantity - 1))}
+                                    disabled={item.quantity <= 1 || updatingQuantity === item.sku}
+                                    className="w-6 h-6 flex items-center justify-center bg-red-100 text-red-600 rounded hover:bg-red-200 disabled:opacity-50 disabled:cursor-not-allowed text-xs"
+                                  >
+                                    -
+                                  </button>
+                                  <span className={`text-sm font-medium px-2 py-1 rounded min-w-[2rem] ${
+                                    updatingQuantity === item.sku ? 'bg-yellow-100 text-yellow-800' : 'bg-gray-50 text-gray-900'
+                                  }`}>
+                                    {updatingQuantity === item.sku ? '...' : item.quantity}
+                                  </span>
+                                  <button
+                                    onClick={() => updateItemQuantity(item.sku, item.quantity + 1)}
+                                    disabled={item.quantity >= (item.currentStock || 0) || updatingQuantity === item.sku}
+                                    className="w-6 h-6 flex items-center justify-center bg-green-100 text-green-600 rounded hover:bg-green-200 disabled:opacity-50 disabled:cursor-not-allowed text-xs"
+                                  >
+                                    +
+                                  </button>
+                                </div>
+                                {/* Indicateur stock */}
+                                <div className="text-xs">
+                                  {item.quantity > (item.currentStock || 0) ? (
+                                    <span className="text-red-600 bg-red-50 px-1 py-0.5 rounded font-medium">
+                                      {item.quantity}/{item.currentStock || 0}
+                                    </span>
+                                  ) : (item.currentStock || 0) === 0 ? (
+                                    <span className="text-red-600 bg-red-50 px-1 py-0.5 rounded font-medium">
+                                      0/0
+                                    </span>
+                                  ) : (
+                                    <span className="text-green-600 bg-green-50 px-1 py-0.5 rounded font-medium">
+                                      {item.quantity}/{item.currentStock || 0}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            ) : (
+                              /* Affichage simple pour les commandes non-brouillon */
+                              <span className="text-sm font-medium text-gray-900 bg-gray-50 px-2 py-1 rounded">
+                                {item.quantity}
+                              </span>
+                            )}
                           </td>
 
                           {/* Prix unitaire - Toujours visible */}

@@ -182,6 +182,24 @@ export async function POST(request: NextRequest) {
     // 4. CRÉER LA COMMANDE EN BROUILLON
     console.log('📋 Création de la commande en base...');
     
+    // Calculer le type de TVA de la commande en fonction du PREMIER produit
+    let orderVatType = 'Bien d\'occasion - TVA calculée sur la marge'; // Par défaut marginal
+    
+    // Vérifier le vat_type du premier produit dans la commande
+    if (allOrderProducts.length > 0) {
+      const firstProduct = allOrderProducts[0];
+      
+      console.log(`🔍 Premier produit import SKU: ${firstProduct.sku || 'N/A'}, VAT Type: ${firstProduct.vat_type}`);
+      
+      // Si le premier produit n'est PAS marginal, toute la commande est reverse
+      if (firstProduct.vat_type !== 'Marginal' && firstProduct.vat_type !== 'marginal') {
+        orderVatType = 'Bien d\'occasion - TVA en autoliquidation';
+        console.log('📋 Commande import définie comme REVERSE (autoliquidation)');
+      } else {
+        console.log('📋 Commande import définie comme MARGINALE');
+      }
+    }
+    
     const orderForSupabase: any = {
       name: orderName,
       status: 'draft' as const,
@@ -189,7 +207,7 @@ export async function POST(request: NextRequest) {
       total_amount: Math.round(totalAmount * 100) / 100,
       total_items: totalItems,
       customer_ref: 'IMPORT-AUTO',
-      vat_type: 'Bien d\'occasion - TVA calculée sur la marge'
+      vat_type: orderVatType
     };
 
     // Ajouter le user_id si fourni

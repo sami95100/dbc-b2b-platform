@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useRef, useEffect, useState, useCallback } from 'react';
+import React, { useRef, useEffect, useState, useCallback, memo } from 'react';
 
 interface MobileQuantityInputProps {
   value: number | string;
@@ -9,10 +9,11 @@ interface MobileQuantityInputProps {
   sku: string;
 }
 
-export default function MobileQuantityInput({ value, onChange, max, sku }: MobileQuantityInputProps) {
+const MobileQuantityInput = memo(function MobileQuantityInput({ value, onChange, max, sku }: MobileQuantityInputProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [localValue, setLocalValue] = useState(value.toString());
   const [isFocused, setIsFocused] = useState(false);
+  const changeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     setLocalValue(value.toString());
@@ -66,18 +67,38 @@ export default function MobileQuantityInput({ value, onChange, max, sku }: Mobil
     if (numValue > max) {
       const maxValue = max.toString();
       setLocalValue(maxValue);
-      onChange(maxValue);
+      
+      // Débounce les appels à onChange pour éviter les re-renders excessifs
+      if (changeTimeoutRef.current) {
+        clearTimeout(changeTimeoutRef.current);
+      }
+      changeTimeoutRef.current = setTimeout(() => {
+        onChange(maxValue);
+      }, 100);
       return;
     }
     
     setLocalValue(newValue);
-    onChange(newValue);
+    
+    // Débounce les appels à onChange pour éviter les re-renders excessifs
+    if (changeTimeoutRef.current) {
+      clearTimeout(changeTimeoutRef.current);
+    }
+    changeTimeoutRef.current = setTimeout(() => {
+      onChange(newValue);
+    }, 100);
   }, [max, onChange]);
 
   const handleBlur = useCallback(() => {
     setIsFocused(false);
     
-    // S'assurer que la valeur est valide
+    // Nettoyer le timeout de debounce si il y en a un en attente
+    if (changeTimeoutRef.current) {
+      clearTimeout(changeTimeoutRef.current);
+      changeTimeoutRef.current = null;
+    }
+    
+    // S'assurer que la valeur finale est envoyée
     const numValue = parseInt(localValue) || 0;
     if (numValue > max) {
       const maxValue = max.toString();
@@ -87,6 +108,15 @@ export default function MobileQuantityInput({ value, onChange, max, sku }: Mobil
       onChange(numValue.toString());
     }
   }, [localValue, max, onChange]);
+
+  // Nettoyer les timeouts au démontage
+  useEffect(() => {
+    return () => {
+      if (changeTimeoutRef.current) {
+        clearTimeout(changeTimeoutRef.current);
+      }
+    };
+  }, []);
 
   return (
     <div 
@@ -132,4 +162,6 @@ export default function MobileQuantityInput({ value, onChange, max, sku }: Mobil
       />
     </div>
   );
-} 
+});
+
+export default MobileQuantityInput; 

@@ -211,6 +211,35 @@ export async function PUT(
       throw new Error('Items de commande manquants ou invalides');
     }
 
+    // 🔒 NOUVELLE VÉRIFICATION : Vérifier le statut actuel de la commande
+    const { data: currentOrder, error: statusError } = await admin
+      .from('orders')
+      .select('id, name, status, status_label')
+      .eq('id', orderId)
+      .single();
+
+    if (statusError) {
+      console.error('❌ Erreur récupération statut commande:', statusError);
+      throw new Error(`Commande non trouvée: ${statusError.message}`);
+    }
+
+    if (!currentOrder) {
+      throw new Error('Commande non trouvée');
+    }
+
+    // 🚨 PROTECTION CRITIQUE : Empêcher la modification des commandes validées
+    if (currentOrder.status !== 'draft') {
+      console.error(`❌ Tentative de modification d'une commande non-draft: ${currentOrder.id} (statut: ${currentOrder.status})`);
+      return NextResponse.json({
+        success: false,
+        error: `Impossible de modifier une commande en statut "${currentOrder.status_label}". Seules les commandes en brouillon peuvent être modifiées.`,
+        currentStatus: currentOrder.status,
+        currentStatusLabel: currentOrder.status_label
+      }, { status: 403 });
+    }
+
+    console.log(`✅ Modification autorisée pour commande ${currentOrder.name} (statut: draft)`);
+
     // Commencer une transaction
     // D'abord supprimer les anciens items
     const { error: deleteError } = await admin
@@ -243,7 +272,7 @@ export async function PUT(
     }
 
     // Mettre à jour la commande
-    const updateStatus = status || 'validated';
+    const updateStatus = status || 'draft'; // Par défaut, garder draft si pas spécifié
     const { error: updateError } = await admin
       .from('orders')
       .update({

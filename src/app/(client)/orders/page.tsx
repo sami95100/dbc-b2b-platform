@@ -109,7 +109,20 @@ function ClientOrdersPage() {
         totalItems: order.total_items,
         shippingCost: calculateShippingCost(order.total_items),
         customerRef: order.customer_ref,
-        vatType: order.vat_type,
+        vatType: (() => {
+          // Utiliser le vat_type de la base de données et le mapper correctement
+          if (order.vat_type) {
+            // Mapper les valeurs de la base vers nos valeurs frontend
+            if (order.vat_type.includes('autoliquidation')) {
+              return 'reverse';
+            } else {
+              return 'marginal';
+            }
+          }
+          
+          // Par défaut marginal si pas de vat_type
+          return 'marginal';
+        })(),
         items: order.order_items || [],
         source: 'api',
         tracking_number: order.tracking_number
@@ -362,6 +375,17 @@ function ClientOrdersPage() {
                               </span>
                             </div>
                           )}
+                          {/* Badge TVA */}
+                          <div className="flex items-center justify-end gap-1 mt-1">
+                            <span className="text-xs text-gray-500">TVA:</span>
+                            <span className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold ${
+                              order.vatType === 'marginal' 
+                                ? 'bg-green-100 text-green-700'
+                                : 'bg-blue-100 text-blue-700'
+                            }`}>
+                              {order.vatType === 'marginal' ? 'M' : 'R'}
+                            </span>
+                          </div>
                         </div>
                       </div>
 
@@ -423,6 +447,9 @@ function ClientOrdersPage() {
                       </th>
                       <th className="px-4 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
                         Montant
+                      </th>
+                      <th className="hidden xl:table-cell px-4 py-4 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                        TVA
                       </th>
                       <th className="px-4 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
                         Actions
@@ -523,6 +550,19 @@ function ClientOrdersPage() {
                                   </span>
                                 </div>
                               )}
+                            </div>
+                          </td>
+
+                          {/* TVA - Visible XL+ */}
+                          <td className="hidden xl:table-cell px-4 py-4 text-center">
+                            <div className="flex items-center justify-center">
+                              <span className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold ${
+                                order.vatType === 'marginal' 
+                                  ? 'bg-green-100 text-green-700'
+                                  : 'bg-blue-100 text-blue-700'
+                              }`}>
+                                {order.vatType === 'marginal' ? 'M' : 'R'}
+                              </span>
                             </div>
                           </td>
 

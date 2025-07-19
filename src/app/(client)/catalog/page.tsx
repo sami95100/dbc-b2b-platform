@@ -22,6 +22,14 @@ import { Download, Filter, Search, ChevronDown, ChevronUp, ShoppingCart, X, Plus
 import * as XLSX from 'xlsx';
 import BackToTopButton from '@/components/BackToTopButton';
 
+// Types pour les fonctions globales de scroll
+declare global {
+  interface Window {
+    preserveScrollPosition?: () => void;
+    restoreScrollPosition?: () => void;
+  }
+}
+
 // Valeurs de filtres basées sur l'analyse du vrai catalogue
 const ADDITIONAL_INFO_OPTIONS = ['AS-IS', 'Brand New Battery', 'Chip/Crack', 'Discoloration', 'Engraving', 'Engraving Removed', 'Heavy cosmetic wear', 'Other', 'Premium Refurbished', 'Reduced Battery Performance'];
 
@@ -111,6 +119,23 @@ function ClientCatalogPage() {
   // États pour les suggestions de recherche
   const [searchSuggestions, setSearchSuggestions] = useState<string[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
+
+  // Référence pour préserver la position de scroll
+  const scrollPositionRef = useRef<number>(0);
+  const isUpdatingRef = useRef<boolean>(false);
+  
+  // Hook pour préserver la position de scroll pendant les mises à jour
+  const preserveScrollPosition = useCallback(() => {
+    if (typeof window !== 'undefined' && window.preserveScrollPosition) {
+      window.preserveScrollPosition();
+    }
+  }, []);
+  
+  const restoreScrollPosition = useCallback(() => {
+    if (typeof window !== 'undefined' && window.restoreScrollPosition) {
+      window.restoreScrollPosition();
+    }
+  }, []);
 
   // Debounce pour la recherche
   useEffect(() => {
@@ -353,18 +378,31 @@ function ClientCatalogPage() {
           // Mettre à jour les states
           setDraftOrders(syncedDraftOrders);
           
-          // Si pas de commande active mais qu'on en a en base, prendre la plus récente
+          // Si pas de commande active mais qu'on en a en base, FORCER la sélection
           if (!currentDraftOrder && supabaseDrafts.length > 0) {
-            const latestDraft = supabaseDrafts[0]; // Déjà triée par date desc
-            setCurrentDraftOrder(latestDraft.id);
-            saveCurrentOrderToLocalStorage(latestDraft.id);
+            console.log('🔄 Aucune commande active mais commandes disponibles - ouverture popup forcée');
             
-            // Mettre à jour les quantités avec les items de la commande active
-            const orderToUse = syncedDraftOrders[latestDraft.id];
-            setQuantities(orderToUse.items || {});
+            // Si une seule commande brouillon, la sélectionner automatiquement
+            if (supabaseDrafts.length === 1) {
+              const latestDraft = supabaseDrafts[0];
+              setCurrentDraftOrder(latestDraft.id);
+              saveCurrentOrderToLocalStorage(latestDraft.id);
+              
+              // Mettre à jour les quantités avec les items de la commande active
+              const orderToUse = syncedDraftOrders[latestDraft.id];
+              setQuantities(orderToUse.items || {});
+              console.log('✅ Commande unique sélectionnée automatiquement:', latestDraft.name);
+            } else {
+              // Plusieurs commandes, forcer la popup de sélection après un petit délai
+              setTimeout(() => {
+                console.log('🔄 Ouverture forcée de la popup de sélection de commande');
+                setShowOrderNamePopup(true);
+              }, 500);
+            }
           } else if (currentDraftOrder && syncedDraftOrders[currentDraftOrder]) {
             // Si on a déjà une commande active, synchroniser ses quantités
             setQuantities(syncedDraftOrders[currentDraftOrder].items || {});
+            console.log('✅ Commande active maintenue:', syncedDraftOrders[currentDraftOrder].name);
           }
           
           // Sauvegarder dans localStorage
@@ -1044,12 +1082,18 @@ function ClientCatalogPage() {
   }, []);
 
   // Gestion du panier - CORRIGÉ selon feedback
-  const updateQuantity = async (sku: string, value: string) => {
+  const updateQuantity = useCallback(async (sku: string, value: string) => {
+    // Préserver la position de scroll
+    preserveScrollPosition();
+    
     const newQuantity = value === '' ? 0 : parseInt(value);
     
     // Valider que la quantité est >= 0
     if (value === '' || newQuantity >= 0) {
       setQuantities(prev => ({ ...prev, [sku]: value === '' ? '' : newQuantity }));
+      
+      // Restaurer la position après la mise à jour immédiate
+      setTimeout(restoreScrollPosition, 0);
       
       // Mettre à jour dans la commande actuelle si elle existe
       if (currentDraftOrder && draftOrders[currentDraftOrder]) {
@@ -1087,11 +1131,35 @@ function ClientCatalogPage() {
         
         setDraftOrders(newDraftOrders);
         
-        // Sauvegarder avec sync Supabase
-        await saveDraftOrdersToLocalStorage(newDraftOrders);
+        // Sauvegarder avec sync Supabase et gestion d'erreur améliorée
+        try {
+          await saveDraftOrdersToLocalStorage(newDraftOrders);
+        } catch (error) {
+          console.warn('⚠️ Erreur synchronisation avec Supabase lors de updateQuantity:', error);
+          
+          // Si la commande n'est plus disponible (validée), nettoyer et alerter
+          if (error instanceof Error && error.message.includes('draft non trouvée')) {
+            console.warn('⚠️ Commande draft non disponible dans updateQuantity - nettoyage automatique');
+            
+            // Nettoyer les références à l'ancienne commande
+            setCurrentDraftOrder(null);
+            localStorage.removeItem('currentDraftOrder');
+            
+            // Supprimer l'ancienne commande des brouillons locaux
+            const cleanDraftOrders = { ...draftOrders };
+            delete cleanDraftOrders[currentDraftOrder];
+            setDraftOrders(cleanDraftOrders);
+            saveDraftOrdersToLocalStorage(cleanDraftOrders);
+            
+            // Remettre la quantité à 0 dans l'interface
+            setQuantities(prev => ({ ...prev, [sku]: 0 }));
+            
+            alert('⚠️ Votre commande précédente a été validée. Le panier a été vidé. Vous pouvez créer une nouvelle commande.');
+          }
+        }
       }
     }
-  };
+  }, [currentDraftOrder, draftOrders, preserveScrollPosition, restoreScrollPosition]);
 
   // Créer un Map pour un accès rapide aux produits par SKU
   const productsMap = useMemo(() => {
@@ -1102,12 +1170,7 @@ function ClientCatalogPage() {
     return map;
   }, [products]);
 
-  const addToCart = async (sku: string) => {
-    // Le bouton ajouter incrémente de 1
-    const currentQuantity = quantities[sku] || 0;
-    const newQuantity = typeof currentQuantity === 'string' ? parseInt(currentQuantity) + 1 : currentQuantity + 1;
-    await addToCartWithQuantity(sku, newQuantity, true); // Replace avec la nouvelle quantité
-  };
+  // Cette fonction sera déclarée après addToCartWithQuantity
 
   const removeFromCart = async (sku: string) => {
     if (!currentDraftOrder || !user?.id) {
@@ -1159,16 +1222,23 @@ function ClientCatalogPage() {
     }
   };
 
-  const addToCartWithQuantity = async (sku: string, quantity: number, replace: boolean = false) => {
+  const addToCartWithQuantity = useCallback(async (sku: string, quantity: number, replace: boolean = false) => {
+    // Préserver la position de scroll avant les mises à jour d'état
+    preserveScrollPosition();
+    
     // Si pas de commande active, sauvegarder le produit et ouvrir la popup
     if (!currentDraftOrder || !draftOrders[currentDraftOrder]) {
-      console.log('Pas de commande active - ouverture popup création');
+      console.log('🚫 Pas de commande active - ouverture popup sélection/création');
+      console.log('📦 Produit en attente:', sku, 'quantité:', quantity);
+      console.log('📋 Commandes disponibles:', Object.keys(draftOrders).length);
       
       // Sauvegarder le produit en attente
       sessionStorage.setItem('pendingProduct', JSON.stringify({ sku, quantity, replace }));
       
-      // Ouvrir la popup de création de commande
+      // Ouvrir la popup de sélection/création de commande
       setShowOrderNamePopup(true);
+      // Restaurer la position après la mise à jour
+      setTimeout(restoreScrollPosition, 0);
       return;
     }
     
@@ -1176,6 +1246,7 @@ function ClientCatalogPage() {
     const product = productsMap.get(sku);
     if (!product) {
       console.warn('Produit non trouvé:', sku);
+      restoreScrollPosition();
       return;
     }
     
@@ -1191,14 +1262,38 @@ function ClientCatalogPage() {
       return;
     }
     
-    // Vérifier le stock disponible
+        // Vérifier le stock disponible
     if (newQuantity > product.quantity) {
       alert(`Stock insuffisant. Stock disponible: ${product.quantity}`);
+      restoreScrollPosition();
       return;
     }
+
+    // Vérifier la compatibilité des régimes TVA
+    const currentOrder = draftOrders[currentDraftOrder];
+    const currentItems = currentOrder.items || {};
+    const existingSkus = Object.keys(currentItems).filter(existingSku => currentItems[existingSku] > 0);
     
+    if (existingSkus.length > 0) {
+      // Vérifier le régime TVA du premier produit existant
+      const firstExistingProduct = productsMap.get(existingSkus[0]);
+      if (firstExistingProduct) {
+        const firstProductVatType = firstExistingProduct.vat_type === 'Marginal' || firstExistingProduct.vat_type === 'marginal' ? 'Marginal' : 'Reverse';
+        const newProductVatType = product.vat_type === 'Marginal' || product.vat_type === 'marginal' ? 'Marginal' : 'Reverse';
+        
+        if (firstProductVatType !== newProductVatType) {
+          alert(`Impossible de mélanger les régimes de TVA dans une même commande.\nCommande actuelle: ${firstProductVatType === 'Marginal' ? 'Marginal (M)' : 'Reverse (R)'}\nProduit à ajouter: ${newProductVatType === 'Marginal' ? 'Marginal (M)' : 'Reverse (R)'}`);
+          restoreScrollPosition();
+          return;
+        }
+      }
+    }
+
     // Mettre à jour l'état local immédiatement pour une réactivité instantanée
     setQuantities(prev => ({ ...prev, [sku]: newQuantity }));
+    
+    // Restaurer la position après la mise à jour immédiate
+    setTimeout(restoreScrollPosition, 0);
     
     // Sauvegarder directement dans Supabase
     try {
@@ -1217,6 +1312,58 @@ function ClientCatalogPage() {
       
       if (!response.ok) {
         const errorData = await response.json();
+        
+        // 🚨 GESTION SPÉCIALE : Si la commande draft n'est plus disponible (validée)
+        if (response.status === 404 && errorData.error?.includes('Commande draft non trouvée')) {
+          console.warn('⚠️ Commande draft non disponible (probablement validée) - création automatique d\'une nouvelle commande');
+          
+          // Nettoyer les références à l'ancienne commande
+          setCurrentDraftOrder(null);
+          localStorage.removeItem('currentDraftOrder');
+          
+          // Supprimer l'ancienne commande des brouillons locaux
+          const newDraftOrders = { ...draftOrders };
+          delete newDraftOrders[currentDraftOrder];
+          setDraftOrders(newDraftOrders);
+          saveDraftOrdersToLocalStorage(newDraftOrders);
+          
+          // Sauvegarder le produit et créer une nouvelle commande
+          sessionStorage.setItem('pendingProduct', JSON.stringify({ sku, quantity: newQuantity, replace: true }));
+          
+          // Créer automatiquement une nouvelle commande
+          const autoOrderResult = await createAutoOrder();
+          if (autoOrderResult) {
+            // La commande a été créée, essayer d'ajouter le produit à nouveau
+            try {
+              const retryResponse = await fetch('/api/orders/draft/add-item', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  sku,
+                  quantity: newQuantity,
+                  orderId: autoOrderResult.orderId,
+                  userId: user?.id
+                }),
+              });
+              
+              if (retryResponse.ok) {
+                const retryResult = await retryResponse.json();
+                console.log(`✅ Produit ${sku} ajouté à la nouvelle commande:`, retryResult.message);
+                
+                // Nettoyer le produit en attente
+                sessionStorage.removeItem('pendingProduct');
+                
+                return; // Succès
+              }
+            } catch (retryError) {
+              console.error('❌ Erreur lors du retry:', retryError);
+            }
+          }
+          
+          alert('⚠️ Votre commande précédente a été validée. Une nouvelle commande a été créée. Veuillez réessayer d\'ajouter le produit.');
+          return;
+        }
+        
         throw new Error(errorData.error || 'Erreur lors de l\'ajout du produit');
       }
       
@@ -1248,12 +1395,84 @@ function ClientCatalogPage() {
       
       // Afficher l'erreur à l'utilisateur
       alert(`Erreur: ${error instanceof Error ? error.message : 'Erreur inconnue'}`);
+      // Restaurer la position même en cas d'erreur
+      restoreScrollPosition();
     }
-  };
+  }, [currentDraftOrder, draftOrders, productsMap, quantities, user?.id, preserveScrollPosition, restoreScrollPosition]);
+
+  const addToCart = useCallback(async (sku: string) => {
+    // Le bouton ajouter incrémente de 1
+    const currentQuantity = quantities[sku] || 0;
+    const newQuantity = typeof currentQuantity === 'string' ? parseInt(currentQuantity) + 1 : currentQuantity + 1;
+    await addToCartWithQuantity(sku, newQuantity, true); // Replace avec la nouvelle quantité
+  }, [quantities, addToCartWithQuantity]);
 
   // Fonction pour sélectionner toute la quantité disponible (case à cocher)
   const selectFullQuantity = async (sku: string, productQuantity: number) => {
     await addToCartWithQuantity(sku, productQuantity, true); // Replace avec toute la quantité
+  };
+
+  // Fonction pour créer automatiquement une nouvelle commande (similaire à createNewOrder mais sans popup)
+  const createAutoOrder = async () => {
+    if (creatingOrder) return null;
+    setCreatingOrder(true);
+    
+    const finalOrderName = `Commande ${new Date().toLocaleDateString('fr-FR')} ${new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`;
+    
+    try {
+      // Appeler l'API pour créer la commande dans Supabase
+      const response = await fetch('/api/orders/draft', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          name: finalOrderName,
+          items: {},
+          totalItems: 0,
+          userId: user?.id
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Erreur création commande automatique');
+      }
+
+      const result = await response.json();
+      const supabaseOrder = result.order;
+
+      // Créer l'objet commande pour localStorage
+      const newOrder = {
+        id: supabaseOrder.id,
+        name: finalOrderName,
+        status: 'draft',
+        status_label: 'Brouillon',
+        createdAt: supabaseOrder.created_at,
+        items: {},
+        supabaseId: supabaseOrder.id,
+        source: 'auto'
+      };
+
+      const newDraftOrders = { ...draftOrders, [supabaseOrder.id]: newOrder };
+      
+      setDraftOrders(newDraftOrders);
+      setCurrentDraftOrder(supabaseOrder.id);
+      
+      await saveDraftOrdersToLocalStorage(newDraftOrders);
+      saveCurrentOrderToLocalStorage(supabaseOrder.id);
+
+      OrdersUtils.markOrdersAsStale();
+      
+      console.log('✅ Commande automatique créée avec ID:', supabaseOrder.id);
+      return { orderId: supabaseOrder.id, draftOrders: newDraftOrders };
+      
+    } catch (error) {
+      console.error('❌ Erreur création commande automatique:', error);
+      return null;
+    } finally {
+      setCreatingOrder(false);
+    }
   };
 
   const createNewOrder = async () => {
@@ -1534,7 +1753,10 @@ function ClientCatalogPage() {
   };
 
   // Fonction pour décrémenter la quantité
-  const decrementQuantity = async (sku: string) => {
+  const decrementQuantity = useCallback(async (sku: string) => {
+    // Préserver la position de scroll
+    preserveScrollPosition();
+    
     const currentQuantity = quantities[sku] || 0;
     const numQuantity = typeof currentQuantity === 'string' ? parseInt(currentQuantity) : currentQuantity;
     
@@ -1542,6 +1764,9 @@ function ClientCatalogPage() {
       // Mettre à jour l'état immédiatement
       const newQuantity = numQuantity - 1;
       setQuantities(prev => ({ ...prev, [sku]: newQuantity }));
+      
+      // Restaurer la position après la mise à jour
+      setTimeout(restoreScrollPosition, 0);
       
       // Mettre à jour dans draftOrders
       if (currentDraftOrder && draftOrders[currentDraftOrder]) {
@@ -1580,7 +1805,7 @@ function ClientCatalogPage() {
       }
       // Case automatiquement décochée quand quantité = 0
     }
-  };
+  }, [quantities, currentDraftOrder, draftOrders, preserveScrollPosition, restoreScrollPosition]);
 
   // Les cases à cocher sont maintenant calculées directement basées sur les quantités
   // Plus besoin de useEffect pour synchroniser selectedProducts
@@ -1959,7 +2184,16 @@ function ClientCatalogPage() {
                 className="scale-75 rounded border-gray-300 text-dbc-light-green focus:ring-dbc-light-green touch-manipulation"
                 onClick={(e) => e.stopPropagation()}
               />
-              <span className="text-xs font-mono text-gray-600 bg-gray-100 px-1.5 py-0.5 rounded">{product.sku}</span>
+              <div className="flex items-center gap-1">
+                <span className={`w-4 h-4 rounded-full flex items-center justify-center text-xs font-bold ${
+                  product.vat_type === 'Marginal' || product.vat_type === 'marginal'
+                    ? 'bg-green-100 text-green-700'
+                    : 'bg-blue-100 text-blue-700'
+                }`}>
+                  {product.vat_type === 'Marginal' || product.vat_type === 'marginal' ? 'M' : 'R'}
+                </span>
+                <span className="text-xs font-mono text-gray-600 bg-gray-100 px-1.5 py-0.5 rounded">{product.sku}</span>
+              </div>
             </div>
             {isHighlighted && (
               <div className="flex items-center gap-1">
@@ -1973,6 +2207,25 @@ function ClientCatalogPage() {
           <h3 className={`text-sm font-medium mb-1.5 line-clamp-2 min-h-[2.2rem] px-2 py-1 rounded-lg border ${getProductNameColor(product.product_name)}`}>
             {shortenProductName(product.product_name)}
           </h3>
+
+          {/* Indicateur de stock visible */}
+          <div className="px-2 mb-2">
+            <div className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${
+              product.quantity === 0 
+                ? 'bg-red-100 text-red-700 border border-red-200'
+                : product.quantity <= 3
+                ? 'bg-orange-100 text-orange-700 border border-orange-200'
+                : 'bg-green-100 text-green-700 border border-green-200'
+            }`}>
+              <span className="w-1.5 h-1.5 rounded-full bg-current"></span>
+              Stock: {product.quantity}
+              {quantityInCart > 0 && (
+                <span className="ml-1 text-gray-600">
+                  (sélectionné: {quantityInCart})
+                </span>
+              )}
+            </div>
+          </div>
 
           {/* Tags d'informations */}
           <div className="flex flex-wrap gap-1 mb-2">
@@ -2042,20 +2295,38 @@ function ClientCatalogPage() {
                 </button>
               )}
               
-              {/* Nouveau composant de quantité optimisé pour mobile */}
-              <MobileQuantityInput
-                value={quantityInCart}
-                onChange={(value) => {
-                  const numValue = parseInt(value) || 0;
-                  if (numValue > 0) {
-                    addToCartWithQuantity(product.sku, numValue, true);
-                  } else {
-                    updateQuantity(product.sku, value);
-                  }
-                }}
-                max={product.quantity}
-                sku={product.sku}
-              />
+              {/* Composant de quantité avec affichage stock temps réel */}
+              <div className="relative">
+                <MobileQuantityInput
+                  value={quantityInCart}
+                  onChange={(value) => {
+                    const numValue = parseInt(value) || 0;
+                    if (numValue > 0) {
+                      addToCartWithQuantity(product.sku, numValue, true);
+                    } else {
+                      updateQuantity(product.sku, value);
+                    }
+                  }}
+                  max={product.quantity}
+                  sku={product.sku}
+                />
+                {/* Affichage stock temps réel - TOUJOURS visible */}
+                <div className="absolute -bottom-4 left-0 right-0 text-center">
+                  <span className={`text-xs font-medium ${
+                    quantityInCart > product.quantity 
+                      ? 'text-red-600 bg-red-50 border border-red-200' 
+                      : product.quantity === 0 
+                      ? 'text-red-600 bg-red-50 border border-red-200'
+                      : quantityInCart === product.quantity
+                      ? 'text-orange-600 bg-orange-50 border border-orange-200'
+                      : quantityInCart > 0
+                      ? 'text-green-600 bg-green-50 border border-green-200'
+                      : 'text-gray-600 bg-gray-50 border border-gray-200'
+                  } px-2 py-0.5 rounded-full whitespace-nowrap`}>
+                    {quantityInCart || 0}/{product.quantity}
+                  </span>
+                </div>
+              </div>
               
               {/* Bouton ajouter principal */}
               <button
@@ -2158,28 +2429,16 @@ function ClientCatalogPage() {
 
       {/* Zone d'information pour les commandes en brouillon */}
       {isClient && (
-        <div className="bg-blue-50 border-l-4 border-blue-400 p-4 mb-6">
+        <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-6">
           <div className="max-w-[2000px] mx-auto px-4">
             <div className="flex items-start justify-between">
               <div className="flex items-start">
                 <div className="flex-shrink-0">
-                  <Package className="h-5 w-5 text-blue-400" />
+                  <AlertCircle className="h-5 w-5 text-yellow-500" />
                 </div>
                 <div className="ml-3">
-                  <p className="text-sm text-blue-700">
-                    <span className="font-medium">Gestion des commandes :</span> 
-                    {currentDraftOrder && draftOrders[currentDraftOrder] ? (
-                      <>
-                        {' '}Vous travaillez actuellement sur la commande "{draftOrders[currentDraftOrder].name}". 
-                        Une seule commande en brouillon peut être active à la fois. 
-                        Finalisez ou supprimez cette commande pour en créer une nouvelle.
-                      </>
-                    ) : (
-                      <>
-                        {' '}Vous pouvez créer une nouvelle commande en ajoutant des produits au panier. 
-                        Une seule commande en brouillon peut être active à la fois.
-                      </>
-                    )}
+                  <p className="text-sm text-yellow-800">
+                    <span className="font-medium">Régimes de TVA :</span> Les produits <span className="font-semibold text-green-700">Marginaux (M)</span> et <span className="font-semibold text-blue-700">Reverse (R)</span> ne peuvent pas être mélangés dans une même commande car ils relèvent de régimes de TVA différents.
                   </p>
                 </div>
               </div>
@@ -2250,6 +2509,42 @@ function ClientCatalogPage() {
 
           {/* Ligne 2: Actions principales - Centré et espacé */}
           <div className="flex flex-wrap items-center justify-center gap-6 mb-8">
+            {/* Commande active et gestion */}
+            <div className="flex items-center gap-3 bg-white bg-opacity-60 backdrop-blur-sm rounded-2xl p-3 shadow-sm border border-white border-opacity-40">
+              {/* Nom de commande active */}
+              {currentDraftOrder && draftOrders[currentDraftOrder] ? (
+                <div className="flex items-center space-x-3 bg-dbc-light-green bg-opacity-20 px-4 py-2 rounded-full">
+                  <div className="w-2 h-2 bg-dbc-light-green rounded-full animate-pulse"></div>
+                  <span className="text-sm font-semibold text-dbc-dark-green">
+                    {draftOrders[currentDraftOrder].name}
+                  </span>
+                </div>
+              ) : (
+                <div className="flex items-center space-x-3 bg-orange-100 px-4 py-2 rounded-full border border-orange-200">
+                  <div className="w-2 h-2 bg-orange-500 rounded-full animate-pulse"></div>
+                  <span className="text-sm text-orange-700 font-medium">
+                    Aucune commande active - Cliquez "Gérer commandes"
+                  </span>
+                </div>
+              )}
+              
+              {/* Bouton pour changer/gérer les commandes */}
+              <button
+                onClick={() => setShowOrderNamePopup(true)}
+                className="px-4 py-2 bg-white bg-opacity-90 backdrop-blur-sm border border-gray-300 rounded-lg hover:border-dbc-light-green hover:bg-dbc-light-green hover:bg-opacity-10 transition-all duration-200 text-sm font-medium text-gray-700 hover:text-dbc-dark-green shadow-sm flex items-center gap-2 relative"
+                title="Gérer les commandes brouillon"
+              >
+                <Package className="h-4 w-4" />
+                Gérer commandes
+                {/* Badge avec le nombre de commandes brouillon */}
+                {Object.values(draftOrders).filter((order: any) => order.status === 'draft').length > 0 && (
+                  <span className="absolute -top-1 -right-1 bg-dbc-light-green text-white text-xs font-bold px-1.5 py-0.5 rounded-full min-w-[18px] h-4 flex items-center justify-center">
+                    {Object.values(draftOrders).filter((order: any) => order.status === 'draft').length}
+                  </span>
+                )}
+              </button>
+            </div>
+
             {/* Groupe Filtres + Reset */}
             <div className="flex items-center gap-3 bg-white bg-opacity-60 backdrop-blur-sm rounded-2xl p-3 shadow-sm border border-white border-opacity-40">
               <button
@@ -2671,7 +2966,7 @@ function ClientCatalogPage() {
                 <table className="w-full">
                   <thead className="bg-gray-50">
                     <tr className="border-b border-gray-200">
-                      <th className="px-1 py-1.5 text-center text-xs font-medium text-gray-500 uppercase whitespace-nowrap w-8">Sél.</th>
+                      <th className="px-1 py-1.5 text-center text-xs font-medium text-gray-500 uppercase whitespace-nowrap">TVA</th>
                       <th className="px-1 py-1.5 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">SKU</th>
                       <th className="px-1 py-1.5 text-left text-xs font-medium text-gray-500 uppercase min-w-[180px]">Nom du produit</th>
                       <th className="px-1 py-1.5 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap hidden md:table-cell">Apparence</th>
@@ -2695,25 +2990,13 @@ function ClientCatalogPage() {
                           className={`border-b border-gray-100 hover:bg-gray-50 ${isHighlighted ? 'bg-green-50 border-l-2 border-dbc-light-green' : ''}`}
                         >
                           <td className="px-1 py-1 text-center">
-                            <div className="flex items-center justify-center">
-                              <input
-                                type="checkbox"
-                                checked={isChecked}
-                                onChange={async (e) => {
-                                  const checked = e.target.checked;
-                                  
-                                  if (checked) {
-                                    // Sélectionner toute la quantité disponible
-                                    await selectFullQuantity(product.sku, product.quantity);
-                                  } else {
-                                    // Retirer complètement le produit
-                                    await updateQuantity(product.sku, '0');
-                                  }
-                                }}
-                                className="w-4 h-4 rounded border-2 border-gray-400 text-dbc-light-green focus:ring-2 focus:ring-dbc-light-green focus:border-dbc-light-green cursor-pointer"
-                                title="Sélectionner toute la quantité disponible"
-                              />
-                            </div>
+                            <span className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold mx-auto ${
+                              product.vat_type === 'Marginal' || product.vat_type === 'marginal'
+                                ? 'bg-green-100 text-green-700'
+                                : 'bg-blue-100 text-blue-700'
+                            }`}>
+                              {product.vat_type === 'Marginal' || product.vat_type === 'marginal' ? 'M' : 'R'}
+                            </span>
                           </td>
                           <td className="px-1 py-1 text-xs font-mono text-gray-900 whitespace-nowrap">{product.sku}</td>
                           <td className="px-1 py-1 text-xs">
@@ -2758,26 +3041,56 @@ function ClientCatalogPage() {
                             <span>{product.price_dbc.toFixed(2)}€</span>
                           </td>
                           <td className="px-1 py-1">
-                            <div className="flex items-center justify-center gap-1">
-                              <input
-                                type="number"
-                                min="0"
-                                max={product.quantity}
-                                placeholder="0"
-                                value={quantityInCart || (quantities[product.sku] || '')}
-                                onChange={async (e) => {
-                                  const newValue = e.target.value;
-                                  const numValue = parseInt(newValue);
-                                  
-                                  if (newValue === '' || (numValue >= 0 && numValue <= product.quantity)) {
-                                    await updateQuantity(product.sku, newValue);
-                                  }
-                                }}
-                                className={`w-8 px-1 py-0.5 text-xs border rounded focus:border-dbc-light-green focus:outline-none text-center bg-white font-medium text-gray-900 ${
-                                  isHighlighted ? 'border-dbc-light-green bg-green-50' : 'border-gray-300'
-                                }`}
-                              />
-                              <span className="text-xs text-gray-500">/{product.quantity}</span>
+                            <div className="flex flex-col items-center justify-center gap-1">
+                              <div className="flex items-center gap-1">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  max={product.quantity}
+                                  placeholder="0"
+                                  value={quantityInCart || (quantities[product.sku] || '')}
+                                  onChange={async (e) => {
+                                    const newValue = e.target.value;
+                                    const numValue = parseInt(newValue);
+                                    
+                                    if (newValue === '' || (numValue >= 0 && numValue <= product.quantity)) {
+                                      await updateQuantity(product.sku, newValue);
+                                    }
+                                  }}
+                                  className={`w-8 px-1 py-0.5 text-xs border rounded focus:border-dbc-light-green focus:outline-none text-center bg-white font-medium ${
+                                    quantityInCart > product.quantity 
+                                      ? 'border-red-500 bg-red-50 text-red-700' 
+                                      : isHighlighted 
+                                      ? 'border-dbc-light-green bg-green-50 text-gray-900' 
+                                      : 'border-gray-300 text-gray-900'
+                                  }`}
+                                />
+                                <span className={`text-xs ${
+                                  product.quantity === 0 ? 'text-red-600 font-medium' : 'text-gray-500'
+                                }`}>/{product.quantity}</span>
+                              </div>
+                              {/* Indicateur d'état stock */}
+                              {quantityInCart > 0 && (
+                                <div className="text-center">
+                                  {quantityInCart > product.quantity ? (
+                                    <span className="text-xs bg-red-100 text-red-700 px-1 py-0.5 rounded font-medium">
+                                      Stock insuffisant
+                                    </span>
+                                  ) : product.quantity === 0 ? (
+                                    <span className="text-xs bg-red-100 text-red-700 px-1 py-0.5 rounded font-medium">
+                                      Rupture
+                                    </span>
+                                  ) : quantityInCart === product.quantity ? (
+                                    <span className="text-xs bg-orange-100 text-orange-700 px-1 py-0.5 rounded font-medium">
+                                      Stock épuisé
+                                    </span>
+                                  ) : (
+                                    <span className="text-xs bg-green-100 text-green-700 px-1 py-0.5 rounded font-medium">
+                                      {product.quantity - quantityInCart} restant{product.quantity - quantityInCart > 1 ? 's' : ''}
+                                    </span>
+                                  )}
+                                </div>
+                              )}
                             </div>
                           </td>
                           <td className="px-1 py-1">
@@ -2878,45 +3191,122 @@ function ClientCatalogPage() {
       {/* Bouton retour en haut */}
       <BackToTopButton />
 
-      {/* Popup création commande */}
+      {/* Popup sélection/création commande */}
       {showOrderNamePopup && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999]">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4 shadow-2xl">
-            <h3 className="text-lg font-bold text-dbc-dark-green mb-4">Créer une nouvelle commande</h3>
-            <p className="text-sm text-gray-600 mb-4">
-              Donnez un nom à votre commande pour la retrouver facilement.
-            </p>
-            <input
-              type="text"
-              placeholder="Ex: Commande iPhone Mars 2024"
-              value={orderName}
-              onChange={(e) => setOrderName(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-dbc-light-green focus:border-transparent mb-4 text-black"
-              autoFocus
-            />
+          <div className="bg-white rounded-lg p-6 max-w-lg w-full mx-4 shadow-2xl">
+            <h3 className="text-lg font-bold text-dbc-dark-green mb-4">Gestion de commande</h3>
             
-            <div className="flex justify-end space-x-3">
+            {/* Options: Nouvelle commande ou sélectionner existante */}
+            <div className="space-y-4">
+              
+              {/* Sélectionner une commande existante si on en a */}
+              {Object.values(draftOrders).filter((order: any) => order.status === 'draft').length > 0 && (
+                <div className="border border-gray-200 rounded-lg p-4">
+                  <h4 className="font-semibold mb-3 text-gray-700 flex items-center gap-2">
+                    <span className="text-blue-500">📋</span>
+                    Commandes en brouillon existantes
+                  </h4>
+                  <div className="max-h-40 overflow-y-auto space-y-2">
+                    {Object.values(draftOrders)
+                      .filter((order: any) => order.status === 'draft')
+                      .sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+                      .map((order: any) => {
+                        const itemCount = Object.values(order.items || {}).reduce((sum: number, qty: any) => sum + (typeof qty === 'number' ? qty : 0), 0);
+                        const totalAmount = order.total_amount ? `${order.total_amount.toFixed(2)}€` : '0.00€';
+                        const isActive = currentDraftOrder === order.id;
+                        
+                        return (
+                          <button
+                            key={order.id}
+                            onClick={() => {
+                              // Sélectionner cette commande existante
+                              setCurrentDraftOrder(order.id);
+                              saveCurrentOrderToLocalStorage(order.id);
+                              setQuantities(order.items || {});
+                              
+                              // Traiter le produit en attente si présent
+                              const pendingProduct = sessionStorage.getItem('pendingProduct');
+                              if (pendingProduct) {
+                                const { sku, quantity, replace } = JSON.parse(pendingProduct);
+                                
+                                if (replace) {
+                                  setQuantities(prev => ({ ...prev, [sku]: quantity }));
+                                } else {
+                                  const currentQty = order.items?.[sku] || 0;
+                                  setQuantities(prev => ({ ...prev, [sku]: currentQty + quantity }));
+                                }
+                                sessionStorage.removeItem('pendingProduct');
+                              }
+                              
+                              setShowOrderNamePopup(false);
+                              console.log('✅ Commande existante sélectionnée:', order.name);
+                            }}
+                            className={`w-full text-left p-3 rounded-lg border transition-all duration-200 ${
+                              isActive 
+                                ? 'border-dbc-light-green bg-green-50 shadow-md' 
+                                : 'border-gray-200 hover:border-dbc-light-green hover:bg-gray-50 hover:shadow-sm'
+                            }`}
+                          >
+                            <div className="flex justify-between items-start">
+                              <div className="flex-1">
+                                <div className="font-medium text-gray-900 flex items-center gap-2">
+                                  {order.name}
+                                  {isActive && <span className="text-xs bg-dbc-light-green text-white px-2 py-1 rounded-full">Active</span>}
+                                </div>
+                                <div className="text-sm text-gray-600 mt-1">
+                                  {itemCount} produit{itemCount !== 1 ? 's' : ''} • {totalAmount}
+                                </div>
+                                <div className="text-xs text-gray-500 mt-1">
+                                  Créée le {new Date(order.createdAt).toLocaleDateString('fr-FR')} à {new Date(order.createdAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                                </div>
+                              </div>
+                            </div>
+                          </button>
+                        );
+                      })}
+                  </div>
+                </div>
+              )}
+              
+              {/* Section création d'une nouvelle commande */}
+              <div className="border border-gray-200 rounded-lg p-4">
+                <h4 className="font-semibold mb-3 text-gray-700 flex items-center gap-2">
+                  <span className="text-green-500">➕</span>
+                  Créer une nouvelle commande
+                </h4>
+                <p className="text-sm text-gray-800 mb-3">
+                  Donnez un nom à votre commande pour la retrouver facilement.
+                </p>
+                <input
+                  type="text"
+                  value={orderName}
+                  onChange={(e) => setOrderName(e.target.value)}
+                  placeholder="Ex: Commande iPhone Mars 2024"
+                  className="w-full p-3 border border-gray-300 rounded-lg mb-3 focus:ring-2 focus:ring-dbc-light-green focus:border-dbc-light-green text-black"
+                />
+                <button
+                  onClick={createNewOrder}
+                  disabled={creatingOrder}
+                  className="w-full px-4 py-2 bg-gradient-to-r from-dbc-bright-green to-emerald-400 text-dbc-dark-green rounded-lg hover:from-emerald-300 hover:to-emerald-500 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed font-semibold shadow-lg transition-all duration-200"
+                >
+                  {creatingOrder ? 'Création...' : 'Créer nouvelle commande'}
+                </button>
+              </div>
+            </div>
+            
+            {/* Boutons de fermeture */}
+            <div className="flex justify-end space-x-3 mt-6">
               <button
                 onClick={() => {
-                  // Nettoyage complet lors de l'annulation
                   setShowOrderNamePopup(false);
                   setOrderName('');
                   sessionStorage.removeItem('pendingProduct');
-                  // Nettoyer aussi la sélection visuelle temporaire
-                  // Cases automatiquement décochées lors de l'annulation
-                  // Ne pas créer de commande fantôme
-                  console.log('🚫 Création de commande annulée - état nettoyé');
+                  console.log('🚫 Gestion de commande annulée');
                 }}
-                className="px-4 py-2 bg-white bg-opacity-80 backdrop-blur-sm border border-white border-opacity-30 rounded-xl text-gray-700 hover:text-gray-900 hover:bg-opacity-90 transition-all duration-200 shadow-sm"
+                className="px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition-colors"
               >
                 Annuler
-              </button>
-              <button
-                onClick={createNewOrder}
-                disabled={creatingOrder}
-                className="px-4 py-2 bg-gradient-to-r from-dbc-bright-green to-emerald-400 text-dbc-dark-green rounded-xl hover:from-emerald-300 hover:to-emerald-500 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed font-semibold shadow-lg backdrop-blur-sm transition-all duration-200"
-              >
-                {creatingOrder ? 'Création...' : 'Créer la commande'}
               </button>
             </div>
           </div>

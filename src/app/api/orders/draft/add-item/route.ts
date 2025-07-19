@@ -78,8 +78,7 @@ export async function POST(request: NextRequest) {
         .from('order_items')
         .update({
           quantity: newQuantity,
-          total_price: newTotalPrice,
-          updated_at: new Date().toISOString()
+          total_price: newTotalPrice
         })
         .eq('id', existingItem.id)
         .select()

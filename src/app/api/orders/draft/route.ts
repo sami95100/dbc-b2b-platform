@@ -101,30 +101,9 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
     
-    // Vérifier s'il existe déjà une commande en brouillon pour cet utilisateur
-    const { data: existingDraftOrders, error: draftCheckError } = await admin
-      .from('orders')
-      .select('id, name, created_at')
-      .eq('status', 'draft')
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false });
-
-    if (draftCheckError) {
-      console.warn('⚠️ Erreur vérification commandes brouillon:', draftCheckError);
-    } else if (existingDraftOrders && existingDraftOrders.length > 0) {
-      const existingDraft = existingDraftOrders[0];
-      console.log('❌ Commande brouillon existante trouvée:', existingDraft.id);
-      
-      return NextResponse.json({
-        error: 'Une commande en brouillon existe déjà',
-        existingDraft: {
-          id: existingDraft.id,
-          name: existingDraft.name,
-          created_at: existingDraft.created_at
-        },
-        message: `Vous avez déjà une commande en brouillon: "${existingDraft.name}". Veuillez d'abord la supprimer ou la finaliser avant d'en créer une nouvelle.`
-      }, { status: 409 });
-    }
+    // 🔧 MODIFICATION : Permettre plusieurs commandes draft par client (pour les admins)
+    // La restriction d'une seule commande draft est supprimée pour permettre une gestion flexible
+    console.log('📋 Création d\'une nouvelle commande draft (multi-draft autorisé)');
 
     console.log('📋 Paramètres reçus:');
     console.log('- Nom:', name);
@@ -152,12 +131,12 @@ export async function POST(request: NextRequest) {
         sum + (typeof qty === 'number' ? qty : 0), 0
       );
 
-      // Pour calculer le montant, on doit récupérer les prix depuis la base
+      // Pour calculer le montant et déterminer le type de TVA, on doit récupérer les infos depuis la base
       const skus = Object.keys(items);
       if (skus.length > 0) {
         const { data: products, error: productsError } = await admin
           .from('products')
-          .select('sku, price_dbc')
+          .select('sku, price_dbc, vat_type')
           .in('sku', skus);
 
         if (productsError) {
@@ -172,6 +151,32 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Calculer le type de TVA de la commande en fonction du PREMIER produit
+    let orderVatType = 'Bien d\'occasion - TVA calculée sur la marge'; // Par défaut marginal
+    
+    if (Object.keys(items).length > 0) {
+      const skus = Object.keys(items);
+      const { data: products, error: productsError } = await admin
+        .from('products')
+        .select('sku, vat_type')
+        .in('sku', skus);
+
+      if (!productsError && products && products.length > 0) {
+        // Prendre le vat_type du premier produit de la commande
+        const firstProduct = products[0];
+        
+        console.log(`🔍 Premier produit SKU: ${firstProduct.sku}, VAT Type: ${firstProduct.vat_type}`);
+        
+        // Si le premier produit n'est PAS marginal, toute la commande est reverse
+        if (firstProduct.vat_type !== 'Marginal' && firstProduct.vat_type !== 'marginal') {
+          orderVatType = 'Bien d\'occasion - TVA en autoliquidation';
+          console.log('📋 Commande définie comme REVERSE (autoliquidation)');
+        } else {
+          console.log('📋 Commande définie comme MARGINALE');
+        }
+      }
+    }
+
     // Créer la commande dans Supabase 
     const orderData: any = {
       name,
@@ -180,7 +185,7 @@ export async function POST(request: NextRequest) {
       total_amount: Math.round(calculatedTotalAmount * 100) / 100,
       total_items: calculatedTotalItems,
       customer_ref: 'DBC-CLIENT-001',
-      vat_type: 'Bien d\'occasion - TVA calculée sur la marge',
+      vat_type: orderVatType,
       user_id: userId
     };
 
@@ -199,11 +204,11 @@ export async function POST(request: NextRequest) {
 
     // Ajouter les items de commande
     if (Object.keys(items).length > 0) {
-      // Récupérer les infos produits pour les items
+      // Récupérer les infos produits pour les items (on refait la requête pour être sûr)
       const skus = Object.keys(items);
       const { data: products, error: productsError } = await admin
         .from('products')
-        .select('sku, product_name, price_dbc')
+        .select('sku, product_name, price_dbc, vat_type')
         .in('sku', skus);
 
       if (productsError) {

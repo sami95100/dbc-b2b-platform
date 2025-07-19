@@ -8,6 +8,7 @@ import OrderImportButton from '@/components/OrderImportButton';
 import OrderFilters from '@/components/OrderFilters';
 import { supabase, Product } from '../../../../lib/supabase';
 import { OrdersUtils } from '../../../../lib/orders-utils';
+import { calculateShippingCost } from '../../../../lib/shipping';
 import {
   User,
   LogOut,
@@ -162,7 +163,38 @@ function AdminOrdersPage() {
         totalAmount: order.total_amount,
         totalItems: order.total_items,
         customerRef: order.customer_ref,
-        vatType: order.vat_type,
+        shippingCost: calculateShippingCost(order.total_items),
+        vatType: (() => {
+          // Utiliser le vat_type de la base de données d'abord, sinon calculer
+          if (order.vat_type) {
+            // Mapper les valeurs de la base vers nos valeurs frontend
+            if (order.vat_type.includes('autoliquidation')) {
+              return 'reverse';
+            } else {
+              return 'marginal';
+            }
+          }
+          
+          // Fallback: calculer depuis les produits
+          if (!order.order_items || order.order_items.length === 0) {
+            return 'marginal'; // Par défaut
+          }
+
+          // Chercher les produits correspondants pour connaître leur vat_type réel
+          const productSkus = order.order_items.map((item: any) => item.sku);
+          const orderProducts = products.filter(product => productSkus.includes(product.sku));
+          
+          if (orderProducts.length === 0) {
+            return 'marginal'; // Par défaut si pas de produits trouvés
+          }
+
+          // Vérifier s'il y a au moins un produit non marginal
+          const hasNonMarginal = orderProducts.some(product => 
+            product.vat_type !== 'Marginal' && product.vat_type !== 'marginal'
+          );
+          
+          return hasNonMarginal ? 'reverse' : 'marginal';
+        })(),
         items: order.order_items || [],
         source: 'api',
         // Ajouter les informations du client
@@ -221,8 +253,9 @@ function AdminOrdersPage() {
 
   // Charger les produits depuis Supabase
   useEffect(() => {
-    async function loadProducts() {
+    async function loadData() {
       try {
+        // Charger d'abord les produits
         const { data, error } = await supabase
           .from('products')
           .select('*')
@@ -230,18 +263,18 @@ function AdminOrdersPage() {
 
         if (error) throw error;
         setProducts(data || []);
+        
+        // Puis charger les commandes
+        await loadOrders();
       } catch (err) {
         console.error('Erreur chargement produits:', err);
-        // Utiliser les données de démo en cas d'erreur
         setProducts([]);
+        // Charger les commandes même en cas d'erreur produits
+        await loadOrders();
       }
     }
 
-    loadProducts();
-  }, []);
-
-  useEffect(() => {
-    loadOrders();
+    loadData();
   }, []);
 
   // Fonction pour charger le compte total des commandes
@@ -568,6 +601,24 @@ function AdminOrdersPage() {
                           <div className="text-xs text-gray-800 font-medium">
                             {order.totalItems} article{order.totalItems > 1 ? 's' : ''}
                           </div>
+                          {order.shippingCost > 0 && (
+                            <div className="text-xs text-gray-700 mt-1">
+                              <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded-full">
+                                Livraison: {order.shippingCost.toFixed(2)}€
+                              </span>
+                            </div>
+                          )}
+                          {/* Badge TVA */}
+                          <div className="flex items-center justify-end gap-1 mt-1">
+                            <span className="text-xs text-gray-500">TVA:</span>
+                            <span className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold ${
+                              order.vatType === 'marginal' 
+                                ? 'bg-green-100 text-green-700'
+                                : 'bg-blue-100 text-blue-700'
+                            }`}>
+                              {order.vatType === 'marginal' ? 'M' : 'R'}
+                            </span>
+                          </div>
                         </div>
                       </div>
 
@@ -652,6 +703,9 @@ function AdminOrdersPage() {
                       </th>
                       <th className="hidden 2xl:table-cell px-4 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
                         Marge
+                      </th>
+                      <th className="hidden xl:table-cell px-4 py-4 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                        TVA
                       </th>
                       <th className="px-4 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
                         Actions
@@ -773,6 +827,13 @@ function AdminOrdersPage() {
                               <div className="2xl:hidden text-xs text-green-600 font-semibold mt-1">
                                 +{orderMargins[order.id] !== undefined ? orderMargins[order.id].toFixed(2) : '...'} € marge
                               </div>
+                              {order.shippingCost > 0 && (
+                                <div className="text-xs text-blue-700 mt-1">
+                                  <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded-full">
+                                    Livraison: {order.shippingCost.toFixed(2)}€
+                                  </span>
+                                </div>
+                              )}
                             </div>
                           </td>
 
@@ -782,6 +843,17 @@ function AdminOrdersPage() {
                               <Euro className="h-4 w-4 mr-1 text-green-400" />
                               {orderMargins[order.id] !== undefined ? orderMargins[order.id].toFixed(2) : '...'} €
                             </div>
+                          </td>
+
+                          {/* TVA - Visible XL+ */}
+                          <td className="hidden xl:table-cell px-4 py-4 text-center">
+                            <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold mx-auto ${
+                              order.vatType === 'marginal' 
+                                ? 'bg-green-100 text-green-700'
+                                : 'bg-blue-100 text-blue-700'
+                            }`}>
+                              {order.vatType === 'marginal' ? 'M' : 'R'}
+                            </span>
                           </td>
 
                           {/* Actions - Toujours visible */}

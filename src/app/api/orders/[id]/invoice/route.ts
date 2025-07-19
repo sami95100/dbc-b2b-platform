@@ -453,7 +453,14 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 
         <!-- Informations TVA -->
         <div class="vat-info">
-            <strong>Régime de TVA sur la marge, Art.313 de la Directive du Conseil 2006/112/CE</strong><br>
+            ${order.vat_type && order.vat_type.includes('autoliquidation') ? `
+                <strong>TVA 0% - Autoliquidation, Art.138 de la Directive du Conseil 2006/112/CE</strong><br>
+                Cette facture concerne des biens d'occasion soumis au régime d'autoliquidation. La TVA est due par l'acquéreur selon les dispositions européennes applicables.
+            ` : `
+                <strong>Régime de TVA sur la marge, Art.313 de la Directive du Conseil 2006/112/CE</strong><br>
+                Cette facture concerne des biens d'occasion soumis au régime de TVA sur la marge. La TVA n'est pas récupérable par l'acquéreur.
+            `}
+            <br><br>
             DBC s'attend à ce que toutes les factures émises soient réglées par les destinataires prévus. Selon nos Conditions Générales de Vente, vous vous engagez à nous informer si des circonstances exceptionnelles où un tiers a l'intention de payer des factures émises à votre nom. Une enquête concernant tous ces cas de vente exceptionnels sera initiée. Nous pouvons demander des documents supplémentaires, rejeter ou annuler la commande si nous ne sommes pas satisfaits. Veuillez consulter nos Conditions Générales sur votre page de compte pour plus de détails.<br><br>
             <strong>Veuillez inclure le numéro de facture dans la référence de paiement pour assurer un traitement rapide et l'expédition de votre commande. Ne pas le faire peut entraîner des retards.</strong>
         </div>
